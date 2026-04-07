@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'url';
 import { pool } from './pool.js';
 
 const PROSPECTS = [
@@ -54,7 +55,7 @@ const PROSPECTS = [
   ['Jermod McCoy', 'CB', 'Tennessee'],
   ['Mansoor Delane', 'CB', 'LSU'],
   ['Leonard Moore', 'CB', 'Notre Dame'],
-  ['D''Angelo Ponds', 'CB', 'Indiana'],
+  ["D'Angelo Ponds", 'CB', 'Indiana'],
   ['Malik Muhammad', 'CB', 'Texas'],
   ['Daylen Everette', 'CB', 'Georgia'],
   ['Caleb Downs', 'S', 'Ohio State'],
@@ -85,7 +86,7 @@ async function seed() {
   console.log(`[seed] inserted ${PROSPECTS.length} players`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   seed()
     .then(() => pool.end())
     .catch((e) => {

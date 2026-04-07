@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'url';
 import { pool } from './pool.js';
 
 const SQL = `
@@ -61,7 +62,7 @@ export async function migrate() {
   console.log('[migrate] schema ready');
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   migrate()
     .then(() => pool.end())
     .catch((e) => {
