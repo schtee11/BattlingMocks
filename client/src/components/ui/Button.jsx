@@ -1,18 +1,22 @@
 const VARIANTS = {
   primary:
-    'bg-accent text-ink hover:bg-accent-hover shadow-glow disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none',
+    'text-bg-deep bg-gradient-accent shadow-glow hover:brightness-110 hover:scale-[1.015] active:scale-[0.99] disabled:bg-none disabled:bg-slate-800 disabled:text-slate-500 disabled:shadow-none disabled:hover:scale-100 disabled:hover:brightness-100',
   secondary:
-    'bg-transparent text-slate-100 border border-slate-600 hover:border-accent hover:text-accent disabled:opacity-40',
+    'bg-transparent text-text-primary border border-border-focus hover:border-accent hover:text-accent hover:bg-accent/5 disabled:opacity-40',
   ghost:
-    'bg-transparent text-slate-300 hover:text-white hover:bg-white/5 disabled:opacity-40',
+    'bg-transparent text-text-secondary hover:text-white hover:bg-white/5 disabled:opacity-40',
+  outline:
+    'bg-transparent text-text-secondary border border-border-subtle hover:text-white hover:border-border-focus disabled:opacity-40',
   danger:
-    'bg-red-500/20 text-red-200 border border-red-500/40 hover:bg-red-500/30 disabled:opacity-40',
+    'bg-red-500/15 text-red-200 border border-red-500/40 hover:bg-red-500/25 disabled:opacity-40',
 };
 
 const SIZES = {
-  sm: 'px-3 py-1.5 text-sm',
+  xs: 'px-2.5 py-1 text-[11px]',
+  sm: 'px-3 py-1.5 text-xs',
   md: 'px-4 py-2 text-sm',
-  lg: 'px-6 py-3 text-base',
+  lg: 'px-6 py-3 text-sm',
+  xl: 'px-8 py-4 text-base',
 };
 
 export function Button({
@@ -24,7 +28,7 @@ export function Button({
 }) {
   return (
     <button
-      className={`inline-flex items-center justify-center gap-2 font-semibold rounded-lg transition-all duration-150 disabled:cursor-not-allowed ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 font-display font-semibold uppercase tracking-[0.12em] rounded-lg transition-all duration-150 disabled:cursor-not-allowed ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
       {...rest}
     >
       {children}

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
-import { POSITIONS } from '../lib/positions.js';
+import { POSITIONS, posHex } from '../lib/positions.js';
 import { PickSlot } from '../components/PickSlot.jsx';
 import { ProspectCard } from '../components/ProspectCard.jsx';
 import { Card } from '../components/ui/Card.jsx';
@@ -23,16 +23,17 @@ export default function Draft() {
   const [players, setPlayers] = useState(null);
   const [draftOrder, setDraftOrder] = useState([]);
   const [settings, setSettings] = useState(null);
-  const [picks, setPicks] = useState({}); // { pickNumber: playerId }
+  const [picks, setPicks] = useState({});
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [activeDragId, setActiveDragId] = useState(null);
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState('ALL');
-  const [view, setView] = useState('bigboard'); // 'bigboard' | 'byposition'
+  const [view, setView] = useState('bigboard');
   const [showConfirm, setShowConfirm] = useState(false);
   const [showClearAll, setShowClearAll] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const leftRef = useRef(null);
+  const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
     if (!user) { nav('/join'); return; }
@@ -43,8 +44,7 @@ export default function Draft() {
           api.getDraftOrder(),
           api.getSettings(),
         ]);
-        // Preserve input ordering from server (rank-ish) by index if not set
-        setPlayers(p.map((pl, i) => ({ ...pl, rank: pl.rank ?? i + 1 })));
+        setPlayers(p);
         setDraftOrder(o);
         setSettings(s);
         try {
@@ -52,9 +52,10 @@ export default function Draft() {
           const map = {};
           m.picks.forEach((pk) => (map[pk.pick_number] = pk.player_id));
           setPicks(map);
+          setSubmitted(true);
         } catch { /* no existing mock */ }
       } catch (e) {
-        toast.error('Failed to load draft data: ' + e.message);
+        toast.error('Failed to load: ' + e.message);
       }
     })();
   }, [user, nav]);
@@ -74,6 +75,7 @@ export default function Draft() {
   const usedPlayerIds = useMemo(() => new Set(Object.values(picks)), [picks]);
   const filledCount = Object.keys(picks).length;
   const locked = !!settings?.is_locked;
+  const complete = filledCount === 32;
 
   const filteredProspects = useMemo(() => {
     const list = players || [];
@@ -87,9 +89,7 @@ export default function Draft() {
   const grouped = useMemo(() => {
     if (view !== 'byposition') return null;
     const g = {};
-    filteredProspects.forEach((p) => {
-      (g[p.position] ||= []).push(p);
-    });
+    filteredProspects.forEach((p) => { (g[p.position] ||= []).push(p); });
     return g;
   }, [view, filteredProspects]);
 
@@ -97,28 +97,24 @@ export default function Draft() {
     if (locked) return;
     setPicks((prev) => {
       const next = { ...prev };
-      // remove player if in another slot
       for (const [k, v] of Object.entries(next)) {
         if (v === playerId) delete next[k];
       }
       next[slot] = playerId;
       return next;
     });
+    setSubmitted(false);
   }
 
   function clearSlot(slot) {
-    setPicks((prev) => {
-      const next = { ...prev };
-      delete next[slot];
-      return next;
-    });
+    setPicks((prev) => { const next = { ...prev }; delete next[slot]; return next; });
+    setSubmitted(false);
   }
 
   function swapSlots(a, b) {
     setPicks((prev) => {
       const next = { ...prev };
-      const av = next[a];
-      const bv = next[b];
+      const av = next[a], bv = next[b];
       if (av) next[b] = av; else delete next[b];
       if (bv) next[a] = bv; else delete next[a];
       return next;
@@ -130,20 +126,17 @@ export default function Draft() {
     if (selectedPlayer != null) {
       assignPlayerToSlot(selectedPlayer, slot);
       setSelectedPlayer(null);
+      setMobileDrawerOpen(false);
     } else if (picks[slot]) {
       clearSlot(slot);
     }
   }
 
   function handleProspectClick(player) {
-    if (player.id === selectedPlayer) {
-      setSelectedPlayer(null);
-    } else if (!usedPlayerIds.has(player.id)) {
-      setSelectedPlayer(player.id);
-    }
+    if (player.id === selectedPlayer) setSelectedPlayer(null);
+    else if (!usedPlayerIds.has(player.id)) setSelectedPlayer(player.id);
   }
 
-  // dnd-kit
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   function handleDragStart(e) { setActiveDragId(e.active.id); }
   function handleDragEnd(e) {
@@ -152,14 +145,11 @@ export default function Draft() {
     if (!over) return;
     const activeId = String(active.id);
     const overId = String(over.id);
-
-    // Drag from player list onto a slot
     if (activeId.startsWith('player-') && overId.startsWith('slot-')) {
       const playerId = Number(activeId.replace('player-', ''));
       const slot = Number(overId.replace('slot-', ''));
       assignPlayerToSlot(playerId, slot);
     }
-    // Drag a filled slot onto another slot → swap
     if (activeId.startsWith('slot-') && overId.startsWith('slot-')) {
       const a = Number(activeId.replace('slot-', ''));
       const b = Number(overId.replace('slot-', ''));
@@ -171,13 +161,11 @@ export default function Draft() {
     if (locked) return;
     const available = (players || []).filter((p) => !usedPlayerIds.has(p.id));
     const emptySlots = Array.from({ length: 32 }, (_, i) => i + 1).filter((s) => !picks[s]);
-    // Shuffle remaining prospects
     const pool = [...available].sort(() => Math.random() - 0.5);
     const next = { ...picks };
-    emptySlots.forEach((slot, i) => {
-      if (pool[i]) next[slot] = pool[i].id;
-    });
+    emptySlots.forEach((slot, i) => { if (pool[i]) next[slot] = pool[i].id; });
     setPicks(next);
+    setSubmitted(false);
     toast.success(`Filled ${Math.min(emptySlots.length, pool.length)} picks`);
   }
 
@@ -185,18 +173,21 @@ export default function Draft() {
     setBusy(true);
     try {
       const payload = Object.entries(picks).map(([pn, pid]) => ({
-        pick_number: Number(pn),
-        player_id: pid,
+        pick_number: Number(pn), player_id: pid,
       }));
       await api.submitMock(user.id, payload);
       toast.success('Mock submitted!');
-      confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+      setSubmitted(true);
       setShowConfirm(false);
-    } catch (e) {
-      toast.error(e.message);
-    } finally {
-      setBusy(false);
-    }
+      confetti({
+        particleCount: 140,
+        spread: 80,
+        startVelocity: 55,
+        origin: { y: 0.75 },
+        colors: ['#00e5ff', '#fbbf24', '#3b82f6', '#f97316'],
+      });
+    } catch (e) { toast.error(e.message); }
+    finally { setBusy(false); }
   }
 
   if (!user) return null;
@@ -211,46 +202,54 @@ export default function Draft() {
       <div className="mb-5">
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-white">Build Your Mock</h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Drag prospects into slots, or click to assign. Submit when all 32 are filled.
+            <div className="caption text-accent">War Room · 2026</div>
+            <h1 className="font-display display-xl text-[30px] md:text-[38px] text-white mt-1">
+              Build Your Mock
+            </h1>
+            <p className="text-text-secondary text-[13px] mt-1">
+              Drag prospects into slots, or click to assign. Swap filled slots by dragging them.
             </p>
           </div>
           <div className="text-right">
-            <div className="text-xs text-slate-500 uppercase tracking-wide">Progress</div>
-            <div className="text-2xl font-bold text-white">
-              {filledCount}<span className="text-slate-500">/32</span>
+            <div className="caption text-[10px]">Progress</div>
+            <div className="font-mono font-bold text-4xl tabular leading-none mt-1">
+              <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
+              <span className="text-text-muted">/32</span>
             </div>
           </div>
         </div>
-        <div className="mt-3"><ProgressBar value={filledCount} max={32} /></div>
+        <div className="mt-3">
+          <ProgressBar picks={picks} playerById={playerById} />
+        </div>
       </div>
 
       {locked && (
-        <Card className="mb-4 px-4 py-3 text-amber-300 bg-amber-900/20 border-amber-700/40">
-          Submissions are locked. View the{' '}
-          <Link to="/leaderboard" className="underline">leaderboard</Link>.
+        <Card className="mb-4 px-4 py-3 text-amber-300 border-amber-700/40" style={{ background: 'rgba(146,64,14,0.15)' }}>
+          Submissions are locked. Head to the{' '}
+          <Link to="/leaderboard" className="underline text-amber-200">leaderboard</Link>.
         </Card>
       )}
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="grid md:grid-cols-2 gap-4">
           {/* Pick slots */}
-          <Card className="p-3">
-            <div className="flex items-center justify-between mb-2 px-1">
-              <h2 className="font-semibold text-slate-200">Round 1 — 2026</h2>
+          <Card glass className="p-3 overflow-hidden">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <h2 className="font-display font-bold text-[15px] uppercase tracking-[0.18em] text-white">
+                Round 1 — 2026
+              </h2>
               <div className="flex gap-1">
-                <Button size="sm" variant="ghost" onClick={autoFill} disabled={locked || filledCount === 32}>
+                <Button size="xs" variant="outline" onClick={autoFill} disabled={locked || complete}>
                   Auto-fill
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0}>
-                  Clear all
+                <Button size="xs" variant="outline" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0}>
+                  Clear
                 </Button>
               </div>
             </div>
-            <ul ref={leftRef} className="space-y-1.5 max-h-[68vh] overflow-y-auto pr-1">
+            <ul className="stagger space-y-1.5 max-h-[68vh] overflow-y-auto pr-1">
               {!players ? (
-                Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-14 w-full" />)
+                Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-[58px] w-full rounded-lg" />)
               ) : (
                 Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => (
                   <PickSlot
@@ -260,113 +259,105 @@ export default function Draft() {
                     player={picks[slot] ? playerById.get(picks[slot]) : null}
                     onClear={() => clearSlot(slot)}
                     onClick={() => handleSlotClick(slot)}
-                    isActive={selectedPlayer != null && !picks[slot]}
+                    isActive={selectedPlayer != null}
                   />
                 ))
               )}
             </ul>
           </Card>
 
-          {/* Prospect list */}
-          <Card className="p-3 flex flex-col max-h-[76vh]">
-            <div className="sticky top-0 bg-panel z-10 pb-2 space-y-2">
-              <div className="flex gap-2">
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search prospects…"
-                  className="flex-1 bg-ink border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-accent outline-none"
-                />
-                <select
-                  value={posFilter}
-                  onChange={(e) => setPosFilter(e.target.value)}
-                  className="bg-ink border border-slate-700 rounded-lg px-2 py-2 text-white text-sm"
-                  aria-label="Position filter"
-                >
-                  {FILTERS.map((p) => <option key={p}>{p}</option>)}
-                </select>
-              </div>
-              <div className="flex items-center justify-between text-xs text-slate-500 px-1">
-                <span>
-                  {filteredProspects.filter((p) => !usedPlayerIds.has(p.id)).length} of{' '}
-                  {filteredProspects.length} available
-                </span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setView('bigboard')}
-                    className={`px-2 py-1 rounded ${view === 'bigboard' ? 'bg-accent/20 text-accent' : 'text-slate-400 hover:text-white'}`}
-                  >
-                    Big Board
-                  </button>
-                  <button
-                    onClick={() => setView('byposition')}
-                    className={`px-2 py-1 rounded ${view === 'byposition' ? 'bg-accent/20 text-accent' : 'text-slate-400 hover:text-white'}`}
-                  >
-                    By Position
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <ul className="overflow-y-auto flex-1 space-y-1.5">
-              {!players ? (
-                Array.from({ length: 12 }, (_, i) => <Skeleton key={i} className="h-12 w-full" />)
-              ) : view === 'bigboard' ? (
-                filteredProspects.map((p) => (
-                  <ProspectCard
-                    key={p.id}
-                    player={p}
-                    used={usedPlayerIds.has(p.id)}
-                    selected={selectedPlayer === p.id}
-                    onClick={() => handleProspectClick(p)}
-                  />
-                ))
-              ) : (
-                Object.entries(grouped).map(([pos, list]) => (
-                  <li key={pos}>
-                    <div className="flex items-center gap-2 mt-2 mb-1 px-1">
-                      <PositionBadge position={pos} />
-                      <span className="text-xs text-slate-500">{list.length}</span>
-                    </div>
-                    <ul className="space-y-1.5">
-                      {list.map((p) => (
-                        <ProspectCard
-                          key={p.id}
-                          player={p}
-                          used={usedPlayerIds.has(p.id)}
-                          selected={selectedPlayer === p.id}
-                          onClick={() => handleProspectClick(p)}
-                        />
-                      ))}
-                    </ul>
-                  </li>
-                ))
-              )}
-            </ul>
+          {/* Prospect list — desktop */}
+          <Card glass className="p-3 flex flex-col max-h-[76vh] hidden md:flex">
+            <ProspectListInner
+              players={players}
+              filtered={filteredProspects}
+              grouped={grouped}
+              used={usedPlayerIds}
+              selected={selectedPlayer}
+              onClick={handleProspectClick}
+              search={search}
+              setSearch={setSearch}
+              posFilter={posFilter}
+              setPosFilter={setPosFilter}
+              view={view}
+              setView={setView}
+            />
           </Card>
         </div>
 
         <DragOverlay>
           {activePlayer ? (
-            <div className="px-3 py-2 rounded-lg bg-ink border border-accent shadow-glow text-sm text-white">
+            <div
+              className="px-3 py-2 rounded-lg text-sm text-white font-semibold shadow-glow"
+              style={{
+                background: 'var(--bg-elevated)',
+                borderLeft: `3px solid ${posHex(activePlayer.position)}`,
+                border: `1px solid ${posHex(activePlayer.position)}55`,
+              }}
+            >
               {activePlayer.name}
             </div>
           ) : null}
         </DragOverlay>
       </DndContext>
 
-      <div className="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="text-sm text-slate-400">
-          Tip: select a prospect and click a slot, or drag and drop. Drag a filled slot to another to swap.
+      {/* Footer / Submit (desktop) */}
+      <div className="mt-5 hidden md:flex items-center justify-between gap-3">
+        <div className="text-[12px] text-text-secondary">
+          Tip: select a prospect and click a slot, or drag. Drag a filled slot to another to swap.
         </div>
         <Button
-          size="lg"
+          size="xl"
           onClick={() => setShowConfirm(true)}
-          disabled={filledCount !== 32 || locked || busy}
+          disabled={!complete || locked || busy}
+          className={`${complete && !submitted ? 'animate-pulse-glow' : ''}`}
         >
-          {filledCount === 32 ? 'Submit Mock' : `${32 - filledCount} picks to go`}
+          {submitted ? 'Mock Submitted ✓' : complete ? 'Submit Mock →' : `${32 - filledCount} picks to go`}
         </Button>
       </div>
+
+      {/* Mobile — prospect drawer trigger & fixed submit */}
+      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 p-3 bg-bg-deep/85 backdrop-blur-md border-t border-border-subtle">
+        <div className="flex gap-2">
+          <Button variant="secondary" className="flex-1" onClick={() => setMobileDrawerOpen(true)}>
+            Prospects ({filteredProspects.filter((p) => !usedPlayerIds.has(p.id)).length})
+          </Button>
+          <Button
+            className="flex-1"
+            onClick={() => setShowConfirm(true)}
+            disabled={!complete || locked || busy}
+          >
+            {complete ? 'Submit' : `${filledCount}/32`}
+          </Button>
+        </div>
+      </div>
+
+      {/* Mobile prospect drawer */}
+      {mobileDrawerOpen && (
+        <div className="md:hidden fixed inset-0 z-40" onClick={() => setMobileDrawerOpen(false)}>
+          <div className="absolute inset-0 bg-black/60 animate-fade-in" />
+          <div
+            className="absolute left-0 right-0 bottom-0 max-h-[80vh] glass rounded-t-2xl p-3 flex flex-col drawer-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3" />
+            <ProspectListInner
+              players={players}
+              filtered={filteredProspects}
+              grouped={grouped}
+              used={usedPlayerIds}
+              selected={selectedPlayer}
+              onClick={(p) => { handleProspectClick(p); }}
+              search={search}
+              setSearch={setSearch}
+              posFilter={posFilter}
+              setPosFilter={setPosFilter}
+              view={view}
+              setView={setView}
+            />
+          </div>
+        </div>
+      )}
 
       <Modal
         open={showConfirm}
@@ -374,12 +365,8 @@ export default function Draft() {
         title="Lock in your mock?"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setShowConfirm(false)} disabled={busy}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={busy}>
-              {busy ? 'Submitting…' : 'Submit'}
-            </Button>
+            <Button variant="secondary" onClick={() => setShowConfirm(false)} disabled={busy}>Cancel</Button>
+            <Button onClick={submit} disabled={busy}>{busy ? 'Submitting…' : 'Submit'}</Button>
           </>
         }
       >
@@ -393,21 +380,111 @@ export default function Draft() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowClearAll(false)}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                setPicks({});
-                setShowClearAll(false);
-                toast('Cleared all picks');
-              }}
-            >
-              Clear all
-            </Button>
+            <Button variant="danger" onClick={() => {
+              setPicks({}); setShowClearAll(false); setSubmitted(false);
+              toast('Cleared');
+            }}>Clear all</Button>
           </>
         }
       >
-        This removes every prospect from your current mock. You can undo by reassigning them.
+        This removes every prospect from your current mock.
       </Modal>
+
+      {/* Padding for mobile fixed footer */}
+      <div className="h-20 md:hidden" />
     </div>
+  );
+}
+
+function ProspectListInner({
+  players, filtered, grouped, used, selected, onClick,
+  search, setSearch, posFilter, setPosFilter, view, setView,
+}) {
+  return (
+    <>
+      <div className="sticky top-0 z-10 pb-2 space-y-2" style={{ backgroundColor: 'transparent' }}>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search prospects…"
+              className="w-full bg-bg-deep/70 border border-border-subtle rounded-lg pl-9 pr-3 py-2.5 text-white text-[13px] focus:border-accent outline-none transition"
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.3-4.3" />
+            </svg>
+          </div>
+          <select
+            value={posFilter}
+            onChange={(e) => setPosFilter(e.target.value)}
+            className="bg-bg-deep/70 border border-border-subtle rounded-lg px-2 py-2 text-white text-[12px] font-display uppercase tracking-wide"
+            aria-label="Position filter"
+          >
+            {['ALL', ...POSITIONS].map((p) => <option key={p}>{p}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center justify-between text-[10.5px] px-1">
+          <span className="caption text-[9.5px]">
+            {filtered.filter((p) => !used.has(p.id)).length} of {filtered.length} available
+          </span>
+          <div className="inline-flex rounded-lg bg-bg-deep/60 border border-border-subtle p-0.5">
+            <button
+              onClick={() => setView('bigboard')}
+              className={`px-3 py-1 rounded-md font-display text-[10px] uppercase tracking-[0.14em] transition ${
+                view === 'bigboard' ? 'bg-accent text-bg-deep' : 'text-text-secondary hover:text-white'
+              }`}
+            >
+              Big Board
+            </button>
+            <button
+              onClick={() => setView('byposition')}
+              className={`px-3 py-1 rounded-md font-display text-[10px] uppercase tracking-[0.14em] transition ${
+                view === 'byposition' ? 'bg-accent text-bg-deep' : 'text-text-secondary hover:text-white'
+              }`}
+            >
+              By Position
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <ul className="overflow-y-auto flex-1 space-y-1.5 pr-1 stagger">
+        {!players ? (
+          Array.from({ length: 14 }, (_, i) => <Skeleton key={i} className="h-[46px] w-full rounded-lg" />)
+        ) : view === 'bigboard' ? (
+          filtered.map((p) => (
+            <ProspectCard
+              key={p.id}
+              player={p}
+              used={used.has(p.id)}
+              selected={selected === p.id}
+              onClick={() => onClick(p)}
+            />
+          ))
+        ) : (
+          Object.entries(grouped || {}).map(([pos, list]) => (
+            <li key={pos} className="space-y-1.5">
+              <div className="flex items-center gap-2 mt-1 mb-1 px-1">
+                <PositionBadge position={pos} />
+                <span className="caption text-[9.5px]">{list.length}</span>
+              </div>
+              <ul className="space-y-1.5">
+                {list.map((p) => (
+                  <ProspectCard
+                    key={p.id}
+                    player={p}
+                    used={used.has(p.id)}
+                    selected={selected === p.id}
+                    onClick={() => onClick(p)}
+                  />
+                ))}
+              </ul>
+            </li>
+          ))
+        )}
+      </ul>
+    </>
   );
 }

@@ -151,14 +151,15 @@ export default function Admin() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 route-fade">
-      <h1 className="text-3xl font-bold text-white mb-5">Admin</h1>
-      <div className="flex gap-1 border-b border-slate-800 mb-5 overflow-x-auto">
+      <div className="caption text-accent">Control Room</div>
+      <h1 className="font-display display-xl text-display text-white mt-1 mb-5">Admin</h1>
+      <div className="flex gap-1 border-b border-border-subtle mb-5 overflow-x-auto">
         {TABS.map(([id, label]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 transition ${
-              tab === id ? 'border-accent text-white' : 'border-transparent text-slate-400 hover:text-white'
+            className={`px-4 py-3 whitespace-nowrap border-b-2 transition font-display font-semibold text-[11px] uppercase tracking-[0.16em] ${
+              tab === id ? 'border-accent text-white' : 'border-transparent text-text-secondary hover:text-white'
             }`}
           >
             {label}

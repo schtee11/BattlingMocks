@@ -1,45 +1,82 @@
+import { useEffect, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
+import { posHex } from '../lib/positions.js';
 import { PositionBadge } from './ui/Badge.jsx';
 
 export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
   const { setNodeRef, isOver } = useDroppable({ id: `slot-${slot}` });
+  const [flash, setFlash] = useState(false);
+  const [prevPid, setPrevPid] = useState(player?.id ?? null);
+
+  useEffect(() => {
+    if (player?.id && player.id !== prevPid) {
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 700);
+      setPrevPid(player.id);
+      return () => clearTimeout(t);
+    }
+    if (!player?.id) setPrevPid(null);
+  }, [player?.id, prevPid]);
+
+  const posColor = player ? posHex(player.position) : null;
+
+  const baseCls = 'group relative flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all duration-150';
+  const filledCls = player
+    ? 'bg-bg-elevated border border-border-subtle hover:border-border-focus'
+    : 'bg-bg-surface/40 border border-dashed border-border-subtle hover:border-border-focus hover:bg-white/[0.02]';
+  const overCls = isOver ? 'ring-2 ring-accent shadow-glow scale-[1.01]' : '';
+  const activeCls = isActive && !player ? 'border-accent/40 bg-accent/[0.04]' : '';
+  const flashCls = flash ? 'animate-flash' : '';
+
   return (
     <li
       ref={setNodeRef}
       onClick={onClick}
       tabIndex={0}
       aria-label={`Pick ${slot}${team ? ` - ${team.team_name}` : ''}${player ? ` - ${player.name}` : ' - empty'}`}
-      className={`group flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-all animate-slide-in
-        ${player ? 'border-accent/30 bg-ink' : 'border-slate-700 hover:border-slate-500 bg-surface'}
-        ${isOver ? 'ring-2 ring-accent shadow-glow' : ''}
-        ${isActive ? 'ring-1 ring-accent/50' : ''}
-      `}
+      className={`${baseCls} ${filledCls} ${overCls} ${activeCls} ${flashCls}`}
+      style={player ? { borderLeft: `3px solid ${posColor}` } : undefined}
     >
-      <div className="flex items-center justify-center w-9 h-9 rounded-full bg-slate-800 font-bold text-accent text-sm ring-1 ring-slate-700 shrink-0">
+      {/* Pick number badge */}
+      <div
+        className="relative flex items-center justify-center w-10 h-10 rounded-full font-mono font-bold text-[13px] shrink-0 transition-colors"
+        style={
+          player
+            ? { backgroundColor: posColor, color: '#04080f', boxShadow: `0 0 18px -6px ${posColor}` }
+            : { backgroundColor: 'transparent', color: '#7a8ba8', boxShadow: 'inset 0 0 0 1.5px rgba(255,255,255,0.1)' }
+        }
+      >
         {slot}
       </div>
+
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] uppercase tracking-wide text-slate-500 truncate">
-          {team ? team.team_name : '—'}
+        <div className="flex items-center gap-2">
+          <div className="caption text-[9.5px] tracking-[0.22em] truncate">
+            {team?.team || '—'}
+          </div>
+          {team?.team_name && (
+            <div className="text-[10.5px] text-text-muted truncate hidden md:block">
+              {team.team_name}
+            </div>
+          )}
         </div>
         {player ? (
           <div className="flex items-center gap-2 mt-0.5">
-            <div className="text-white font-medium truncate">{player.name}</div>
+            <div className="text-white font-semibold truncate text-[14px]">{player.name}</div>
             <PositionBadge position={player.position} />
-            <div className="text-xs text-slate-500 truncate hidden sm:block">{player.school}</div>
+            <div className="text-[11px] text-text-muted truncate hidden sm:block">{player.school}</div>
           </div>
         ) : (
-          <div className="text-slate-600 text-sm italic">empty</div>
+          <div className="caption mt-0.5 text-text-muted text-[10px]">Select player</div>
         )}
       </div>
+
       {player && (
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onClear?.();
-          }}
-          className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition p-1"
+          onClick={(e) => { e.stopPropagation(); onClear?.(); }}
+          className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition p-1 text-sm"
           aria-label={`Clear pick ${slot}`}
+          tabIndex={-1}
         >
           ✕
         </button>

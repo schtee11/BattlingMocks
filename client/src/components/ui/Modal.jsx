@@ -12,12 +12,16 @@ export function Modal({ open, onClose, title, children, footer }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-black/75 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-md bg-panel border border-border rounded-xl shadow-card p-6 animate-fade-in">
-        {title && <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>}
-        <div className="text-slate-300 text-sm">{children}</div>
+      <div className="relative w-full max-w-md glass rounded-xl p-6 animate-fade-in">
+        {title && (
+          <h3 className="font-display font-bold uppercase tracking-[0.14em] text-white text-[17px] mb-2">
+            {title}
+          </h3>
+        )}
+        <div className="text-text-secondary text-[13px]">{children}</div>
         {footer && <div className="mt-5 flex justify-end gap-2">{footer}</div>}
       </div>
     </div>
