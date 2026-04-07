@@ -1,6 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
+
+// Keep the drag overlay centered under the cursor. Without this, dnd-kit
+// offsets the overlay based on where within the source element the drag started.
+function snapCenterToCursor({ activatorEvent, draggingNodeRect, transform }) {
+  if (!draggingNodeRect || !activatorEvent) return transform;
+  const rect = activatorEvent.target?.getBoundingClientRect?.();
+  if (!rect) return transform;
+  const activatorX =
+    activatorEvent.clientX ?? activatorEvent.touches?.[0]?.clientX ?? rect.left + rect.width / 2;
+  const activatorY =
+    activatorEvent.clientY ?? activatorEvent.touches?.[0]?.clientY ?? rect.top + rect.height / 2;
+  const offsetX = activatorX - rect.left;
+  const offsetY = activatorY - rect.top;
+  return {
+    ...transform,
+    x: transform.x + offsetX - draggingNodeRect.width / 2,
+    y: transform.y + offsetY - draggingNodeRect.height / 2,
+  };
+}
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { api } from '../lib/api.js';
@@ -76,6 +95,19 @@ export default function Draft() {
   const filledCount = Object.keys(picks).length;
   const locked = !!settings?.is_locked;
   const complete = filledCount === 32;
+
+  // "On the clock" = lowest pick number with no assignment yet
+  const onClockSlot = useMemo(() => {
+    for (let i = 1; i <= 32; i++) if (!picks[i]) return i;
+    return null;
+  }, [picks]);
+
+  function draftToOnClock(player) {
+    if (locked || !onClockSlot) return;
+    assignPlayerToSlot(player.id, onClockSlot);
+    const team = orderByPick.get(onClockSlot);
+    toast.success(`Pick ${onClockSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`);
+  }
 
   const filteredProspects = useMemo(() => {
     const list = players || [];
@@ -207,14 +239,27 @@ export default function Draft() {
               Build Your Mock
             </h1>
             <p className="text-text-secondary text-[13px] mt-1">
-              Drag prospects into slots, or click to assign. Swap filled slots by dragging them.
+              Drag, click, or use the Draft button to assign to the team on the clock.
             </p>
           </div>
-          <div className="text-right">
-            <div className="caption text-[10px]">Progress</div>
-            <div className="font-mono font-bold text-4xl tabular leading-none mt-1">
-              <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
-              <span className="text-text-muted">/32</span>
+          <div className="flex items-end gap-5">
+            {onClockSlot && !locked && (
+              <div className="text-right">
+                <div className="caption text-[10px]">On the clock</div>
+                <div className="font-display font-bold uppercase tracking-wide text-white text-[14px] mt-1">
+                  Pick <span className="text-accent">{onClockSlot}</span>
+                  {orderByPick.get(onClockSlot) && (
+                    <span className="text-text-secondary"> · {orderByPick.get(onClockSlot).team}</span>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="text-right">
+              <div className="caption text-[10px]">Progress</div>
+              <div className="font-mono font-bold text-4xl tabular leading-none mt-1">
+                <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
+                <span className="text-text-muted">/32</span>
+              </div>
             </div>
           </div>
         </div>
@@ -275,6 +320,8 @@ export default function Draft() {
               used={usedPlayerIds}
               selected={selectedPlayer}
               onClick={handleProspectClick}
+              onDraft={draftToOnClock}
+              onClockSlot={onClockSlot}
               search={search}
               setSearch={setSearch}
               posFilter={posFilter}
@@ -285,7 +332,7 @@ export default function Draft() {
           </Card>
         </div>
 
-        <DragOverlay>
+        <DragOverlay modifiers={[snapCenterToCursor]}>
           {activePlayer ? (
             <div
               className="px-3 py-2 rounded-lg text-sm text-white font-semibold shadow-glow"
@@ -348,6 +395,8 @@ export default function Draft() {
               used={usedPlayerIds}
               selected={selectedPlayer}
               onClick={(p) => { handleProspectClick(p); }}
+              onDraft={(p) => { draftToOnClock(p); setMobileDrawerOpen(false); }}
+              onClockSlot={onClockSlot}
               search={search}
               setSearch={setSearch}
               posFilter={posFilter}
@@ -397,7 +446,7 @@ export default function Draft() {
 }
 
 function ProspectListInner({
-  players, filtered, grouped, used, selected, onClick,
+  players, filtered, grouped, used, selected, onClick, onDraft, onClockSlot,
   search, setSearch, posFilter, setPosFilter, view, setView,
 }) {
   return (
@@ -461,6 +510,8 @@ function ProspectListInner({
               used={used.has(p.id)}
               selected={selected === p.id}
               onClick={() => onClick(p)}
+              onDraft={onDraft}
+              onClockSlot={onClockSlot}
             />
           ))
         ) : (
@@ -478,6 +529,8 @@ function ProspectListInner({
                     used={used.has(p.id)}
                     selected={selected === p.id}
                     onClick={() => onClick(p)}
+                    onDraft={onDraft}
+                    onClockSlot={onClockSlot}
                   />
                 ))}
               </ul>

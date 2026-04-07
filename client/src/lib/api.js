@@ -25,6 +25,7 @@ export const api = {
   getStats: () => request('/api/stats'),
   getActualPicks: () => request('/api/actual-picks'),
   checkName: (name) => request(`/api/users/check?name=${encodeURIComponent(name)}`),
+  getUserByName: (name) => request(`/api/users/by-name?name=${encodeURIComponent(name)}`),
   createUser: (display_name) => request('/api/users', { method: 'POST', body: { display_name } }),
   getUser: (id) => request(`/api/users/${id}`),
   submitMock: (user_id, picks) =>

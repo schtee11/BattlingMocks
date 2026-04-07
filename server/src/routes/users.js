@@ -3,6 +3,18 @@ import { pool } from '../db/pool.js';
 
 const router = Router();
 
+// Look up a user by display name (case-insensitive) — used for sign-in.
+router.get('/by-name', async (req, res) => {
+  const name = (req.query.name || '').toString().trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const { rows } = await pool.query(
+    'SELECT id, display_name, created_at FROM users WHERE LOWER(display_name) = LOWER($1)',
+    [name]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'not found' });
+  res.json(rows[0]);
+});
+
 // Debounced availability check for the Join page.
 router.get('/check', async (req, res) => {
   const name = (req.query.name || '').toString().trim();
