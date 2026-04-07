@@ -25,7 +25,7 @@ export default function Join() {
       <div className="max-w-md mx-auto px-4 py-20 route-fade">
         <Card glass className="p-7 text-center">
           <div className="caption text-accent">Welcome back</div>
-          <div className="text-white font-display text-2xl mt-1 mb-4 uppercase">{prettyName(user.display_name)}</div>
+          <div className="text-text-primary font-display text-2xl mt-1 mb-4 uppercase">{prettyName(user.display_name)}</div>
           <Link to="/draft"><Button size="lg">Enter The War Room →</Button></Link>
         </Card>
       </div>
@@ -36,14 +36,14 @@ export default function Join() {
     <div className="max-w-md mx-auto px-4 py-20 route-fade">
       <Card glass className="p-8">
         <div className="caption text-accent">2026 NFL Draft</div>
-        <h1 className="font-display display-xl text-[32px] text-white mt-1">Claim Your Spot</h1>
+        <h1 className="font-display display-xl text-[32px] text-text-primary mt-1">Claim Your Spot</h1>
         <p className="text-text-secondary text-[13px] mt-2 mb-6">
           Sign in with Discord to start building your mock draft and compete on the leaderboard.
         </p>
 
         <a
           href={DISCORD_AUTH_URL}
-          className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg px-6 py-3.5 text-sm font-display font-semibold uppercase tracking-[0.14em] text-white transition hover:brightness-110"
+          className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg px-6 py-3.5 text-sm font-display font-semibold uppercase tracking-[0.14em] text-text-primary transition hover:brightness-110"
           style={{ backgroundColor: '#5865F2', boxShadow: '0 0 24px -8px rgba(88,101,242,0.6)' }}
         >
           <DiscordIcon className="w-[18px] h-[18px]" />

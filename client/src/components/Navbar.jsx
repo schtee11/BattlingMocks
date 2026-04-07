@@ -1,12 +1,13 @@
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 import { prettyName } from '../lib/displayName.js';
+import { ThemeToggle } from './ThemeToggle.jsx';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
   const linkCls = ({ isActive }) =>
     `relative px-3 py-4 text-[12px] font-display font-semibold uppercase tracking-[0.16em] transition-colors ${
-      isActive ? 'text-white' : 'text-text-secondary hover:text-white'
+      isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'
     }`;
   const activeBar = (
     <span className="absolute left-2 right-2 bottom-[10px] h-[2px] rounded-full bg-gradient-accent" />
@@ -15,7 +16,7 @@ export default function Navbar() {
     <nav
       className="sticky top-0 z-40"
       style={{
-        background: 'rgba(4,8,15,0.65)',
+        background: 'var(--nav-bg)',
         backdropFilter: 'blur(16px) saturate(130%)',
         WebkitBackdropFilter: 'blur(16px) saturate(130%)',
       }}
@@ -26,7 +27,7 @@ export default function Navbar() {
             M
           </div>
           <div className="font-display font-bold text-[18px] uppercase tracking-[0.08em] leading-none">
-            <span className="text-white">Mockdraft</span>{' '}
+            <span className="text-text-primary">Mockdraft</span>{' '}
             <span className="text-accent">Showdown</span>
           </div>
         </Link>
@@ -42,12 +43,17 @@ export default function Navbar() {
               {({ isActive }) => (<><span>My Mock</span>{isActive && activeBar}</>)}
             </NavLink>
           )}
+          <div className="ml-1 mr-1"><ThemeToggle /></div>
           {user ? (
             <div className="flex items-center gap-2.5 pl-3 ml-2 border-l border-border-subtle">
               {user.avatar_url ? (
                 <img
                   src={user.avatar_url}
                   alt=""
+                  width={24}
+                  height={24}
+                  loading="lazy"
+                  decoding="async"
                   className="w-6 h-6 rounded-full ring-1 ring-border-focus"
                 />
               ) : (
@@ -63,7 +69,7 @@ export default function Navbar() {
               </span>
               <button
                 onClick={signOut}
-                className="font-display uppercase tracking-[0.14em] text-[10px] text-text-muted hover:text-white transition"
+                className="font-display uppercase tracking-[0.14em] text-[10px] text-text-muted hover:text-text-primary transition"
               >
                 Sign out
               </button>

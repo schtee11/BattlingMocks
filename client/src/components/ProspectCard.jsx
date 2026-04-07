@@ -40,7 +40,7 @@ export function ProspectCard({ player, used, selected, onClick, onDraft, onClock
           {player.rank ?? ''}
         </div>
         <div className="flex-1 min-w-0">
-          <div className={`text-[13.5px] font-semibold truncate ${used ? 'line-through text-text-muted' : 'text-white'}`}>
+          <div className={`text-[13.5px] font-semibold truncate ${used ? 'line-through text-text-muted' : 'text-text-primary'}`}>
             {player.name}
           </div>
           <div className="text-[10.5px] text-text-muted truncate">{player.school}</div>

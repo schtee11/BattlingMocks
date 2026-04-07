@@ -1,24 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* =========================================================================
+   THEME TOKENS
+   Each color is declared twice:
+     - as a hex form  ( --x )         for direct use in CSS / inline styles
+     - as an rgb triplet ( --x-rgb )  so Tailwind's <alpha-value> syntax works
+   Default = dark. [data-theme="light"] overrides everything.
+   ========================================================================= */
+
+:root, [data-theme="dark"] {
+  /* backgrounds */
   --bg-deep: #04080f;
   --bg-surface: #0b1120;
   --bg-elevated: #111d35;
   --bg-glass: rgba(15, 25, 50, 0.7);
+  --bg-deep-rgb: 4 8 15;
+  --bg-surface-rgb: 11 17 32;
+  --bg-elevated-rgb: 17 29 53;
+
+  /* borders */
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-focus: rgba(255, 255, 255, 0.12);
 
+  /* text */
   --text-primary: #f0f4fc;
   --text-secondary: #7a8ba8;
   --text-muted: #4a5568;
+  --text-primary-rgb: 240 244 252;
 
+  /* accents */
   --accent: #00e5ff;
   --accent-glow: rgba(0, 229, 255, 0.15);
+  --accent-rgb: 0 229 255;
+
   --gold: #fbbf24;
   --gold-glow: rgba(251, 191, 36, 0.15);
+  --gold-rgb: 251 191 36;
 
+  /* gradients */
+  --gradient-accent: linear-gradient(90deg, #00e5ff 0%, #0070f3 100%);
+  --gradient-gold: linear-gradient(90deg, #fbbf24 0%, #f97316 100%);
+
+  /* atmosphere / component-specific */
+  --nav-bg: rgba(4, 8, 15, 0.65);
+  --card-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 20px 40px -24px rgba(0,0,0,0.8);
+  --atmosphere-image:
+    radial-gradient(ellipse 1200px 560px at 50% -5%, rgba(0, 229, 255, 0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 900px 500px at 80% 110%, rgba(251, 191, 36, 0.04) 0%, transparent 60%),
+    linear-gradient(180deg, #04080f 0%, #060d1a 60%, #04080f 100%);
+  --noise-opacity: 0.035;
+  --noise-blend: overlay;
+
+  /* semantic status colors */
+  --warn-bg: rgba(146, 64, 14, 0.18);
+  --warn-border: rgba(180, 83, 9, 0.4);
+  --warn-text: #fcd34d;
+  --error-bg: rgba(127, 29, 29, 0.18);
+  --error-border: rgba(185, 28, 28, 0.4);
+  --error-text: #fca5a5;
+  --success-text: #34d399;
+
+  /* position colors (same in both themes — they already contrast well) */
   --pos-qb: #ef4444;
   --pos-rb: #22d3ee;
   --pos-wr: #3b82f6;
@@ -30,14 +76,73 @@
   --pos-cb: #a3e635;
   --pos-s: #34d399;
   --pos-lb: #2dd4bf;
-
-  --gradient-accent: linear-gradient(90deg, #00e5ff 0%, #0070f3 100%);
-  --gradient-gold: linear-gradient(90deg, #fbbf24 0%, #f97316 100%);
 }
 
-html, body, #root { height: 100%; }
+[data-theme="light"] {
+  --bg-deep: #f0f2f7;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f8f9fc;
+  --bg-glass: rgba(255, 255, 255, 0.8);
+  --bg-deep-rgb: 240 242 247;
+  --bg-surface-rgb: 255 255 255;
+  --bg-elevated-rgb: 248 249 252;
 
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-focus: rgba(0, 0, 0, 0.12);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-primary-rgb: 15 23 42;
+
+  --accent: #0891b2;
+  --accent-glow: rgba(8, 145, 178, 0.1);
+  --accent-rgb: 8 145 178;
+
+  --gold: #d97706;
+  --gold-glow: rgba(217, 119, 6, 0.1);
+  --gold-rgb: 217 119 6;
+
+  --gradient-accent: linear-gradient(90deg, #0891b2 0%, #0369a1 100%);
+  --gradient-gold: linear-gradient(90deg, #d97706 0%, #c2410c 100%);
+
+  --nav-bg: rgba(255, 255, 255, 0.75);
+  --card-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px -12px rgba(15, 23, 42, 0.08);
+  --atmosphere-image:
+    radial-gradient(ellipse 1200px 560px at 50% -5%, rgba(8, 145, 178, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 900px 500px at 80% 110%, rgba(217, 119, 6, 0.04) 0%, transparent 60%),
+    linear-gradient(180deg, #f0f2f7 0%, #e9edf4 60%, #f0f2f7 100%);
+  --noise-opacity: 0.02;
+  --noise-blend: multiply;
+
+  --warn-bg: rgba(253, 230, 138, 0.45);
+  --warn-border: rgba(180, 83, 9, 0.25);
+  --warn-text: #92400e;
+  --error-bg: rgba(254, 202, 202, 0.5);
+  --error-border: rgba(185, 28, 28, 0.3);
+  --error-text: #991b1b;
+  --success-text: #047857;
+}
+
+/* Status banner shared styles — use semantic CSS vars so light/dark work */
+.banner-warn {
+  background: var(--warn-bg);
+  border-color: var(--warn-border) !important;
+  color: var(--warn-text);
+}
+.banner-error {
+  background: var(--error-bg);
+  border-color: var(--error-border) !important;
+  color: var(--error-text);
+}
+
+/* =========================================================================
+   BASE STYLES
+   ========================================================================= */
+
+html, body, #root { height: 100%; }
 html { color-scheme: dark; }
+html[data-theme="light"] { color-scheme: light; }
 
 body {
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
@@ -45,26 +150,23 @@ body {
   background-color: var(--bg-deep);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
-/* Lock horizontal + vertical scroll while a drag is in flight so the drag
-   overlay (or a dropped prospect at the edge) can't expand the document. */
+/* Lock scroll while a drag is in flight. */
 body.dragging {
   overflow: hidden;
   touch-action: none;
 }
 
-/* Layered atmosphere: stadium spotlight + faint grid + noise */
+/* Background atmosphere + noise */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -2;
   pointer-events: none;
-  background:
-    radial-gradient(ellipse 1200px 560px at 50% -5%, rgba(0, 229, 255, 0.08) 0%, transparent 55%),
-    radial-gradient(ellipse 900px 500px at 80% 110%, rgba(251, 191, 36, 0.04) 0%, transparent 60%),
-    linear-gradient(180deg, #04080f 0%, #060d1a 60%, #04080f 100%);
+  background-image: var(--atmosphere-image);
 }
 
 body::after {
@@ -73,20 +175,20 @@ body::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.035;
+  opacity: var(--noise-opacity);
   background-image:
-    linear-gradient(to right, rgba(255,255,255,0.8) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255,255,255,0.8) 1px, transparent 1px),
+    linear-gradient(to right, currentColor 1px, transparent 1px),
+    linear-gradient(to bottom, currentColor 1px, transparent 1px),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.35 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 64px 64px, 64px 64px, 180px 180px;
-  mix-blend-mode: overlay;
+  mix-blend-mode: var(--noise-blend);
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+::-webkit-scrollbar-thumb { background: var(--border-focus); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-focus); opacity: 0.8; }
 
 /* Focus */
 :focus-visible {
@@ -95,7 +197,10 @@ body::after {
   border-radius: 6px;
 }
 
-/* Display utilities */
+/* =========================================================================
+   TYPOGRAPHY HELPERS
+   ========================================================================= */
+
 .font-display { font-family: 'Oswald', ui-sans-serif, system-ui, sans-serif; }
 .font-mono    { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; }
 
@@ -122,41 +227,55 @@ body::after {
   border: 1px solid var(--border-subtle);
   backdrop-filter: blur(14px) saturate(130%);
   -webkit-backdrop-filter: blur(14px) saturate(130%);
-  background-image: linear-gradient(180deg, rgba(255,255,255,0.035) 0%, transparent 100%);
+  box-shadow: var(--card-shadow);
 }
 
-/* Route fade — opacity only. Do NOT use transform here: any transform on an
-   ancestor creates a new containing block for position:fixed descendants,
-   which breaks dnd-kit's DragOverlay positioning. */
+/* =========================================================================
+   ANIMATIONS (opacity / transform / box-shadow only — GPU-friendly)
+   Note: .route-fade and .stagger use OPACITY ONLY to avoid establishing a
+   containing block on their descendants (would break dnd-kit DragOverlay).
+   ========================================================================= */
+
 .route-fade { animation: routeFade 260ms ease-out both; }
 @keyframes routeFade {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-/* Mobile drawer slide up */
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(24px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .drawer-slide-up { animation: slideUp 260ms ease-out both; }
 
-/* Stagger helper — opacity only. Same containing-block rule as .route-fade. */
+/* Stagger — opacity only. Capped at 20 items; anything beyond appears instantly. */
 .stagger > * { opacity: 0; animation: stagIn 320ms ease-out forwards; }
 @keyframes stagIn { to { opacity: 1; } }
 .stagger > *:nth-child(1)  { animation-delay:   0ms; }
-.stagger > *:nth-child(2)  { animation-delay:  25ms; }
-.stagger > *:nth-child(3)  { animation-delay:  50ms; }
-.stagger > *:nth-child(4)  { animation-delay:  75ms; }
-.stagger > *:nth-child(5)  { animation-delay: 100ms; }
-.stagger > *:nth-child(6)  { animation-delay: 125ms; }
-.stagger > *:nth-child(7)  { animation-delay: 150ms; }
-.stagger > *:nth-child(8)  { animation-delay: 175ms; }
-.stagger > *:nth-child(9)  { animation-delay: 200ms; }
-.stagger > *:nth-child(10) { animation-delay: 225ms; }
-.stagger > *:nth-child(n+11) { animation-delay: 250ms; }
+.stagger > *:nth-child(2)  { animation-delay:  20ms; }
+.stagger > *:nth-child(3)  { animation-delay:  40ms; }
+.stagger > *:nth-child(4)  { animation-delay:  60ms; }
+.stagger > *:nth-child(5)  { animation-delay:  80ms; }
+.stagger > *:nth-child(6)  { animation-delay: 100ms; }
+.stagger > *:nth-child(7)  { animation-delay: 120ms; }
+.stagger > *:nth-child(8)  { animation-delay: 140ms; }
+.stagger > *:nth-child(9)  { animation-delay: 160ms; }
+.stagger > *:nth-child(10) { animation-delay: 180ms; }
+.stagger > *:nth-child(11) { animation-delay: 200ms; }
+.stagger > *:nth-child(12) { animation-delay: 220ms; }
+.stagger > *:nth-child(13) { animation-delay: 240ms; }
+.stagger > *:nth-child(14) { animation-delay: 260ms; }
+.stagger > *:nth-child(15) { animation-delay: 280ms; }
+.stagger > *:nth-child(16) { animation-delay: 300ms; }
+.stagger > *:nth-child(17) { animation-delay: 320ms; }
+.stagger > *:nth-child(18) { animation-delay: 340ms; }
+.stagger > *:nth-child(19) { animation-delay: 360ms; }
+.stagger > *:nth-child(20) { animation-delay: 380ms; }
+.stagger > *:nth-child(n+21) { animation-delay: 380ms; }
 
-/* Reduced motion */
+/* GPU hints for elements that animate frequently */
+.will-anim { will-change: transform; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -164,5 +283,4 @@ body::after {
   }
 }
 
-/* Tabular nums everywhere numeric */
 .tabular { font-variant-numeric: tabular-nums; }

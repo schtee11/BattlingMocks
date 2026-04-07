@@ -54,7 +54,7 @@ export default function AuthCallback() {
       <div className="max-w-md mx-auto px-4 py-20 text-center route-fade">
         <Card glass className="p-7">
           <div className="caption text-red-400">Sign-in Error</div>
-          <div className="text-white font-display text-xl mt-2 mb-4">{error}</div>
+          <div className="text-text-primary font-display text-xl mt-2 mb-4">{error}</div>
           <Link to="/join"><Button>Back to Join</Button></Link>
         </Card>
       </div>

@@ -1,6 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  darkMode: ['class', '[data-theme="dark"]'],
   theme: {
     extend: {
       fontFamily: {
@@ -13,26 +14,29 @@ export default {
         display: ['clamp(2rem, 4vw, 2.75rem)', { lineHeight: '1', letterSpacing: '-0.01em' }],
       },
       colors: {
-        'bg-deep': '#04080f',
-        'bg-surface': '#0b1120',
-        'bg-elevated': '#111d35',
-        'ink': '#04080f',           // alias
-        'panel': '#0b1120',         // alias
-        'surface': '#0b1120',       // alias
-        'border-subtle': 'rgba(255,255,255,0.06)',
-        'border-focus': 'rgba(255,255,255,0.12)',
-        'text-primary': '#f0f4fc',
-        'text-secondary': '#7a8ba8',
-        'text-muted': '#4a5568',
+        // Theme-aware: consumed from CSS custom properties so both dark/light work
+        // and Tailwind's <alpha-value> modifier still functions (e.g. `bg-accent/20`).
+        'bg-deep': 'rgb(var(--bg-deep-rgb) / <alpha-value>)',
+        'bg-surface': 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
+        'bg-elevated': 'rgb(var(--bg-elevated-rgb) / <alpha-value>)',
+        ink: 'rgb(var(--bg-deep-rgb) / <alpha-value>)',
+        panel: 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
+        surface: 'rgb(var(--bg-surface-rgb) / <alpha-value>)',
+        'border-subtle': 'var(--border-subtle)',
+        'border-focus': 'var(--border-focus)',
+        'text-primary': 'rgb(var(--text-primary-rgb) / <alpha-value>)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-muted': 'var(--text-muted)',
         accent: {
-          DEFAULT: '#00e5ff',
+          DEFAULT: 'rgb(var(--accent-rgb) / <alpha-value>)',
           hover: '#22d3ee',
-          dim: '#006b7a',
+          dim: '#164e63',
         },
         gold: {
-          DEFAULT: '#fbbf24',
+          DEFAULT: 'rgb(var(--gold-rgb) / <alpha-value>)',
           dim: '#78350f',
         },
+        // Position colors are static — same contrast works in both themes.
         pos: {
           qb: '#ef4444',
           rb: '#22d3ee',
@@ -48,14 +52,14 @@ export default {
         },
       },
       boxShadow: {
-        card: '0 1px 0 rgba(255,255,255,0.04) inset, 0 20px 40px -24px rgba(0,0,0,0.8)',
-        glass: '0 1px 0 rgba(255,255,255,0.05) inset, 0 20px 60px -24px rgba(0,0,0,0.9)',
-        glow: '0 0 0 1px rgba(0,229,255,0.45), 0 0 40px -8px rgba(0,229,255,0.55)',
-        'glow-gold': '0 0 0 1px rgba(251,191,36,0.35), 0 0 32px -8px rgba(251,191,36,0.45)',
+        card: 'var(--card-shadow)',
+        glass: 'var(--card-shadow)',
+        glow: '0 0 0 1px rgb(var(--accent-rgb) / 0.45), 0 0 40px -8px rgb(var(--accent-rgb) / 0.55)',
+        'glow-gold': '0 0 0 1px rgb(var(--gold-rgb) / 0.35), 0 0 32px -8px rgb(var(--gold-rgb) / 0.45)',
       },
       backgroundImage: {
-        'gradient-accent': 'linear-gradient(90deg, #00e5ff 0%, #0070f3 100%)',
-        'gradient-gold': 'linear-gradient(90deg, #fbbf24 0%, #f97316 100%)',
+        'gradient-accent': 'var(--gradient-accent)',
+        'gradient-gold': 'var(--gradient-gold)',
         'gradient-card': 'linear-gradient(180deg, rgba(255,255,255,0.035) 0%, transparent 100%)',
       },
       keyframes: {

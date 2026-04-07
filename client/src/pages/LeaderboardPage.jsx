@@ -46,7 +46,7 @@ export default function LeaderboardPage() {
       <div className="flex items-end justify-between flex-wrap gap-3 mb-5">
         <div>
           <div className="caption text-accent">Standings</div>
-          <h1 className="font-display display-xl text-display text-white mt-1">Leaderboard</h1>
+          <h1 className="font-display display-xl text-display text-text-primary mt-1">Leaderboard</h1>
         </div>
         {user && data?.entries?.some((e) => e.user_id === user.id) && (
           <Button variant="secondary" onClick={scrollToMe}>Find Me</Button>
@@ -58,11 +58,11 @@ export default function LeaderboardPage() {
         <div className="grid grid-cols-3 gap-3 mb-5">
           <Card glass className="p-4">
             <div className="caption">Participants</div>
-            <div className="font-mono text-2xl font-bold tabular text-white mt-1">{stats.total}</div>
+            <div className="font-mono text-2xl font-bold tabular text-text-primary mt-1">{stats.total}</div>
           </Card>
           <Card glass className="p-4">
             <div className="caption">Average Score</div>
-            <div className="font-mono text-2xl font-bold tabular text-white mt-1">{stats.avg}</div>
+            <div className="font-mono text-2xl font-bold tabular text-text-primary mt-1">{stats.avg}</div>
           </Card>
           <Card glass className="p-4">
             <div className="caption">Top Score</div>
@@ -72,14 +72,14 @@ export default function LeaderboardPage() {
       )}
 
       {allZero && (
-        <Card className="p-4 mb-4 text-amber-200 border-amber-700/40" style={{ background: 'rgba(146,64,14,0.1)' }}>
-          <span className="caption text-amber-300">Scores Revealed Draft Night</span>
-          <div className="text-[13px] mt-1 text-amber-200/80">Mocks are shown in submission order until real results are entered.</div>
+        <Card className="banner-warn p-4 mb-4">
+          <span className="caption" style={{ color: 'var(--warn-text)' }}>Scores Revealed Draft Night</span>
+          <div className="text-[13px] mt-1 opacity-80">Mocks are shown in submission order until real results are entered.</div>
         </Card>
       )}
 
       {err && (
-        <Card className="p-4 mb-4 text-red-300 border-red-700/40" style={{ background: 'rgba(127,29,29,0.15)' }}>
+        <Card className="banner-error p-4 mb-4">
           {err}
           <Button size="sm" variant="ghost" className="ml-3" onClick={() => location.reload()}>Retry</Button>
         </Card>
@@ -98,7 +98,7 @@ export default function LeaderboardPage() {
               >
                 <div className="text-3xl mb-1">{MEDALS[e.rank]}</div>
                 <div className="caption">#{e.rank}</div>
-                <div className="font-display font-bold text-white text-[18px] uppercase tracking-wide mt-1 truncate">
+                <div className="font-display font-bold text-text-primary text-[18px] uppercase tracking-wide mt-1 truncate">
                   {prettyName(e.display_name)}{me && <span className="ml-2 text-[10px] text-accent">YOU</span>}
                 </div>
                 <div className="font-mono font-bold text-4xl tabular text-gold mt-3">{e.total_score}</div>
@@ -149,7 +149,7 @@ export default function LeaderboardPage() {
                         <span className={e.rank <= 3 ? 'text-gold' : 'text-text-secondary'}>{e.rank}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-white font-semibold">{prettyName(e.display_name)}</span>
+                        <span className="text-text-primary font-semibold">{prettyName(e.display_name)}</span>
                         {me && <span className="ml-2 font-display uppercase tracking-[0.14em] text-[9.5px] text-accent">You</span>}
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-bold tabular text-gold">{e.total_score}</td>

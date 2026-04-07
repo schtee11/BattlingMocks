@@ -9,7 +9,7 @@ function Stat({ label, value }) {
   const n = useCountUp(value ?? 0);
   return (
     <div>
-      <div className="font-mono font-bold text-3xl md:text-4xl tabular text-white">{n}</div>
+      <div className="font-mono font-bold text-3xl md:text-4xl tabular text-text-primary">{n}</div>
       <div className="caption mt-1.5">{label}</div>
     </div>
   );
@@ -25,7 +25,7 @@ export default function Home() {
       <div className="relative overflow-hidden">
         <div className="max-w-5xl mx-auto px-4 pt-20 md:pt-28 pb-14 text-center">
           <div className="caption text-accent mb-4">April 23 · Pittsburgh, PA</div>
-          <h1 className="font-display display-xl text-hero text-white">
+          <h1 className="font-display display-xl text-hero text-text-primary">
             Can You Call<br />
             <span style={{ backgroundImage: 'var(--gradient-accent)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>
               The 2026 Draft?
@@ -37,7 +37,7 @@ export default function Home() {
           <div className="mt-8 flex justify-center gap-3 flex-wrap">
             <Link to="/join"><Button size="xl" className="animate-pulse-glow">Build Your Mock →</Button></Link>
             <Link to="/leaderboard">
-              <span className="inline-flex items-center gap-1.5 text-text-secondary hover:text-white text-[13px] font-display uppercase tracking-[0.14em] py-4 transition">
+              <span className="inline-flex items-center gap-1.5 text-text-secondary hover:text-text-primary text-[13px] font-display uppercase tracking-[0.14em] py-4 transition">
                 View Leaderboard →
               </span>
             </Link>
@@ -70,7 +70,7 @@ export default function Home() {
       <div className="max-w-4xl mx-auto px-4 pb-24">
         <div className="text-center mb-8">
           <div className="caption text-accent">Three steps</div>
-          <h2 className="font-display display-xl text-display text-white mt-1">How It Works</h2>
+          <h2 className="font-display display-xl text-display text-text-primary mt-1">How It Works</h2>
         </div>
         <div className="grid md:grid-cols-3 gap-4 stagger">
           {[
@@ -85,7 +85,7 @@ export default function Home() {
               >
                 {s.n}
               </div>
-              <div className="mt-4 text-white font-display font-semibold text-[17px] uppercase tracking-wide">{s.t}</div>
+              <div className="mt-4 text-text-primary font-display font-semibold text-[17px] uppercase tracking-wide">{s.t}</div>
               <div className="text-text-secondary text-[13px] mt-1.5">{s.d}</div>
             </Card>
           ))}

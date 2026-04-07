@@ -113,7 +113,7 @@ export default function MyMock() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <div className="caption text-accent">Your Board</div>
-            <h1 className="font-display display-xl text-display text-white mt-1">My Mock</h1>
+            <h1 className="font-display display-xl text-display text-text-primary mt-1">My Mock</h1>
             <div className="text-text-muted text-[11px] mt-1 font-display uppercase tracking-[0.12em]">
               Submitted {new Date(mock.submitted_at).toLocaleDateString()}
             </div>
@@ -154,9 +154,9 @@ export default function MyMock() {
       </Card>
 
       {!scored && (
-        <Card className="p-3 text-[13px] mb-4 border-amber-700/40" style={{ background: 'rgba(146,64,14,0.1)', color: '#fcd34d' }}>
-          <span className="caption text-amber-300">Awaiting Results</span>
-          <div className="mt-0.5 text-amber-200/80">Scoring will appear after the admin enters the real draft picks.</div>
+        <Card className="banner-warn p-3 text-[13px] mb-4">
+          <span className="caption" style={{ color: 'var(--warn-text)' }}>Awaiting Results</span>
+          <div className="mt-0.5 opacity-80">Scoring will appear after the admin enters the real draft picks.</div>
         </Card>
       )}
 
@@ -185,13 +185,13 @@ export default function MyMock() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <div className="text-white font-semibold truncate">{p.name}</div>
+                  <div className="text-text-primary font-semibold truncate">{p.name}</div>
                   <PositionBadge position={p.position} />
                 </div>
                 <div className="text-[11px] text-text-muted truncate">{p.school}</div>
                 {scored && actualAtThisSlot && actualAtThisSlot.player_id !== p.player_id && (
                   <div className="text-[11px] text-text-muted mt-0.5">
-                    Actual: <span className="text-white">{actualAtThisSlot.name}</span>
+                    Actual: <span className="text-text-primary">{actualAtThisSlot.name}</span>
                   </div>
                 )}
               </div>
@@ -209,14 +209,14 @@ export default function MyMock() {
       {scored && summary && (summary.biggestMisses.length > 0 || summary.r1Missed.length > 0) && (
         <Card glass className="p-6 mt-6">
           <div className="caption text-accent">Post-mortem</div>
-          <h2 className="font-display display-xl text-[22px] text-white mt-1 mb-4">Where you went wrong</h2>
+          <h2 className="font-display display-xl text-[22px] text-text-primary mt-1 mb-4">Where you went wrong</h2>
           {summary.biggestMisses.length > 0 && (
             <div className="mb-5">
               <div className="caption mb-2">Your picks that went undrafted in R1</div>
               <ul className="text-[13px] text-text-secondary space-y-1">
                 {summary.biggestMisses.map((m) => (
                   <li key={m.player.player_id}>
-                    · <span className="text-white">{m.player.name}</span> ({m.player.position}) — pick {m.player.pick_number}
+                    · <span className="text-text-primary">{m.player.name}</span> ({m.player.position}) — pick {m.player.pick_number}
                   </li>
                 ))}
               </ul>
@@ -228,7 +228,7 @@ export default function MyMock() {
               <ul className="text-[13px] text-text-secondary space-y-1">
                 {summary.r1Missed.map((a) => (
                   <li key={a.pick_number}>
-                    · Pick {a.pick_number}: <span className="text-white">{a.name}</span> ({a.position})
+                    · Pick {a.pick_number}: <span className="text-text-primary">{a.name}</span> ({a.position})
                   </li>
                 ))}
               </ul>

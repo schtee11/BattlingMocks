@@ -275,7 +275,7 @@ export default function Draft() {
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>
             <div className="caption text-accent">War Room · 2026</div>
-            <h1 className="font-display display-xl text-[30px] md:text-[38px] text-white mt-1">
+            <h1 className="font-display display-xl text-[30px] md:text-[38px] text-text-primary mt-1">
               Build Your Mock
             </h1>
             <p className="text-text-secondary text-[13px] mt-1">
@@ -286,7 +286,7 @@ export default function Draft() {
             {onClockSlot && !locked && (
               <div className="text-right">
                 <div className="caption text-[10px]">On the clock</div>
-                <div className="font-display font-bold uppercase tracking-wide text-white text-[14px] mt-1">
+                <div className="font-display font-bold uppercase tracking-wide text-text-primary text-[14px] mt-1">
                   Pick <span className="text-accent">{onClockSlot}</span>
                   {orderByPick.get(onClockSlot) && (
                     <span className="text-text-secondary"> · {orderByPick.get(onClockSlot).team}</span>
@@ -309,9 +309,9 @@ export default function Draft() {
       </div>
 
       {locked && (
-        <Card className="mb-4 px-4 py-3 text-amber-300 border-amber-700/40" style={{ background: 'rgba(146,64,14,0.15)' }}>
+        <Card className="banner-warn mb-4 px-4 py-3">
           Submissions are locked. Head to the{' '}
-          <Link to="/leaderboard" className="underline text-amber-200">leaderboard</Link>.
+          <Link to="/leaderboard" className="underline">leaderboard</Link>.
         </Card>
       )}
 
@@ -325,7 +325,7 @@ export default function Draft() {
           {/* Pick slots */}
           <Card glass className="p-3 overflow-hidden">
             <div className="flex items-center justify-between mb-3 px-1">
-              <h2 className="font-display font-bold text-[15px] uppercase tracking-[0.18em] text-white">
+              <h2 className="font-display font-bold text-[15px] uppercase tracking-[0.18em] text-text-primary">
                 Round 1 — 2026
               </h2>
               <div className="flex gap-1">
@@ -381,7 +381,7 @@ export default function Draft() {
           <DragOverlay modifiers={[snapCenterToCursor]} dropAnimation={null}>
             {activePlayer ? (
               <div
-                className="px-3 py-2 rounded-lg text-sm text-white font-semibold shadow-glow pointer-events-none select-none"
+                className="px-3 py-2 rounded-lg text-sm text-text-primary font-semibold shadow-glow pointer-events-none select-none"
                 style={{
                   background: 'var(--bg-elevated)',
                   borderLeft: `3px solid ${posHex(activePlayer.position)}`,
@@ -510,7 +510,7 @@ function ProspectListInner({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search prospects…"
-              className="w-full bg-bg-deep/70 border border-border-subtle rounded-lg pl-9 pr-3 py-2.5 text-white text-[13px] focus:border-accent outline-none transition"
+              className="w-full bg-bg-deep/70 border border-border-subtle rounded-lg pl-9 pr-3 py-2.5 text-text-primary text-[13px] focus:border-accent outline-none transition"
             />
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8" />
@@ -520,7 +520,7 @@ function ProspectListInner({
           <select
             value={posFilter}
             onChange={(e) => setPosFilter(e.target.value)}
-            className="bg-bg-deep/70 border border-border-subtle rounded-lg px-2 py-2 text-white text-[12px] font-display uppercase tracking-wide"
+            className="bg-bg-deep/70 border border-border-subtle rounded-lg px-2 py-2 text-text-primary text-[12px] font-display uppercase tracking-wide"
             aria-label="Position filter"
           >
             {['ALL', ...POSITIONS].map((p) => <option key={p}>{p}</option>)}
@@ -534,7 +534,7 @@ function ProspectListInner({
             <button
               onClick={() => setView('bigboard')}
               className={`px-3 py-1 rounded-md font-display text-[10px] uppercase tracking-[0.14em] transition ${
-                view === 'bigboard' ? 'bg-accent text-bg-deep' : 'text-text-secondary hover:text-white'
+                view === 'bigboard' ? 'bg-accent text-bg-deep' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               Big Board
@@ -542,7 +542,7 @@ function ProspectListInner({
             <button
               onClick={() => setView('byposition')}
               className={`px-3 py-1 rounded-md font-display text-[10px] uppercase tracking-[0.14em] transition ${
-                view === 'byposition' ? 'bg-accent text-bg-deep' : 'text-text-secondary hover:text-white'
+                view === 'byposition' ? 'bg-accent text-bg-deep' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
               By Position

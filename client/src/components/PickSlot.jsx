@@ -62,7 +62,7 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
         </div>
         {player ? (
           <div className="flex items-center gap-2 mt-0.5">
-            <div className="text-white font-semibold truncate text-[14px]">{player.name}</div>
+            <div className="text-text-primary font-semibold truncate text-[14px]">{player.name}</div>
             <PositionBadge position={player.position} />
             <div className="text-[11px] text-text-muted truncate hidden sm:block">{player.school}</div>
           </div>

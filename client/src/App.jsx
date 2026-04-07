@@ -14,7 +14,7 @@ import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 export default function App() {
   const location = useLocation();
   return (
-    <div className="min-h-screen text-slate-100">
+    <div className="min-h-screen text-text-primary">
       <Navbar />
       <ErrorBoundary>
         <div key={location.pathname} className="route-fade">

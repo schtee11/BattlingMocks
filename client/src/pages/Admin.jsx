@@ -63,13 +63,13 @@ export default function Admin() {
     return (
       <div className="max-w-md mx-auto px-4 py-16 route-fade">
         <Card className="p-6">
-          <h1 className="text-2xl font-bold text-white mb-3">Admin</h1>
+          <h1 className="text-2xl font-bold text-text-primary mb-3">Admin</h1>
           <input
             type="password"
             value={key}
             onChange={(e) => setKey(e.target.value)}
             placeholder="Admin key"
-            className="w-full bg-ink border border-slate-700 rounded-lg px-4 py-3 text-white mb-3 focus:border-accent outline-none"
+            className="w-full bg-bg-deep border border-border-focus rounded-lg px-4 py-3 text-text-primary mb-3 focus:border-accent outline-none"
             onKeyDown={(e) => e.key === 'Enter' && unlock()}
           />
           <Button className="w-full" size="lg" onClick={unlock}>Unlock</Button>
@@ -152,14 +152,14 @@ export default function Admin() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 route-fade">
       <div className="caption text-accent">Control Room</div>
-      <h1 className="font-display display-xl text-display text-white mt-1 mb-5">Admin</h1>
+      <h1 className="font-display display-xl text-display text-text-primary mt-1 mb-5">Admin</h1>
       <div className="flex gap-1 border-b border-border-subtle mb-5 overflow-x-auto">
         {TABS.map(([id, label]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             className={`px-4 py-3 whitespace-nowrap border-b-2 transition font-display font-semibold text-[11px] uppercase tracking-[0.16em] ${
-              tab === id ? 'border-accent text-white' : 'border-transparent text-text-secondary hover:text-white'
+              tab === id ? 'border-accent text-text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'
             }`}
           >
             {label}
@@ -171,12 +171,12 @@ export default function Admin() {
       {tab === 'results' && (
         <div className="grid md:grid-cols-2 gap-4">
           <Card className="p-5">
-            <h3 className="font-semibold text-white mb-3">Enter a pick</h3>
+            <h3 className="font-semibold text-text-primary mb-3">Enter a pick</h3>
             <form onSubmit={saveActual} className="space-y-3">
               <select
                 value={pickNum}
                 onChange={(e) => setPickNum(e.target.value)}
-                className="w-full bg-ink border border-slate-700 rounded-lg px-3 py-2 text-white"
+                className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary"
               >
                 {Array.from({ length: 32 }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={n}>Pick {n} — {order.find((o) => o.pick_number === n)?.team || ''}</option>
@@ -186,25 +186,25 @@ export default function Admin() {
                 value={playerSearch}
                 onChange={(e) => { setPlayerSearch(e.target.value); setSelectedPlayer(null); }}
                 placeholder="Search player…"
-                className="w-full bg-ink border border-slate-700 rounded-lg px-3 py-2 text-white"
+                className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary"
               />
               {playerSearch && !selectedPlayer && (
-                <ul className="max-h-48 overflow-y-auto bg-ink border border-slate-700 rounded-lg divide-y divide-slate-800">
+                <ul className="max-h-48 overflow-y-auto bg-bg-deep border border-border-focus rounded-lg divide-y divide-border-subtle">
                   {filteredPlayers.slice(0, 20).map((p) => (
                     <li
                       key={p.id}
                       onClick={() => { setSelectedPlayer(p); setPlayerSearch(p.name); }}
                       className="px-3 py-2 hover:bg-white/5 cursor-pointer flex items-center gap-2"
                     >
-                      <span className="text-white text-sm flex-1">{p.name}</span>
+                      <span className="text-text-primary text-sm flex-1">{p.name}</span>
                       <PositionBadge position={p.position} />
                     </li>
                   ))}
                 </ul>
               )}
               {selectedPlayer && (
-                <div className="text-sm text-slate-300">
-                  Selected: <span className="text-white">{selectedPlayer.name}</span>
+                <div className="text-sm text-text-secondary">
+                  Selected: <span className="text-text-primary">{selectedPlayer.name}</span>
                 </div>
               )}
               <input
@@ -212,23 +212,23 @@ export default function Admin() {
                 onChange={(e) => setTeam(e.target.value.toUpperCase())}
                 placeholder="Team abbr (e.g. NYJ)"
                 maxLength={5}
-                className="w-full bg-ink border border-slate-700 rounded-lg px-3 py-2 text-white uppercase"
+                className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary uppercase"
               />
               <Button type="submit" className="w-full">Save Pick</Button>
             </form>
           </Card>
           <Card className="p-5">
-            <h3 className="font-semibold text-white mb-3">Entered ({actuals.length}/32)</h3>
+            <h3 className="font-semibold text-text-primary mb-3">Entered ({actuals.length}/32)</h3>
             <ul className="space-y-1 max-h-[55vh] overflow-y-auto">
               {actuals.map((a) => (
-                <li key={a.pick_number} className="flex items-center gap-2 py-1.5 border-b border-slate-800">
+                <li key={a.pick_number} className="flex items-center gap-2 py-1.5 border-b border-border-subtle">
                   <span className="font-mono text-accent w-8 text-sm">{a.pick_number}</span>
-                  <span className="text-white text-sm flex-1 truncate">{a.name}</span>
+                  <span className="text-text-primary text-sm flex-1 truncate">{a.name}</span>
                   <PositionBadge position={a.position} />
-                  <span className="text-slate-500 text-xs w-10 text-right">{a.team}</span>
+                  <span className="text-text-muted text-xs w-10 text-right">{a.team}</span>
                 </li>
               ))}
-              {actuals.length === 0 && <li className="text-slate-500 text-sm">No picks entered yet.</li>}
+              {actuals.length === 0 && <li className="text-text-muted text-sm">No picks entered yet.</li>}
             </ul>
           </Card>
         </div>
@@ -238,24 +238,24 @@ export default function Admin() {
       {tab === 'order' && (
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-white">2026 Round 1 Draft Order</h3>
+            <h3 className="font-semibold text-text-primary">2026 Round 1 Draft Order</h3>
             <Button size="sm" onClick={saveDraftOrder}>Save</Button>
           </div>
           <ul className="grid md:grid-cols-2 gap-2">
             {order.map((o, idx) => (
-              <li key={o.pick_number} className="flex items-center gap-2 p-2 bg-ink rounded border border-slate-800">
+              <li key={o.pick_number} className="flex items-center gap-2 p-2 bg-bg-deep rounded border border-border-subtle">
                 <div className="w-8 font-mono text-accent text-sm">{o.pick_number}</div>
                 <input
                   value={o.team}
                   onChange={(e) => setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team: e.target.value.toUpperCase().slice(0, 5) } : x))}
                   placeholder="TEAM"
-                  className="w-16 bg-ink border border-slate-700 rounded px-2 py-1 text-white text-sm uppercase"
+                  className="w-16 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm uppercase"
                 />
                 <input
                   value={o.team_name}
                   onChange={(e) => setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team_name: e.target.value } : x))}
                   placeholder="Team name"
-                  className="flex-1 bg-ink border border-slate-700 rounded px-2 py-1 text-white text-sm"
+                  className="flex-1 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm"
                 />
               </li>
             ))}
@@ -268,27 +268,27 @@ export default function Admin() {
         <div className="space-y-4">
           <Card className="p-5">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-white">Prospects ({players.length})</h3>
+              <h3 className="font-semibold text-text-primary">Prospects ({players.length})</h3>
               <Button size="sm" variant="secondary" onClick={importProspects}>Import from JSON</Button>
             </div>
             <form onSubmit={addPlayer} className="grid md:grid-cols-4 gap-2 mb-4">
-              <input required value={newP.name} onChange={(e) => setNewP({ ...newP, name: e.target.value })} placeholder="Name" className="bg-ink border border-slate-700 rounded px-2 py-2 text-sm md:col-span-2" />
-              <input required value={newP.position} onChange={(e) => setNewP({ ...newP, position: e.target.value.toUpperCase() })} placeholder="Pos" className="bg-ink border border-slate-700 rounded px-2 py-2 text-sm uppercase" />
-              <input value={newP.school} onChange={(e) => setNewP({ ...newP, school: e.target.value })} placeholder="School" className="bg-ink border border-slate-700 rounded px-2 py-2 text-sm" />
+              <input required value={newP.name} onChange={(e) => setNewP({ ...newP, name: e.target.value })} placeholder="Name" className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm md:col-span-2" />
+              <input required value={newP.position} onChange={(e) => setNewP({ ...newP, position: e.target.value.toUpperCase() })} placeholder="Pos" className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm uppercase" />
+              <input value={newP.school} onChange={(e) => setNewP({ ...newP, school: e.target.value })} placeholder="School" className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm" />
               <Button type="submit" className="md:col-span-4">Add Prospect</Button>
             </form>
             <input
               value={playerSearch}
               onChange={(e) => setPlayerSearch(e.target.value)}
               placeholder="Search…"
-              className="w-full bg-ink border border-slate-700 rounded px-2 py-2 text-sm mb-2"
+              className="w-full bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm mb-2"
             />
-            <ul className="max-h-[50vh] overflow-y-auto divide-y divide-slate-800">
+            <ul className="max-h-[50vh] overflow-y-auto divide-y divide-border-subtle">
               {filteredPlayers.map((p) => (
                 <li key={p.id} className="flex items-center gap-2 py-2 text-sm">
-                  <span className="text-white flex-1 truncate">{p.name}</span>
+                  <span className="text-text-primary flex-1 truncate">{p.name}</span>
                   <PositionBadge position={p.position} />
-                  <span className="text-slate-500 truncate w-32 hidden sm:block">{p.school}</span>
+                  <span className="text-text-muted truncate w-32 hidden sm:block">{p.school}</span>
                   <button onClick={() => setConfirmDelete(p)} className="text-red-400 hover:text-red-300 text-xs">Delete</button>
                 </li>
               ))}
@@ -301,18 +301,18 @@ export default function Admin() {
       {tab === 'scoring' && (
         <div className="grid md:grid-cols-2 gap-4">
           <Card className="p-5">
-            <h3 className="font-semibold text-white mb-3">Run scoring</h3>
-            <p className="text-slate-400 text-sm mb-3">
+            <h3 className="font-semibold text-text-primary mb-3">Run scoring</h3>
+            <p className="text-text-secondary text-sm mb-3">
               Safe to re-run as more actual picks are entered.
             </p>
             <Button onClick={runScore}>Score all mocks</Button>
             {settings?.scoring_run_at && (
-              <div className="mt-3 text-xs text-slate-500">
+              <div className="mt-3 text-xs text-text-muted">
                 Last run: {new Date(settings.scoring_run_at).toLocaleString()}
               </div>
             )}
             {scoreSummary && (
-              <div className="mt-4 text-sm text-slate-300 space-y-0.5">
+              <div className="mt-4 text-sm text-text-secondary space-y-0.5">
                 <div>Total mocks: {scoreSummary.total_mocks}</div>
                 <div>Scored (non-zero): {scoreSummary.scored}</div>
                 <div>Average: {scoreSummary.avg_score}</div>
@@ -321,8 +321,8 @@ export default function Admin() {
             )}
           </Card>
           <Card className="p-5">
-            <h3 className="font-semibold text-white mb-3">Submissions lock</h3>
-            <div className="text-sm text-slate-400 mb-3">
+            <h3 className="font-semibold text-text-primary mb-3">Submissions lock</h3>
+            <div className="text-sm text-text-secondary mb-3">
               Current status: <span className={settings?.is_locked ? 'text-amber-300' : 'text-emerald-300'}>
                 {settings?.is_locked ? 'Locked' : 'Open'}
               </span>
@@ -346,7 +346,7 @@ export default function Admin() {
           </>
         }
       >
-        This removes <span className="text-white">{confirmDelete?.name}</span>. Players referenced by
+        This removes <span className="text-text-primary">{confirmDelete?.name}</span>. Players referenced by
         any submitted mock can't be deleted.
       </Modal>
     </div>
