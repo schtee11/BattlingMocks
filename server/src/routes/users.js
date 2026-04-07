@@ -3,6 +3,18 @@ import { pool } from '../db/pool.js';
 
 const router = Router();
 
+// Debounced availability check for the Join page.
+router.get('/check', async (req, res) => {
+  const name = (req.query.name || '').toString().trim();
+  if (name.length < 2) return res.json({ available: false, reason: 'too_short' });
+  if (name.length > 60) return res.json({ available: false, reason: 'too_long' });
+  const { rows } = await pool.query(
+    'SELECT id FROM users WHERE LOWER(display_name) = LOWER($1)',
+    [name]
+  );
+  res.json({ available: rows.length === 0 });
+});
+
 router.post('/', async (req, res) => {
   const { display_name } = req.body || {};
   if (!display_name || typeof display_name !== 'string' || display_name.trim().length < 2) {

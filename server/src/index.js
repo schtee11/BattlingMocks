@@ -6,6 +6,9 @@ import users from './routes/users.js';
 import mocks from './routes/mocks.js';
 import leaderboard from './routes/leaderboard.js';
 import admin from './routes/admin.js';
+import draftOrder from './routes/draftOrder.js';
+import stats from './routes/stats.js';
+import actuals from './routes/actuals.js';
 import { pool } from './db/pool.js';
 
 dotenv.config();
@@ -38,6 +41,15 @@ app.use('/api/users', users);
 app.use('/api/mocks', mocks);
 app.use('/api/leaderboard', leaderboard);
 app.use('/api/admin', admin);
+app.use('/api/draft-order', draftOrder);
+app.use('/api/stats', stats);
+app.use('/api/actual-picks', actuals);
+
+// Consistent error fallback
+app.use((err, _req, res, _next) => {
+  console.error('[error]', err);
+  res.status(err.status || 500).json({ error: err.message || 'server error' });
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

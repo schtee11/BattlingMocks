@@ -44,6 +44,15 @@ router.post('/', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'user not found' });
     }
+    const playerIds = picks.map((p) => p.player_id);
+    const playerCheck = await client.query(
+      'SELECT id FROM players WHERE id = ANY($1::int[])',
+      [playerIds]
+    );
+    if (playerCheck.rows.length !== playerIds.length) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'one or more player_ids do not exist' });
+    }
     const existing = await client.query('SELECT id FROM mocks WHERE user_id = $1', [user_id]);
     let mockId;
     if (existing.rows.length) {

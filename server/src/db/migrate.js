@@ -33,14 +33,14 @@ CREATE TABLE IF NOT EXISTS mock_picks (
   id SERIAL PRIMARY KEY,
   mock_id INTEGER NOT NULL REFERENCES mocks(id) ON DELETE CASCADE,
   pick_number INTEGER NOT NULL CHECK (pick_number BETWEEN 1 AND 32),
-  player_id INTEGER NOT NULL REFERENCES players(id),
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
   UNIQUE (mock_id, pick_number),
   UNIQUE (mock_id, player_id)
 );
 
 CREATE TABLE IF NOT EXISTS actual_picks (
   pick_number INTEGER PRIMARY KEY CHECK (pick_number BETWEEN 1 AND 32),
-  player_id INTEGER NOT NULL REFERENCES players(id),
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
   team VARCHAR(5),
   entered_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -52,9 +52,22 @@ CREATE TABLE IF NOT EXISTS draft_settings (
   scoring_run_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS draft_order (
+  pick_number INTEGER PRIMARY KEY CHECK (pick_number BETWEEN 1 AND 32),
+  team VARCHAR(5) NOT NULL,
+  team_name VARCHAR(80) NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 INSERT INTO draft_settings (id, draft_year, is_locked)
 VALUES (1, 2026, FALSE)
 ON CONFLICT (id) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_mocks_user_id ON mocks(user_id);
+CREATE INDEX IF NOT EXISTS idx_mocks_total_score ON mocks(total_score DESC, submitted_at ASC);
+CREATE INDEX IF NOT EXISTS idx_mock_picks_mock_id ON mock_picks(mock_id);
+CREATE INDEX IF NOT EXISTS idx_actual_picks_player ON actual_picks(player_id);
+CREATE INDEX IF NOT EXISTS idx_users_display_name_lower ON users (LOWER(display_name));
 `;
 
 export async function migrate() {
