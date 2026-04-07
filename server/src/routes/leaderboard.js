@@ -17,6 +17,7 @@ router.get('/', async (req, res) => {
         m.total_score,
         m.submitted_at,
         u.display_name,
+        u.avatar_url,
         COUNT(mp.*) FILTER (WHERE ap.player_id IS NOT NULL) AS picks_correct,
         COUNT(mp.*) FILTER (WHERE ap.pick_number = mp.pick_number) AS exact_picks
       FROM mocks m
@@ -26,7 +27,7 @@ router.get('/', async (req, res) => {
       GROUP BY m.id, u.id
     )
     SELECT
-      id, user_id, display_name, total_score, submitted_at,
+      id, user_id, display_name, avatar_url, total_score, submitted_at,
       picks_correct::int, exact_picks::int,
       RANK() OVER (ORDER BY total_score DESC, submitted_at ASC) AS rank
     FROM stats

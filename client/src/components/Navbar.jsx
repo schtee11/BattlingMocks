@@ -2,6 +2,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 import { prettyName } from '../lib/displayName.js';
 import { ThemeToggle } from './ThemeToggle.jsx';
+import { Avatar } from './ui/Avatar.jsx';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
@@ -46,24 +47,7 @@ export default function Navbar() {
           <div className="ml-1 mr-1"><ThemeToggle /></div>
           {user ? (
             <div className="flex items-center gap-2.5 pl-3 ml-2 border-l border-border-subtle">
-              {user.avatar_url ? (
-                <img
-                  src={user.avatar_url}
-                  alt=""
-                  width={24}
-                  height={24}
-                  loading="lazy"
-                  decoding="async"
-                  className="w-6 h-6 rounded-full ring-1 ring-border-focus"
-                />
-              ) : (
-                <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center font-display font-bold text-[10px] text-bg-deep"
-                  style={{ background: 'var(--gradient-accent)' }}
-                >
-                  {prettyName(user.display_name)?.[0]?.toUpperCase() || '?'}
-                </div>
-              )}
+              <Avatar url={user.avatar_url} name={user.display_name} size="xs" />
               <span className="font-display uppercase tracking-[0.14em] text-[11px] text-text-secondary hidden sm:inline">
                 {prettyName(user.display_name)}
               </span>

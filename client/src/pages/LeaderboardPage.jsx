@@ -5,6 +5,7 @@ import { prettyName } from '../lib/displayName.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
+import { Avatar } from '../components/ui/Avatar.jsx';
 
 const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
@@ -96,7 +97,10 @@ export default function LeaderboardPage() {
                 glass
                 className={`p-5 text-center relative ${e.rank === 1 ? 'shadow-glow-gold' : ''} ${me ? 'ring-1 ring-accent/40' : ''}`}
               >
-                <div className="text-3xl mb-1">{MEDALS[e.rank]}</div>
+                <div className="text-3xl mb-2">{MEDALS[e.rank]}</div>
+                <div className="flex justify-center mb-2">
+                  <Avatar url={e.avatar_url} name={e.display_name} size="lg" />
+                </div>
                 <div className="caption">#{e.rank}</div>
                 <div className="font-display font-bold text-text-primary text-[18px] uppercase tracking-wide mt-1 truncate">
                   {prettyName(e.display_name)}{me && <span className="ml-2 text-[10px] text-accent">YOU</span>}
@@ -149,8 +153,11 @@ export default function LeaderboardPage() {
                         <span className={e.rank <= 3 ? 'text-gold' : 'text-text-secondary'}>{e.rank}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-text-primary font-semibold">{prettyName(e.display_name)}</span>
-                        {me && <span className="ml-2 font-display uppercase tracking-[0.14em] text-[9.5px] text-accent">You</span>}
+                        <div className="flex items-center gap-2.5">
+                          <Avatar url={e.avatar_url} name={e.display_name} size="xs" />
+                          <span className="text-text-primary font-semibold truncate">{prettyName(e.display_name)}</span>
+                          {me && <span className="font-display uppercase tracking-[0.14em] text-[9.5px] text-accent">You</span>}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-bold tabular text-gold">{e.total_score}</td>
                       <td className="px-4 py-3 text-right font-mono tabular text-text-secondary hidden sm:table-cell">{e.picks_correct}/32</td>
