@@ -7,6 +7,7 @@ import Draft from './pages/Draft.jsx';
 import LeaderboardPage from './pages/LeaderboardPage.jsx';
 import MyMock from './pages/MyMock.jsx';
 import Admin from './pages/Admin.jsx';
+import AuthCallback from './pages/AuthCallback.jsx';
 import NotFound from './pages/NotFound.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/leaderboard" element={<LeaderboardPage />} />
             <Route path="/my-mock" element={<MyMock />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </div>

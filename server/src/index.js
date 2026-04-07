@@ -9,6 +9,7 @@ import admin from './routes/admin.js';
 import draftOrder from './routes/draftOrder.js';
 import stats from './routes/stats.js';
 import actuals from './routes/actuals.js';
+import auth from './routes/auth.js';
 import { pool } from './db/pool.js';
 
 dotenv.config();
@@ -44,6 +45,7 @@ app.use('/api/admin', admin);
 app.use('/api/draft-order', draftOrder);
 app.use('/api/stats', stats);
 app.use('/api/actual-picks', actuals);
+app.use('/api/auth', auth);
 
 // Consistent error fallback
 app.use((err, _req, res, _next) => {

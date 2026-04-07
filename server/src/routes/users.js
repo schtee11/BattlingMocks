@@ -8,7 +8,7 @@ router.get('/by-name', async (req, res) => {
   const name = (req.query.name || '').toString().trim();
   if (!name) return res.status(400).json({ error: 'name required' });
   const { rows } = await pool.query(
-    'SELECT id, display_name, created_at FROM users WHERE LOWER(display_name) = LOWER($1)',
+    'SELECT id, display_name, avatar_url, created_at FROM users WHERE LOWER(display_name) = LOWER($1)',
     [name]
   );
   if (!rows.length) return res.status(404).json({ error: 'not found' });
@@ -35,7 +35,7 @@ router.post('/', async (req, res) => {
   const name = display_name.trim().slice(0, 60);
   try {
     const { rows } = await pool.query(
-      'INSERT INTO users (display_name) VALUES ($1) RETURNING id, display_name, created_at',
+      'INSERT INTO users (display_name) VALUES ($1) RETURNING id, display_name, avatar_url, created_at',
       [name]
     );
     res.status(201).json(rows[0]);
@@ -50,7 +50,7 @@ router.post('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   const { rows } = await pool.query(
-    'SELECT id, display_name, created_at FROM users WHERE id = $1',
+    'SELECT id, display_name, avatar_url, created_at FROM users WHERE id = $1',
     [req.params.id]
   );
   if (!rows.length) return res.status(404).json({ error: 'not found' });

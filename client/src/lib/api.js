@@ -1,5 +1,8 @@
 const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001';
 
+export const API_BASE = BASE;
+export const DISCORD_AUTH_URL = `${BASE}/api/auth/discord`;
+
 async function request(path, { method = 'GET', body, adminKey } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (adminKey) headers['X-Admin-Key'] = adminKey;

@@ -42,7 +42,21 @@ export default function Navbar() {
             </NavLink>
           )}
           {user ? (
-            <div className="flex items-center gap-3 pl-3 ml-2 border-l border-border-subtle">
+            <div className="flex items-center gap-2.5 pl-3 ml-2 border-l border-border-subtle">
+              {user.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt=""
+                  className="w-6 h-6 rounded-full ring-1 ring-border-focus"
+                />
+              ) : (
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center font-display font-bold text-[10px] text-bg-deep"
+                  style={{ background: 'var(--gradient-accent)' }}
+                >
+                  {user.display_name?.[0]?.toUpperCase() || '?'}
+                </div>
+              )}
               <span className="font-display uppercase tracking-[0.14em] text-[11px] text-text-secondary hidden sm:inline">
                 {user.display_name}
               </span>
