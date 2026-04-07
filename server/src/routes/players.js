@@ -11,7 +11,7 @@ router.get('/', async (_req, res) => {
      FROM players
      ORDER BY id`
   );
-  res.set('Cache-Control', 'public, max-age=60');
+  res.set('Cache-Control', 'public, max-age=300');
   res.json(rows);
 });
 

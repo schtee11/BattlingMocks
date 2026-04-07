@@ -7,7 +7,7 @@ router.get('/', async (_req, res) => {
   const { rows } = await pool.query(
     'SELECT pick_number, team, team_name FROM draft_order ORDER BY pick_number'
   );
-  res.set('Cache-Control', 'public, max-age=60');
+  res.set('Cache-Control', 'public, max-age=3600');
   res.json(rows);
 });
 

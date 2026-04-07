@@ -1,8 +1,9 @@
+import { memo } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { posHex } from '../lib/positions.js';
 import { PositionBadge } from './ui/Badge.jsx';
 
-export function ProspectCard({ player, used, selected, onClick, onDraft, onClockSlot }) {
+function ProspectCardInner({ player, used, selected, onClick, onDraft, onClockSlot }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `player-${player.id}`,
     disabled: used,
@@ -10,7 +11,7 @@ export function ProspectCard({ player, used, selected, onClick, onDraft, onClock
 
   const color = posHex(player.position);
 
-  const base = 'relative p-2.5 rounded-lg cursor-pointer transition-all duration-150 touch-none border';
+  const base = 'relative p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 touch-none border will-anim';
   const state = selected
     ? 'border-accent bg-accent/[0.07] shadow-glow'
     : used
@@ -18,13 +19,16 @@ export function ProspectCard({ player, used, selected, onClick, onDraft, onClock
     : 'border-border-subtle bg-bg-surface/40 hover:border-border-focus hover:-translate-y-[1px] hover:bg-white/[0.03]';
   const dragging = isDragging ? 'opacity-50 rotate-1' : '';
 
+  function handleRowClick() { onClick?.(player); }
+  function handleDraftClick(e) { e.stopPropagation(); onDraft?.(player); }
+
   // Everything except the draft button uses drag listeners.
   return (
     <li
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      onClick={onClick}
+      onClick={handleRowClick}
       className={`group ${base} ${state} ${dragging}`}
       style={
         !used && !selected
@@ -50,7 +54,7 @@ export function ProspectCard({ player, used, selected, onClick, onDraft, onClock
           <button
             // Stop drag + click propagation so clicking the button only drafts
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onDraft(player); }}
+            onClick={handleDraftClick}
             title={`Draft to Pick ${onClockSlot}`}
             className="ml-1 hidden sm:inline-flex opacity-0 group-hover:opacity-100 transition-opacity font-display font-semibold text-[9.5px] uppercase tracking-[0.12em] px-2 py-1 rounded-md text-bg-deep"
             style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 14px -4px rgba(0,229,255,0.6)' }}
@@ -62,3 +66,14 @@ export function ProspectCard({ player, used, selected, onClick, onDraft, onClock
     </li>
   );
 }
+
+// Only re-render when data that actually affects the row changes.
+// Handlers (onClick, onDraft) are stable via useCallback in the parent.
+export const ProspectCard = memo(ProspectCardInner, (prev, next) =>
+  prev.player === next.player &&
+  prev.used === next.used &&
+  prev.selected === next.selected &&
+  prev.onClockSlot === next.onClockSlot &&
+  prev.onClick === next.onClick &&
+  prev.onDraft === next.onDraft
+);

@@ -13,7 +13,7 @@ router.get('/', async (_req, res) => {
       (SELECT draft_year FROM draft_settings WHERE id = 1) AS draft_year,
       (SELECT is_locked FROM draft_settings WHERE id = 1) AS is_locked
   `);
-  res.set('Cache-Control', 'public, max-age=30');
+  res.set('Cache-Control', 'public, max-age=60');
   res.json(rows[0]);
 });
 

@@ -20,19 +20,43 @@ async function request(path, { method = 'GET', body, adminKey } = {}) {
   return res.json();
 }
 
+// Simple in-memory TTL cache for idempotent GETs.
+// Lives for the lifetime of the tab; cleared on full page reload.
+const memCache = new Map();
+function cached(key, ttlMs, fetcher) {
+  const hit = memCache.get(key);
+  const now = Date.now();
+  if (hit && now - hit.time < ttlMs) return Promise.resolve(hit.data);
+  if (hit?.inflight) return hit.inflight;
+  const inflight = fetcher().then(
+    (data) => { memCache.set(key, { data, time: Date.now() }); return data; },
+    (err) => { memCache.delete(key); throw err; }
+  );
+  memCache.set(key, { ...(hit || {}), inflight });
+  return inflight;
+}
+export function invalidateCache(prefix) {
+  if (!prefix) { memCache.clear(); return; }
+  for (const key of memCache.keys()) {
+    if (key.startsWith(prefix)) memCache.delete(key);
+  }
+}
+
 export const api = {
-  // public
-  getPlayers: () => request('/api/players'),
-  getDraftOrder: () => request('/api/draft-order'),
-  getSettings: () => request('/api/settings'),
-  getStats: () => request('/api/stats'),
-  getActualPicks: () => request('/api/actual-picks'),
+  // public — cached where safe
+  getPlayers: () => cached('players', 5 * 60_000, () => request('/api/players')),
+  getDraftOrder: () => cached('draft-order', 60 * 60_000, () => request('/api/draft-order')),
+  getSettings: () => cached('settings', 30_000, () => request('/api/settings')),
+  getStats: () => cached('stats', 30_000, () => request('/api/stats')),
+  getActualPicks: () => cached('actual-picks', 30_000, () => request('/api/actual-picks')),
   checkName: (name) => request(`/api/users/check?name=${encodeURIComponent(name)}`),
   getUserByName: (name) => request(`/api/users/by-name?name=${encodeURIComponent(name)}`),
   createUser: (display_name) => request('/api/users', { method: 'POST', body: { display_name } }),
   getUser: (id) => request(`/api/users/${id}`),
-  submitMock: (user_id, picks) =>
-    request('/api/mocks', { method: 'POST', body: { user_id, picks } }),
+  submitMock: (user_id, picks) => {
+    invalidateCache('stats');
+    return request('/api/mocks', { method: 'POST', body: { user_id, picks } });
+  },
   getMock: (userId) => request(`/api/mocks/${userId}`),
   getLeaderboard: (limit = 100, offset = 0) =>
     request(`/api/leaderboard?limit=${limit}&offset=${offset}`),

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
@@ -27,7 +27,6 @@ function snapCenterToCursor({ activatorEvent, draggingNodeRect, transform }) {
   };
 }
 import toast from 'react-hot-toast';
-import confetti from 'canvas-confetti';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
@@ -52,6 +51,11 @@ export default function Draft() {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [activeDragId, setActiveDragId] = useState(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim().toLowerCase()), 220);
+    return () => clearTimeout(t);
+  }, [search]);
   const [posFilter, setPosFilter] = useState('ALL');
   const [view, setView] = useState('bigboard');
   const [showConfirm, setShowConfirm] = useState(false);
@@ -108,21 +112,14 @@ export default function Draft() {
     return null;
   }, [picks]);
 
-  function draftToOnClock(player) {
-    if (locked || !onClockSlot) return;
-    assignPlayerToSlot(player.id, onClockSlot);
-    const team = orderByPick.get(onClockSlot);
-    toast.success(`Pick ${onClockSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`);
-  }
-
   const filteredProspects = useMemo(() => {
     const list = players || [];
     return list.filter((p) => {
       if (posFilter !== 'ALL' && p.position !== posFilter) return false;
-      if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
+      if (debouncedSearch && !p.name.toLowerCase().includes(debouncedSearch)) return false;
       return true;
     });
-  }, [players, posFilter, search]);
+  }, [players, posFilter, debouncedSearch]);
 
   const grouped = useMemo(() => {
     if (view !== 'byposition') return null;
@@ -131,7 +128,7 @@ export default function Draft() {
     return g;
   }, [view, filteredProspects]);
 
-  function assignPlayerToSlot(playerId, slot) {
+  const assignPlayerToSlot = useCallback((playerId, slot) => {
     if (locked) return;
     setPicks((prev) => {
       const next = { ...prev };
@@ -142,14 +139,14 @@ export default function Draft() {
       return next;
     });
     setSubmitted(false);
-  }
+  }, [locked]);
 
-  function clearSlot(slot) {
+  const clearSlot = useCallback((slot) => {
     setPicks((prev) => { const next = { ...prev }; delete next[slot]; return next; });
     setSubmitted(false);
-  }
+  }, []);
 
-  function swapSlots(a, b) {
+  const swapSlots = useCallback((a, b) => {
     setPicks((prev) => {
       const next = { ...prev };
       const av = next[a], bv = next[b];
@@ -157,9 +154,9 @@ export default function Draft() {
       if (bv) next[a] = bv; else delete next[a];
       return next;
     });
-  }
+  }, []);
 
-  function handleSlotClick(slot) {
+  const handleSlotClick = useCallback((slot) => {
     if (locked) return;
     if (selectedPlayer != null) {
       assignPlayerToSlot(selectedPlayer, slot);
@@ -168,12 +165,28 @@ export default function Draft() {
     } else if (picks[slot]) {
       clearSlot(slot);
     }
-  }
+  }, [locked, selectedPlayer, picks, assignPlayerToSlot, clearSlot]);
 
-  function handleProspectClick(player) {
-    if (player.id === selectedPlayer) setSelectedPlayer(null);
-    else if (!usedPlayerIds.has(player.id)) setSelectedPlayer(player.id);
-  }
+  const handleProspectClick = useCallback((player) => {
+    setSelectedPlayer((prev) => {
+      if (prev === player.id) return null;
+      if (usedPlayerIds.has(player.id)) return prev;
+      return player.id;
+    });
+  }, [usedPlayerIds]);
+
+  const draftToOnClockCb = useCallback((player) => {
+    if (locked || !onClockSlot) return;
+    assignPlayerToSlot(player.id, onClockSlot);
+    const team = orderByPick.get(onClockSlot);
+    toast.success(`Pick ${onClockSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`);
+  }, [locked, onClockSlot, orderByPick, assignPlayerToSlot]);
+
+  // Mobile wrapper: draft + close the drawer
+  const draftToOnClockMobile = useCallback((player) => {
+    draftToOnClockCb(player);
+    setMobileDrawerOpen(false);
+  }, [draftToOnClockCb]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -251,12 +264,15 @@ export default function Draft() {
       toast.success('Mock submitted!');
       setSubmitted(true);
       setShowConfirm(false);
-      confetti({
-        particleCount: 140,
-        spread: 80,
-        startVelocity: 55,
-        origin: { y: 0.75 },
-        colors: ['#00e5ff', '#fbbf24', '#3b82f6', '#f97316'],
+      // Dynamic import — keeps confetti out of the initial Draft chunk
+      import('canvas-confetti').then(({ default: confetti }) => {
+        confetti({
+          particleCount: 140,
+          spread: 80,
+          startVelocity: 55,
+          origin: { y: 0.75 },
+          colors: ['#00e5ff', '#fbbf24', '#3b82f6', '#f97316'],
+        });
       });
     } catch (e) { toast.error(e.message); }
     finally { setBusy(false); }
@@ -365,7 +381,7 @@ export default function Draft() {
               used={usedPlayerIds}
               selected={selectedPlayer}
               onClick={handleProspectClick}
-              onDraft={draftToOnClock}
+              onDraft={draftToOnClockCb}
               onClockSlot={onClockSlot}
               search={search}
               setSearch={setSearch}
@@ -446,8 +462,8 @@ export default function Draft() {
               grouped={grouped}
               used={usedPlayerIds}
               selected={selectedPlayer}
-              onClick={(p) => { handleProspectClick(p); }}
-              onDraft={(p) => { draftToOnClock(p); setMobileDrawerOpen(false); }}
+              onClick={handleProspectClick}
+              onDraft={draftToOnClockMobile}
               onClockSlot={onClockSlot}
               search={search}
               setSearch={setSearch}
@@ -507,9 +523,13 @@ function ProspectListInner({
         <div className="flex gap-2">
           <div className="relative flex-1">
             <input
+              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search prospects…"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Search prospects by name"
               className="w-full bg-bg-deep/70 border border-border-subtle rounded-lg pl-9 pr-3 py-2.5 text-text-primary text-[13px] focus:border-accent outline-none transition"
             />
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -561,7 +581,7 @@ function ProspectListInner({
               player={p}
               used={used.has(p.id)}
               selected={selected === p.id}
-              onClick={() => onClick(p)}
+              onClick={onClick}
               onDraft={onDraft}
               onClockSlot={onClockSlot}
             />
@@ -580,7 +600,7 @@ function ProspectListInner({
                     player={p}
                     used={used.has(p.id)}
                     selected={selected === p.id}
-                    onClick={() => onClick(p)}
+                    onClick={onClick}
                     onDraft={onDraft}
                     onClockSlot={onClockSlot}
                   />

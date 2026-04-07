@@ -20,7 +20,7 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
 
   const posColor = player ? posHex(player.position) : null;
 
-  const baseCls = 'group relative flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all duration-150';
+  const baseCls = 'group relative flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 will-anim';
   const filledCls = player
     ? 'bg-bg-elevated border border-border-subtle hover:border-border-focus'
     : 'bg-bg-surface/40 border border-dashed border-border-subtle hover:border-border-focus hover:bg-white/[0.02]';
