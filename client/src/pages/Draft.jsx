@@ -1,19 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 
-// Keep the drag overlay centered under the cursor. Without this, dnd-kit
-// offsets the overlay based on where within the source element the drag started.
+// Keep the drag overlay centered under the cursor.
+// Uses draggingNodeRect (the live rect of the dragged element), NOT the
+// activator target's rect — the target can be a nested child like a badge
+// and would give the wrong origin.
 function snapCenterToCursor({ activatorEvent, draggingNodeRect, transform }) {
   if (!draggingNodeRect || !activatorEvent) return transform;
-  const rect = activatorEvent.target?.getBoundingClientRect?.();
-  if (!rect) return transform;
-  const activatorX =
-    activatorEvent.clientX ?? activatorEvent.touches?.[0]?.clientX ?? rect.left + rect.width / 2;
-  const activatorY =
-    activatorEvent.clientY ?? activatorEvent.touches?.[0]?.clientY ?? rect.top + rect.height / 2;
-  const offsetX = activatorX - rect.left;
-  const offsetY = activatorY - rect.top;
+  const ax =
+    activatorEvent.clientX ??
+    activatorEvent.touches?.[0]?.clientX ??
+    activatorEvent.changedTouches?.[0]?.clientX;
+  const ay =
+    activatorEvent.clientY ??
+    activatorEvent.touches?.[0]?.clientY ??
+    activatorEvent.changedTouches?.[0]?.clientY;
+  if (ax == null || ay == null) return transform;
+  const offsetX = ax - draggingNodeRect.left;
+  const offsetY = ay - draggingNodeRect.top;
   return {
     ...transform,
     x: transform.x + offsetX - draggingNodeRect.width / 2,
@@ -170,9 +176,18 @@ export default function Draft() {
   }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  function handleDragStart(e) { setActiveDragId(e.active.id); }
+
+  function handleDragStart(e) {
+    setActiveDragId(e.active.id);
+    document.body.classList.add('dragging');
+  }
+  function handleDragCancel() {
+    setActiveDragId(null);
+    document.body.classList.remove('dragging');
+  }
   function handleDragEnd(e) {
     setActiveDragId(null);
+    document.body.classList.remove('dragging');
     const { active, over } = e;
     if (!over) return;
     const activeId = String(active.id);
@@ -188,6 +203,31 @@ export default function Draft() {
       if (a !== b) swapSlots(a, b);
     }
   }
+
+  // Cleanup: make sure the body class doesn't stick if the component unmounts mid-drag
+  useEffect(() => () => document.body.classList.remove('dragging'), []);
+
+  // Keyboard shortcuts: ESC deselects, Enter drafts selected to on-clock
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        if (selectedPlayer != null) { setSelectedPlayer(null); e.preventDefault(); }
+      } else if (e.key === 'Enter') {
+        if (selectedPlayer != null && onClockSlot && !locked) {
+          const p = playerById.get(selectedPlayer);
+          if (p) {
+            assignPlayerToSlot(selectedPlayer, onClockSlot);
+            setSelectedPlayer(null);
+            const team = orderByPick.get(onClockSlot);
+            toast.success(`Pick ${onClockSlot}${team ? ` · ${team.team}` : ''}: ${p.name}`);
+            e.preventDefault();
+          }
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedPlayer, onClockSlot, locked, playerById, orderByPick]);
 
   function autoFill() {
     if (locked) return;
@@ -275,7 +315,12 @@ export default function Draft() {
         </Card>
       )}
 
-      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
         <div className="grid md:grid-cols-2 gap-4">
           {/* Pick slots */}
           <Card glass className="p-3 overflow-hidden">
@@ -332,20 +377,27 @@ export default function Draft() {
           </Card>
         </div>
 
-        <DragOverlay modifiers={[snapCenterToCursor]}>
-          {activePlayer ? (
-            <div
-              className="px-3 py-2 rounded-lg text-sm text-white font-semibold shadow-glow"
-              style={{
-                background: 'var(--bg-elevated)',
-                borderLeft: `3px solid ${posHex(activePlayer.position)}`,
-                border: `1px solid ${posHex(activePlayer.position)}55`,
-              }}
-            >
-              {activePlayer.name}
-            </div>
-          ) : null}
-        </DragOverlay>
+        {createPortal(
+          <DragOverlay modifiers={[snapCenterToCursor]} dropAnimation={null}>
+            {activePlayer ? (
+              <div
+                className="px-3 py-2 rounded-lg text-sm text-white font-semibold shadow-glow pointer-events-none select-none"
+                style={{
+                  background: 'var(--bg-elevated)',
+                  borderLeft: `3px solid ${posHex(activePlayer.position)}`,
+                  border: `1px solid ${posHex(activePlayer.position)}55`,
+                  maxWidth: 260,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {activePlayer.name}
+              </div>
+            ) : null}
+          </DragOverlay>,
+          document.body
+        )}
       </DndContext>
 
       {/* Footer / Submit (desktop) */}
