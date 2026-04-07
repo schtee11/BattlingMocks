@@ -1,5 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
+import { prettyName } from '../lib/displayName.js';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
@@ -54,11 +55,11 @@ export default function Navbar() {
                   className="w-6 h-6 rounded-full flex items-center justify-center font-display font-bold text-[10px] text-bg-deep"
                   style={{ background: 'var(--gradient-accent)' }}
                 >
-                  {user.display_name?.[0]?.toUpperCase() || '?'}
+                  {prettyName(user.display_name)?.[0]?.toUpperCase() || '?'}
                 </div>
               )}
               <span className="font-display uppercase tracking-[0.14em] text-[11px] text-text-secondary hidden sm:inline">
-                {user.display_name}
+                {prettyName(user.display_name)}
               </span>
               <button
                 onClick={signOut}

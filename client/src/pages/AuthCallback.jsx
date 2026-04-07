@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { prettyName } from '../lib/displayName.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 
@@ -37,7 +38,7 @@ export default function AuthCallback() {
       try {
         const u = await api.getUser(id);
         setUser(u);
-        toast.success(`Welcome, ${u.display_name}`);
+        toast.success(`Welcome, ${prettyName(u.display_name)}`);
         // Clear the hash before routing
         window.history.replaceState(null, '', '/draft');
         nav('/draft', { replace: true });

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { prettyName } from '../lib/displayName.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
@@ -98,7 +99,7 @@ export default function LeaderboardPage() {
                 <div className="text-3xl mb-1">{MEDALS[e.rank]}</div>
                 <div className="caption">#{e.rank}</div>
                 <div className="font-display font-bold text-white text-[18px] uppercase tracking-wide mt-1 truncate">
-                  {e.display_name}{me && <span className="ml-2 text-[10px] text-accent">YOU</span>}
+                  {prettyName(e.display_name)}{me && <span className="ml-2 text-[10px] text-accent">YOU</span>}
                 </div>
                 <div className="font-mono font-bold text-4xl tabular text-gold mt-3">{e.total_score}</div>
                 <div className="text-[11px] text-text-muted mt-1">
@@ -148,7 +149,7 @@ export default function LeaderboardPage() {
                         <span className={e.rank <= 3 ? 'text-gold' : 'text-text-secondary'}>{e.rank}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="text-white font-semibold">{e.display_name}</span>
+                        <span className="text-white font-semibold">{prettyName(e.display_name)}</span>
                         {me && <span className="ml-2 font-display uppercase tracking-[0.14em] text-[9.5px] text-accent">You</span>}
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-bold tabular text-gold">{e.total_score}</td>

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { DISCORD_AUTH_URL } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { prettyName } from '../lib/displayName.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 
@@ -24,7 +25,7 @@ export default function Join() {
       <div className="max-w-md mx-auto px-4 py-20 route-fade">
         <Card glass className="p-7 text-center">
           <div className="caption text-accent">Welcome back</div>
-          <div className="text-white font-display text-2xl mt-1 mb-4 uppercase">{user.display_name}</div>
+          <div className="text-white font-display text-2xl mt-1 mb-4 uppercase">{prettyName(user.display_name)}</div>
           <Link to="/draft"><Button size="lg">Enter The War Room →</Button></Link>
         </Card>
       </div>
