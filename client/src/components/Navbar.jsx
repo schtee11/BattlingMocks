@@ -45,7 +45,7 @@ export default function Navbar() {
             </NavLink>
           )}
           <div className="ml-1 mr-1"><ThemeToggle /></div>
-          {user && (
+          {user ? (
             <div className="flex items-center gap-2.5 pl-3 ml-2 border-l border-border-subtle">
               <Avatar url={user.avatar_url} name={user.display_name} size="xs" />
               <span className="font-display uppercase tracking-[0.14em] text-[11px] text-text-secondary hidden sm:inline">
@@ -58,6 +58,17 @@ export default function Navbar() {
                 Sign out
               </button>
             </div>
+          ) : (
+            <Link
+              to="/join"
+              className="ml-2 inline-flex items-center justify-center font-display font-semibold uppercase tracking-[0.14em] text-[11px] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 hover:scale-[1.02] active:scale-[0.98]"
+              style={{
+                background: 'var(--gradient-accent)',
+                boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)',
+              }}
+            >
+              Login
+            </Link>
           )}
         </div>
       </div>
