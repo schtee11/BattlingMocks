@@ -41,6 +41,8 @@ export default function Admin() {
 
   // Enter Results state
   const [pickNum, setPickNum] = useState(1);
+  const [pickQuery, setPickQuery] = useState('');
+  const [pickOpen, setPickOpen] = useState(false);
   const [playerSearch, setPlayerSearch] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState(null);
 
@@ -132,6 +134,17 @@ export default function Admin() {
   const filteredPlayers = players.filter((p) =>
     p.name.toLowerCase().includes(playerSearch.toLowerCase())
   );
+
+  // Picks matching the current typeahead query (or all when query is empty)
+  function matchingPicks() {
+    const q = pickQuery.trim().toLowerCase();
+    if (!q) return order;
+    return order.filter((o) =>
+      String(o.pick_number).includes(q) ||
+      (o.team || '').toLowerCase().includes(q) ||
+      (o.team_name || '').toLowerCase().includes(q)
+    );
+  }
 
   async function saveActual(e) {
     e.preventDefault();
@@ -266,15 +279,62 @@ export default function Admin() {
           <Card className="p-5">
             <h3 className="font-semibold text-text-primary mb-3">Enter a pick</h3>
             <form onSubmit={saveActual} className="space-y-3">
-              <select
-                value={pickNum}
-                onChange={(e) => setPickNum(e.target.value)}
-                className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary"
-              >
-                {Array.from({ length: 32 }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>Pick {n} — {order.find((o) => o.pick_number === n)?.team || ''}</option>
-                ))}
-              </select>
+              {/* Pick typeahead — type pick #, team abbr, or team name */}
+              <div className="relative">
+                <input
+                  value={pickOpen ? pickQuery : (
+                    (() => {
+                      const o = order.find((x) => x.pick_number === Number(pickNum));
+                      return o ? `Pick ${o.pick_number} — ${o.team}` : `Pick ${pickNum}`;
+                    })()
+                  )}
+                  onChange={(e) => { setPickQuery(e.target.value); setPickOpen(true); }}
+                  onFocus={(e) => { setPickQuery(''); setPickOpen(true); e.target.select(); }}
+                  onBlur={() => setTimeout(() => setPickOpen(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const matches = matchingPicks();
+                      if (matches.length > 0) {
+                        setPickNum(matches[0].pick_number);
+                        setPickQuery('');
+                        setPickOpen(false);
+                      }
+                    } else if (e.key === 'Escape') {
+                      setPickOpen(false);
+                    }
+                  }}
+                  placeholder="Pick number, team abbr, or team name…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary focus:border-accent outline-none"
+                />
+                {pickOpen && (
+                  <ul className="absolute z-20 left-0 right-0 mt-1 max-h-64 overflow-y-auto bg-bg-deep border border-border-focus rounded-lg shadow-card divide-y divide-border-subtle">
+                    {matchingPicks().map((o) => (
+                      <li
+                        key={o.pick_number}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setPickNum(o.pick_number);
+                          setPickQuery('');
+                          setPickOpen(false);
+                        }}
+                        className={`px-3 py-2 hover:bg-accent/10 cursor-pointer flex items-center gap-2 text-sm ${
+                          o.pick_number === Number(pickNum) ? 'bg-accent/[0.07]' : ''
+                        }`}
+                      >
+                        <span className="font-mono text-accent w-8 text-right">{o.pick_number}</span>
+                        <span className="font-display font-semibold text-text-primary w-12">{o.team}</span>
+                        <span className="text-text-secondary truncate">{o.team_name}</span>
+                      </li>
+                    ))}
+                    {matchingPicks().length === 0 && (
+                      <li className="px-3 py-3 text-text-muted text-sm text-center">No matches</li>
+                    )}
+                  </ul>
+                )}
+              </div>
               <input
                 ref={playerSearchRef}
                 value={playerSearch}
