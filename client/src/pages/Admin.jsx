@@ -46,6 +46,9 @@ export default function Admin() {
 
   // Draft Order drag state
   const [activeDragId, setActiveDragId] = useState(null);
+  const orderSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
 
   // Players tab state
   const [newP, setNewP] = useState({ name: '', position: '', school: '' });
@@ -224,9 +227,6 @@ export default function Admin() {
     });
   }
 
-  const orderSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
-  );
   function onOrderDragStart(e) { setActiveDragId(String(e.active.id)); }
   function onOrderDragEnd(e) {
     setActiveDragId(null);
