@@ -7,6 +7,35 @@ import { importProspects, seedDraftOrder, PROSPECTS_PATH } from '../db/seed.js';
 const router = Router();
 router.use(adminAuth);
 
+// Shared scoring logic — runs inside whatever transaction client is passed.
+// Used by both the explicit POST /score endpoint and the auto-score that
+// runs after an actual-pick is entered during draft night.
+async function runScoringOnClient(client) {
+  const { rows: actuals } = await client.query(
+    'SELECT pick_number, player_id FROM actual_picks'
+  );
+  const actualByPlayer = new Map(actuals.map((a) => [a.player_id, a.pick_number]));
+
+  const { rows: mocks } = await client.query('SELECT id FROM mocks');
+  for (const m of mocks) {
+    const { rows: picks } = await client.query(
+      'SELECT pick_number, player_id FROM mock_picks WHERE mock_id = $1',
+      [m.id]
+    );
+    let total = 0;
+    for (const p of picks) {
+      const actualSlot = actualByPlayer.get(p.player_id);
+      if (actualSlot == null) continue;
+      if (actualSlot === p.pick_number) total += 15;
+      else if (Math.abs(actualSlot - p.pick_number) <= 5) total += 8;
+      else total += 5;
+    }
+    await client.query('UPDATE mocks SET total_score = $1 WHERE id = $2', [total, m.id]);
+  }
+  await client.query('UPDATE draft_settings SET scoring_run_at = NOW() WHERE id = 1');
+  return mocks.length;
+}
+
 // ---------- Players CRUD ----------
 router.post('/players', async (req, res) => {
   const { name, position, school, headshot_url } = req.body || {};
@@ -106,15 +135,30 @@ router.post('/actual-picks', async (req, res) => {
   }
   const exists = await pool.query('SELECT id FROM players WHERE id = $1', [player_id]);
   if (!exists.rows.length) return res.status(400).json({ error: 'player not found' });
-  const { rows } = await pool.query(
-    `INSERT INTO actual_picks (pick_number, player_id, team)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (pick_number) DO UPDATE
-       SET player_id = EXCLUDED.player_id, team = EXCLUDED.team, entered_at = NOW()
-     RETURNING *`,
-    [pick_number, player_id, team || null]
-  );
-  res.status(201).json(rows[0]);
+
+  // Save the pick AND re-score every mock in one transaction so the
+  // leaderboard reflects the new state instantly.
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO actual_picks (pick_number, player_id, team)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (pick_number) DO UPDATE
+         SET player_id = EXCLUDED.player_id, team = EXCLUDED.team, entered_at = NOW()
+       RETURNING *`,
+      [pick_number, player_id, team || null]
+    );
+    const scoredMocks = await runScoringOnClient(client);
+    await client.query('COMMIT');
+    res.status(201).json({ ...rows[0], scored_mocks: scoredMocks });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('[actual-picks auto-score]', e);
+    res.status(500).json({ error: 'server error' });
+  } finally {
+    client.release();
+  }
 });
 
 router.delete('/actual-picks/:pick', async (req, res) => {
@@ -140,28 +184,7 @@ router.post('/score', async (_req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows: actuals } = await client.query(
-      'SELECT pick_number, player_id FROM actual_picks'
-    );
-    const actualByPlayer = new Map(actuals.map((a) => [a.player_id, a.pick_number]));
-
-    const { rows: mocks } = await client.query('SELECT id FROM mocks');
-    for (const m of mocks) {
-      const { rows: picks } = await client.query(
-        'SELECT pick_number, player_id FROM mock_picks WHERE mock_id = $1',
-        [m.id]
-      );
-      let total = 0;
-      for (const p of picks) {
-        const actualSlot = actualByPlayer.get(p.player_id);
-        if (actualSlot == null) continue;
-        if (actualSlot === p.pick_number) total += 15;
-        else if (Math.abs(actualSlot - p.pick_number) <= 5) total += 8;
-        else total += 5;
-      }
-      await client.query('UPDATE mocks SET total_score = $1 WHERE id = $2', [total, m.id]);
-    }
-    await client.query('UPDATE draft_settings SET scoring_run_at = NOW() WHERE id = 1');
+    const totalMocks = await runScoringOnClient(client);
     await client.query('COMMIT');
 
     const { rows: summary } = await pool.query(`
@@ -170,7 +193,7 @@ router.post('/score', async (_req, res) => {
              COALESCE(MAX(total_score), 0) AS max_score
       FROM mocks WHERE total_score > 0
     `);
-    res.json({ ok: true, ...summary[0], total_mocks: mocks.length });
+    res.json({ ok: true, ...summary[0], total_mocks: totalMocks });
   } catch (e) {
     await client.query('ROLLBACK');
     console.error(e);

@@ -48,7 +48,10 @@ export const api = {
   getDraftOrder: () => cached('draft-order', 60 * 60_000, () => request('/api/draft-order')),
   getSettings: () => cached('settings', 30_000, () => request('/api/settings')),
   getStats: () => cached('stats', 30_000, () => request('/api/stats')),
-  getActualPicks: () => cached('actual-picks', 30_000, () => request('/api/actual-picks')),
+  getActualPicks: ({ fresh = false } = {}) => {
+    if (fresh) invalidateCache('actual-picks');
+    return cached('actual-picks', 30_000, () => request('/api/actual-picks'));
+  },
   checkName: (name) => request(`/api/users/check?name=${encodeURIComponent(name)}`),
   getUserByName: (name) => request(`/api/users/by-name?name=${encodeURIComponent(name)}`),
   createUser: (display_name) => request('/api/users', { method: 'POST', body: { display_name } }),

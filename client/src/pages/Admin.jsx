@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api.js';
+import { isAdmin } from '../lib/admin.js';
+import { useAuth } from '../hooks/useAuth.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { Modal } from '../components/ui/Modal.jsx';
@@ -14,9 +17,25 @@ const TABS = [
 ];
 
 export default function Admin() {
+  const { user } = useAuth();
   const [key, setKey] = useState(localStorage.getItem('mds_admin') || '');
   const [unlocked, setUnlocked] = useState(false);
   const [tab, setTab] = useState('results');
+  const playerSearchRef = useRef(null);
+
+  // Access gate: the admin UI is invisible to anyone not on the allow-list.
+  // (Backend routes are still protected by X-Admin-Key header — this is UX,
+  // not a security boundary.)
+  if (!isAdmin(user)) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-32 text-center route-fade">
+        <div className="caption text-accent">Cut in Round 1</div>
+        <div className="font-mono font-bold text-7xl text-accent mt-2">404</div>
+        <div className="text-text-secondary mt-4 mb-6">That page doesn't exist.</div>
+        <Link to="/"><Button>Back to Home</Button></Link>
+      </div>
+    );
+  }
 
   const [players, setPlayers] = useState([]);
   const [actuals, setActuals] = useState([]);
@@ -91,10 +110,19 @@ export default function Admin() {
         player_id: selectedPlayer.id,
         team,
       });
-      toast.success(`Pick ${pickNum} saved`);
+      const savedPick = Number(pickNum);
+      toast.success(`Pick ${savedPick} saved · scored live`);
+      // Auto-advance to the next pick, reset inputs, refocus search.
+      const next = savedPick >= 32 ? savedPick : savedPick + 1;
+      setPickNum(next);
       setSelectedPlayer(null);
       setPlayerSearch('');
+      // Pre-fill team from draft order for the next pick
+      const nextTeam = order.find((o) => o.pick_number === next)?.team || '';
+      setTeam(nextTeam);
       loadAll();
+      // Focus the player search so you can just start typing
+      setTimeout(() => playerSearchRef.current?.focus(), 0);
     } catch (e) { toast.error(e.message); }
   }
 
@@ -183,9 +211,21 @@ export default function Admin() {
                 ))}
               </select>
               <input
+                ref={playerSearchRef}
                 value={playerSearch}
                 onChange={(e) => { setPlayerSearch(e.target.value); setSelectedPlayer(null); }}
+                onKeyDown={(e) => {
+                  // Enter while typing = pick the top result, then Enter again = submit
+                  if (e.key === 'Enter' && !selectedPlayer && filteredPlayers.length > 0) {
+                    e.preventDefault();
+                    const first = filteredPlayers[0];
+                    setSelectedPlayer(first);
+                    setPlayerSearch(first.name);
+                  }
+                }}
                 placeholder="Search player…"
+                autoComplete="off"
+                spellCheck={false}
                 className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary"
               />
               {playerSearch && !selectedPlayer && (

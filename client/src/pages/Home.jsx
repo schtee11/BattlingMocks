@@ -22,7 +22,7 @@ export default function Home() {
   return (
     <div className="route-fade">
       {/* Hero */}
-      <div className="relative overflow-hidden">
+      <div className="relative">
         <div className="max-w-5xl mx-auto px-4 pt-20 md:pt-28 pb-14 text-center">
           <div className="caption text-accent mb-4">April 23 · Pittsburgh, PA</div>
           <h1 className="font-display display-xl text-hero text-text-primary">
@@ -43,12 +43,6 @@ export default function Home() {
             </Link>
           </div>
         </div>
-
-        {/* Field-line accent at bottom of hero */}
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24" style={{
-          backgroundImage: 'linear-gradient(to top, rgba(0,229,255,0.06), transparent)',
-          maskImage: 'linear-gradient(to top, black, transparent)',
-        }}/>
       </div>
 
       {/* Stats bar */}

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { usePolling } from '../hooks/usePolling.js';
 import { posHex } from '../lib/positions.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
@@ -23,19 +24,25 @@ export default function MyMock() {
   const [actuals, setActuals] = useState([]);
   const [err, setErr] = useState('');
 
-  useEffect(() => {
+  const refresh = useCallback(async (opts = {}) => {
     if (!user) return;
-    (async () => {
-      try {
-        const [m, a] = await Promise.all([api.getMock(user.id), api.getActualPicks()]);
-        setMock(m);
-        setActuals(a);
-      } catch (e) {
-        if (String(e.message).includes('no mock')) setErr('no_mock');
-        else setErr(e.message);
-      }
-    })();
+    try {
+      const [m, a] = await Promise.all([
+        api.getMock(user.id),
+        api.getActualPicks({ fresh: !!opts.fresh }),
+      ]);
+      setMock(m);
+      setActuals(a);
+    } catch (e) {
+      if (String(e.message).includes('no mock')) setErr('no_mock');
+      else setErr(e.message);
+    }
   }, [user]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  // Live updates while the draft is unfolding — refresh actuals every 15s
+  usePolling(() => refresh({ fresh: true }), 15_000);
 
   const actualByPlayer = useMemo(() => {
     const m = new Map();

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { usePolling } from '../hooks/usePolling.js';
 import { prettyName } from '../lib/displayName.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
@@ -15,9 +16,14 @@ export default function LeaderboardPage() {
   const [err, setErr] = useState('');
   const userRowRef = useRef(null);
 
-  useEffect(() => {
+  const fetchLeaderboard = useCallback(() => {
     api.getLeaderboard(200, 0).then(setData).catch((e) => setErr(e.message));
   }, []);
+
+  useEffect(() => { fetchLeaderboard(); }, [fetchLeaderboard]);
+
+  // Live updates: refresh every 15s while the tab is visible
+  usePolling(fetchLeaderboard, 15_000);
 
   const allZero = useMemo(
     () => data?.entries?.length > 0 && data.entries.every((e) => e.total_score === 0),
