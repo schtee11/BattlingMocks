@@ -53,13 +53,27 @@ export default function Admin() {
   const [newP, setNewP] = useState({ name: '', position: '', school: '' });
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  async function unlock() {
+  async function unlock(candidateKey) {
+    const trying = candidateKey ?? key;
+    if (!trying) return;
     try {
-      await api.adminGetActualPicks(key);
-      localStorage.setItem('mds_admin', key);
+      await api.adminGetActualPicks(trying);
+      localStorage.setItem('mds_admin', trying);
+      setKey(trying);
       setUnlocked(true);
-    } catch (e) { toast.error(e.message); }
+    } catch (e) {
+      // Stored key was rejected — clear it so we don't loop forever
+      if (candidateKey) localStorage.removeItem('mds_admin');
+      else toast.error(e.message);
+    }
   }
+
+  // Auto-unlock on mount if we already have a valid stored key
+  useEffect(() => {
+    const stored = localStorage.getItem('mds_admin');
+    if (stored && !unlocked) unlock(stored);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadAll() {
     try {
@@ -88,10 +102,11 @@ export default function Admin() {
             value={key}
             onChange={(e) => setKey(e.target.value)}
             placeholder="Admin key"
+            autoComplete="current-password"
             className="w-full bg-bg-deep border border-border-focus rounded-lg px-4 py-3 text-text-primary mb-3 focus:border-accent outline-none"
             onKeyDown={(e) => e.key === 'Enter' && unlock()}
           />
-          <Button className="w-full" size="lg" onClick={unlock}>Unlock</Button>
+          <Button className="w-full" size="lg" onClick={() => unlock()}>Unlock</Button>
         </Card>
       </div>
     );
