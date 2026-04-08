@@ -86,6 +86,99 @@ router.post('/import-prospects', async (_req, res) => {
   }
 });
 
+// ---------- Bulk headshot fetch from ESPN ----------
+// Queries ESPN's undocumented search API, prefers college-football results,
+// matches by school when possible. Stores successes in players.headshot_url.
+async function searchEspnForHeadshot(name, school) {
+  const q = encodeURIComponent(name);
+  const url = `https://site.web.api.espn.com/apis/common/v3/search?limit=10&query=${q}&type=player`;
+  try {
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': 'MockDraftShowdown/1.0 (+https://mockdraftshowdown.netlify.app)',
+        Accept: 'application/json',
+      },
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+
+    // ESPN's response shape varies by endpoint version. Try several paths.
+    const buckets = [
+      data?.items,
+      data?.results?.flatMap?.((g) => g.contents || g.hits || []),
+      data?.results,
+    ].filter(Array.isArray);
+    const items = buckets[0] || [];
+
+    // Prefer college-football hits
+    const isCfb = (it) => {
+      const sport = (it.sport || it.league || '').toString().toLowerCase();
+      if (sport.includes('college')) return true;
+      const sub = (it.subtitle || it.description || '').toLowerCase();
+      return /college|ncaa|fbs/.test(sub);
+    };
+    const cfb = items.filter(isCfb);
+    const candidates = cfb.length > 0 ? cfb : items;
+
+    // Fuzzy match by school
+    let best = candidates[0];
+    if (school && candidates.length > 1) {
+      const sl = school.toLowerCase();
+      const matched = candidates.find((it) => {
+        const blob = `${it.subtitle || ''} ${it.description || ''} ${it.team || ''} ${JSON.stringify(it.team || {})}`.toLowerCase();
+        return blob.includes(sl);
+      });
+      if (matched) best = matched;
+    }
+    if (!best) return null;
+
+    // Pull an image URL from whichever field is populated
+    const img =
+      best.image?.default ||
+      (typeof best.image === 'string' ? best.image : null) ||
+      best.headshot ||
+      best.headshotUrl ||
+      best.thumbnail ||
+      best.img ||
+      null;
+    return typeof img === 'string' && img.startsWith('http') ? img : null;
+  } catch {
+    return null;
+  }
+}
+
+router.post('/fetch-headshots', async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
+  const overwrite = req.query.overwrite === '1';
+
+  const { rows: players } = await pool.query(
+    overwrite
+      ? 'SELECT id, name, school FROM players ORDER BY id LIMIT $1'
+      : 'SELECT id, name, school FROM players WHERE headshot_url IS NULL ORDER BY id LIMIT $1',
+    [limit]
+  );
+
+  let updated = 0;
+  let failed = 0;
+  for (const p of players) {
+    const url = await searchEspnForHeadshot(p.name, p.school);
+    if (url) {
+      try {
+        await pool.query('UPDATE players SET headshot_url = $1 WHERE id = $2', [url, p.id]);
+        updated++;
+      } catch {
+        failed++;
+      }
+    } else {
+      failed++;
+    }
+    // Be a polite client.
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  res.json({ ok: true, scanned: players.length, updated, failed });
+});
+
 // ---------- Draft order ----------
 router.get('/draft-order', async (_req, res) => {
   const { rows } = await pool.query(

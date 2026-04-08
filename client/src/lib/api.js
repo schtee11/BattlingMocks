@@ -72,6 +72,11 @@ export const api = {
     request(`/api/admin/players/${id}`, { method: 'DELETE', adminKey: key }),
   importProspects: (key) =>
     request('/api/admin/import-prospects', { method: 'POST', adminKey: key }),
+  fetchHeadshots: (key, { overwrite = false } = {}) =>
+    request(`/api/admin/fetch-headshots${overwrite ? '?overwrite=1' : ''}`, {
+      method: 'POST',
+      adminKey: key,
+    }),
   adminGetDraftOrder: (key) => request('/api/admin/draft-order', { adminKey: key }),
   adminSetDraftOrder: (key, order) =>
     request('/api/admin/draft-order', { method: 'POST', body: { order }, adminKey: key }),

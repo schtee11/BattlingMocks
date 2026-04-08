@@ -57,6 +57,7 @@ export default function Admin() {
   // Players tab state
   const [newP, setNewP] = useState({ name: '', position: '', school: '' });
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [fetchingHeadshots, setFetchingHeadshots] = useState(false);
 
   const userIsAdmin = isAdmin(user);
 
@@ -214,6 +215,23 @@ export default function Admin() {
       toast.success('Headshot saved');
       loadAll();
     } catch (e) { toast.error(e.message); }
+  }
+
+  async function fetchHeadshots(overwrite = false) {
+    if (fetchingHeadshots) return;
+    setFetchingHeadshots(true);
+    const id = toast.loading(overwrite ? 'Refetching all from ESPN…' : 'Fetching missing headshots from ESPN…');
+    try {
+      const r = await api.fetchHeadshots(key, { overwrite });
+      toast.dismiss(id);
+      toast.success(`Scanned ${r.scanned} · updated ${r.updated} · missed ${r.failed}`);
+      loadAll();
+    } catch (e) {
+      toast.dismiss(id);
+      toast.error(e.message);
+    } finally {
+      setFetchingHeadshots(false);
+    }
   }
 
   async function importProspects() {
@@ -459,9 +477,33 @@ export default function Admin() {
       {tab === 'players' && (
         <div className="space-y-4">
           <Card className="p-5">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="font-semibold text-text-primary">Prospects ({players.length})</h3>
-              <Button size="sm" variant="secondary" onClick={importProspects}>Import from JSON</Button>
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => fetchHeadshots(false)}
+                  disabled={fetchingHeadshots}
+                  title="Query ESPN for any prospect without a headshot"
+                >
+                  {fetchingHeadshots ? 'Fetching…' : 'Fetch from ESPN'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (window.confirm('Re-query ESPN for ALL prospects (overwrites existing headshots)?')) {
+                      fetchHeadshots(true);
+                    }
+                  }}
+                  disabled={fetchingHeadshots}
+                  title="Re-query ESPN for every prospect and overwrite"
+                >
+                  Refetch all
+                </Button>
+                <Button size="sm" variant="secondary" onClick={importProspects}>Import from JSON</Button>
+              </div>
             </div>
             <form onSubmit={addPlayer} className="grid md:grid-cols-4 gap-2 mb-4">
               <input required value={newP.name} onChange={(e) => setNewP({ ...newP, name: e.target.value })} placeholder="Name" className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm md:col-span-2" />
