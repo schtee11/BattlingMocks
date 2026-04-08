@@ -603,13 +603,12 @@ export default function Admin() {
                   <th className="px-3 py-2 font-display text-center hidden sm:table-cell">Mock</th>
                   <th className="px-3 py-2 font-display text-right">Score</th>
                   <th className="px-3 py-2 font-display text-right hidden md:table-cell">Joined</th>
-                  <th className="px-3 py-2 font-display text-right hidden lg:table-cell">Discord</th>
                 </tr>
               </thead>
               <tbody>
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-text-muted">
+                    <td colSpan={4} className="px-3 py-6 text-center text-text-muted">
                       No users yet.
                     </td>
                   </tr>
@@ -642,13 +641,6 @@ export default function Admin() {
                       </td>
                       <td className="px-3 py-2 text-right text-text-muted text-[11.5px] hidden md:table-cell">
                         {new Date(u.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-3 py-2 text-right text-text-muted text-[11px] hidden lg:table-cell">
-                        {u.discord_id ? (
-                          <span title={`Discord ID: ${u.discord_id}`}>Discord</span>
-                        ) : (
-                          <span>Name</span>
-                        )}
                       </td>
                     </tr>
                   ))
