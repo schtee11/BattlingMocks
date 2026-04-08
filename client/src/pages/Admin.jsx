@@ -50,6 +50,7 @@ export default function Admin() {
   const [pickQuery, setPickQuery] = useState('');
   const [pickOpen, setPickOpen] = useState(false);
   const [playerSearch, setPlayerSearch] = useState('');
+  const [playerOpen, setPlayerOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
 
   // Draft Order drag state
@@ -152,9 +153,19 @@ export default function Admin() {
     );
   }
 
-  const filteredPlayers = players.filter((p) =>
-    p.name.toLowerCase().includes(playerSearch.toLowerCase())
-  );
+  // Exclude players already entered as an actual pick so they don't clutter
+  // the typeahead after they've been drafted.
+  const draftedPlayerIds = new Set((actuals || []).map((a) => a.player_id));
+  const availablePlayers = players.filter((p) => !draftedPlayerIds.has(p.id));
+  const filteredPlayers = availablePlayers.filter((p) => {
+    const q = playerSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.school || '').toLowerCase().includes(q) ||
+      (p.position || '').toLowerCase().includes(q)
+    );
+  });
 
   // Picks matching the current typeahead query (or all when query is empty)
   function matchingPicks() {
@@ -393,48 +404,97 @@ export default function Admin() {
                   </ul>
                 )}
               </div>
-              <input
-                ref={playerSearchRef}
-                value={playerSearch}
-                onChange={(e) => { setPlayerSearch(e.target.value); setSelectedPlayer(null); }}
-                onKeyDown={(e) => {
-                  // Enter while typing = pick the top result, then Enter again = submit
-                  if (e.key === 'Enter' && !selectedPlayer && filteredPlayers.length > 0) {
-                    e.preventDefault();
-                    const first = filteredPlayers[0];
-                    setSelectedPlayer(first);
-                    setPlayerSearch(first.name);
-                  }
-                }}
-                placeholder="Search player…"
-                autoComplete="off"
-                spellCheck={false}
-                className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary"
-              />
-              {playerSearch && !selectedPlayer && (
-                <ul className="max-h-48 overflow-y-auto bg-bg-deep border border-border-focus rounded-lg divide-y divide-border-subtle">
-                  {filteredPlayers.slice(0, 20).map((p) => (
-                    <li
-                      key={p.id}
-                      onClick={() => { setSelectedPlayer(p); setPlayerSearch(p.name); }}
-                      className="px-3 py-2 hover:bg-white/5 cursor-pointer flex items-center gap-2"
-                    >
-                      <span className="text-text-primary text-sm flex-1">{p.name}</span>
-                      <PositionBadge position={p.position} />
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {/* Player typeahead — rank-ordered, excludes drafted, opens on focus */}
+              <div className="relative">
+                <input
+                  ref={playerSearchRef}
+                  value={playerSearch}
+                  onChange={(e) => {
+                    setPlayerSearch(e.target.value);
+                    setSelectedPlayer(null);
+                    setPlayerOpen(true);
+                  }}
+                  onFocus={(e) => {
+                    setPlayerOpen(true);
+                    // If a player is already selected, clear search so the full list shows again
+                    if (selectedPlayer) { setPlayerSearch(''); setSelectedPlayer(null); }
+                    e.target.select?.();
+                  }}
+                  onBlur={() => setTimeout(() => setPlayerOpen(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (filteredPlayers.length > 0) {
+                        const first = filteredPlayers[0];
+                        setSelectedPlayer(first);
+                        setPlayerSearch(first.name);
+                        setPlayerOpen(false);
+                      }
+                    } else if (e.key === 'Escape') {
+                      setPlayerOpen(false);
+                    }
+                  }}
+                  placeholder="Search player by name, school, or position…"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary focus:border-accent outline-none"
+                />
+                {playerOpen && (
+                  <ul className="absolute z-20 left-0 right-0 mt-1 max-h-80 overflow-y-auto bg-bg-deep border border-border-focus rounded-lg shadow-card divide-y divide-border-subtle">
+                    {filteredPlayers.length === 0 ? (
+                      <li className="px-3 py-3 text-text-muted text-sm text-center">
+                        {availablePlayers.length === 0 ? 'All prospects drafted' : 'No matches'}
+                      </li>
+                    ) : (
+                      filteredPlayers.slice(0, 50).map((p) => (
+                        <li
+                          key={p.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setSelectedPlayer(p);
+                            setPlayerSearch(p.name);
+                            setPlayerOpen(false);
+                          }}
+                          className="px-3 py-2 hover:bg-accent/10 cursor-pointer flex items-center gap-2.5 text-sm"
+                        >
+                          <span className="font-mono text-text-muted w-7 text-right text-[11px]">
+                            {p.rank ?? ''}
+                          </span>
+                          <PlayerHeadshot
+                            url={p.headshot_url}
+                            name={p.name}
+                            position={p.position}
+                            size="xs"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-text-primary truncate">{p.name}</div>
+                            <div className="text-[10.5px] text-text-muted truncate">{p.school}</div>
+                          </div>
+                          <PositionBadge position={p.position} />
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
+              </div>
               {selectedPlayer && (
-                <div className="text-sm text-text-secondary">
-                  Selected: <span className="text-text-primary">{selectedPlayer.name}</span>
-                  {' · '}
-                  <span className="text-text-muted">
-                    {order.find((o) => o.pick_number === Number(pickNum))?.team || '—'}
+                <div className="text-sm text-text-secondary flex items-center gap-2">
+                  <PlayerHeadshot
+                    url={selectedPlayer.headshot_url}
+                    name={selectedPlayer.name}
+                    position={selectedPlayer.position}
+                    size="xs"
+                  />
+                  <span>
+                    <span className="text-text-primary">{selectedPlayer.name}</span>
+                    {' · '}
+                    <span className="text-text-muted">
+                      {order.find((o) => o.pick_number === Number(pickNum))?.team || '—'}
+                    </span>
                   </span>
                 </div>
               )}
-              <Button type="submit" className="w-full">Save Pick</Button>
+              <Button type="submit" className="w-full" disabled={!selectedPlayer}>Save Pick</Button>
             </form>
           </Card>
           <Card className="p-5">
