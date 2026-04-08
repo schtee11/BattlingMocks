@@ -34,6 +34,7 @@ export function TeamLogo({ abbr, size = 'sm', className = '' }) {
       alt={`${abbr} logo`}
       loading="lazy"
       decoding="async"
+      referrerPolicy="no-referrer"
       onError={() => setError(true)}
       className={`${cls} object-contain shrink-0 ${className}`}
     />

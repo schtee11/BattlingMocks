@@ -39,6 +39,7 @@ export function PlayerHeadshot({ url, name, position, size = 'sm', className = '
       alt=""
       loading="lazy"
       decoding="async"
+      referrerPolicy="no-referrer"
       onError={() => setError(true)}
       className={`${s.box} rounded-full object-cover shrink-0 ring-1 ring-border-subtle ${className}`}
       style={{ backgroundColor: `${color}22` }}
