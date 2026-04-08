@@ -16,9 +16,24 @@ dotenv.config();
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+
+// CORS: accept FRONTEND_URL as a comma-separated list. Local dev + prod can
+// coexist. If nothing is set, reflect the request origin (dev only).
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || true,
+    origin(origin, cb) {
+      // Allow curl/Postman (no origin) and anything in the allow-list
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.length === 0) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error(`Origin ${origin} not allowed by CORS`));
+    },
+    credentials: false,
   })
 );
 
