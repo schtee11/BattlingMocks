@@ -22,7 +22,8 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
 
   const posColor = player ? posHex(player.position) : null;
 
-  const baseCls = 'group relative flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 will-anim';
+  const baseCls =
+    'group relative flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 will-anim';
   const filledCls = player
     ? 'bg-bg-elevated border border-border-subtle hover:border-border-focus'
     : 'bg-bg-surface/40 border border-dashed border-border-subtle hover:border-border-focus hover:bg-white/[0.02]';
@@ -39,7 +40,7 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
       className={`${baseCls} ${filledCls} ${overCls} ${activeCls} ${flashCls}`}
       style={player ? { borderLeft: `3px solid ${posColor}` } : undefined}
     >
-      {/* Pick number badge */}
+      {/* Pick number badge — 40px */}
       <div
         className="relative flex items-center justify-center w-10 h-10 rounded-full font-mono font-bold text-[13px] shrink-0 transition-colors"
         style={
@@ -51,42 +52,46 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
         {slot}
       </div>
 
-      {/* Team logo */}
-      <TeamLogo abbr={team?.team} size="md" />
+      {/* Team logo — 36px, always visible */}
+      <div className="w-9 h-9 flex items-center justify-center shrink-0">
+        <TeamLogo abbr={team?.team} size="md" />
+      </div>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <div className="caption text-[9.5px] tracking-[0.22em] truncate">
-            {team?.team || '—'}
-          </div>
+      {/* Player headshot — only when filled, 36px to match team logo */}
+      {player && (
+        <PlayerHeadshot
+          url={player.headshot_url}
+          name={player.name}
+          position={player.position}
+          size="sm"
+        />
+      )}
+
+      {/* Text column */}
+      <div className="flex-1 min-w-0 leading-tight">
+        <div className="caption text-[9.5px] tracking-[0.22em] truncate">
+          <span>{team?.team || '—'}</span>
           {team?.team_name && (
-            <div className="text-[10.5px] text-text-muted truncate hidden md:block">
+            <span className="ml-1.5 text-text-muted normal-case tracking-normal font-sans font-normal text-[10.5px] hidden md:inline">
               {team.team_name}
-            </div>
+            </span>
           )}
         </div>
         {player ? (
-          <div className="flex items-center gap-2 mt-0.5">
-            <PlayerHeadshot
-              url={player.headshot_url}
-              name={player.name}
-              position={player.position}
-              size="xs"
-              className="md:hidden"
-            />
+          <div className="flex items-center gap-2 mt-1">
             <div className="text-text-primary font-semibold truncate text-[14px]">{player.name}</div>
             <PositionBadge position={player.position} />
-            <div className="text-[11px] text-text-muted truncate hidden sm:block">{player.school}</div>
+            <div className="text-[11px] text-text-muted truncate hidden lg:block">{player.school}</div>
           </div>
         ) : (
-          <div className="caption mt-0.5 text-text-muted text-[10px]">Select player</div>
+          <div className="caption mt-1 text-text-muted text-[10px]">Select player</div>
         )}
       </div>
 
       {player && (
         <button
           onClick={(e) => { e.stopPropagation(); onClear?.(); }}
-          className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition p-1 text-sm"
+          className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition p-1 text-sm shrink-0"
           aria-label={`Clear pick ${slot}`}
           tabIndex={-1}
         >
