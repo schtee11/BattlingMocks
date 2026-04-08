@@ -10,7 +10,7 @@ import {
   useDroppable,
   DragOverlay,
 } from '@dnd-kit/core';
-import { api } from '../lib/api.js';
+import { api, invalidateCache } from '../lib/api.js';
 import { isAdmin } from '../lib/admin.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { Card } from '../components/ui/Card.jsx';
@@ -194,6 +194,7 @@ export default function Admin() {
     e.preventDefault();
     try {
       await api.addPlayer(key, newP);
+      invalidateCache('players');
       setNewP({ name: '', position: '', school: '' });
       toast.success('Added');
       loadAll();
@@ -203,6 +204,7 @@ export default function Admin() {
   async function deletePlayer(id) {
     try {
       await api.deletePlayer(key, id);
+      invalidateCache('players');
       toast.success('Deleted');
       setConfirmDelete(null);
       loadAll();
@@ -212,6 +214,7 @@ export default function Admin() {
   async function setPlayerHeadshot(id, url) {
     try {
       await api.updatePlayer(key, id, { headshot_url: url || null });
+      invalidateCache('players');
       toast.success('Headshot saved');
       loadAll();
     } catch (e) { toast.error(e.message); }
@@ -225,6 +228,7 @@ export default function Admin() {
       const r = await api.fetchHeadshots(key, { overwrite });
       toast.dismiss(id);
       toast.success(`Scanned ${r.scanned} · updated ${r.updated} · missed ${r.failed}`);
+      invalidateCache('players');
       loadAll();
     } catch (e) {
       toast.dismiss(id);
@@ -237,6 +241,7 @@ export default function Admin() {
   async function importProspects() {
     try {
       const r = await api.importProspects(key);
+      invalidateCache('players');
       toast.success(`Added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}`);
       loadAll();
     } catch (e) { toast.error(e.message); }
