@@ -45,7 +45,7 @@ export default function Navbar() {
             </NavLink>
           )}
           <div className="ml-1 mr-1"><ThemeToggle /></div>
-          {user ? (
+          {user && (
             <div className="flex items-center gap-2.5 pl-3 ml-2 border-l border-border-subtle">
               <Avatar url={user.avatar_url} name={user.display_name} size="xs" />
               <span className="font-display uppercase tracking-[0.14em] text-[11px] text-text-secondary hidden sm:inline">
@@ -58,10 +58,6 @@ export default function Navbar() {
                 Sign out
               </button>
             </div>
-          ) : (
-            <NavLink to="/join" className={linkCls}>
-              {({ isActive }) => (<><span>Join</span>{isActive && activeBar}</>)}
-            </NavLink>
           )}
         </div>
       </div>
