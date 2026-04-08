@@ -467,6 +467,15 @@ export default function Admin() {
                   onTeamNameChange={(val) =>
                     setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team_name: val } : x))
                   }
+                  onNeedsChange={(val) =>
+                    setOrder((prev) => prev.map((x, i) => i === idx ? {
+                      ...x,
+                      team_needs: val
+                        .split(',')
+                        .map((s) => s.trim().toUpperCase())
+                        .filter(Boolean),
+                    } : x))
+                  }
                 />
               ))}
             </ul>
@@ -615,7 +624,7 @@ export default function Admin() {
 // One row in the Draft Order grid. Both draggable (can be picked up) and
 // droppable (can receive another row dropped on it). Editing the team
 // fields inline still works — drag is initiated by the grab handle.
-function DraftOrderRow({ row, onTeamChange, onTeamNameChange }) {
+function DraftOrderRow({ row, onTeamChange, onTeamNameChange, onNeedsChange }) {
   const id = `order-${row.pick_number}`;
   const drag = useDraggable({ id });
   const drop = useDroppable({ id });
@@ -626,36 +635,49 @@ function DraftOrderRow({ row, onTeamChange, onTeamNameChange }) {
     : 'border border-border-subtle';
   const dragCls = drag.isDragging ? 'opacity-30' : '';
 
+  const needsStr = Array.isArray(row.team_needs) ? row.team_needs.join(', ') : '';
+
   return (
     <li
       ref={setRefs}
-      className={`flex items-center gap-2 p-2 bg-bg-deep rounded transition-all ${ringCls} ${dragCls}`}
+      className={`p-2 bg-bg-deep rounded transition-all ${ringCls} ${dragCls}`}
     >
-      {/* Drag handle — only this triggers the drag, so the inputs stay clickable */}
-      <button
-        type="button"
-        {...drag.listeners}
-        {...drag.attributes}
-        aria-label={`Drag pick ${row.pick_number}`}
-        className="cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary px-1 select-none touch-none"
-        title="Drag to swap with another pick"
-      >
-        ⋮⋮
-      </button>
-      <div className="w-7 font-mono text-accent text-sm shrink-0">{row.pick_number}</div>
-      <TeamLogo abbr={row.team} size="xs" />
-      <input
-        value={row.team}
-        onChange={(e) => onTeamChange(e.target.value)}
-        placeholder="TEAM"
-        className="w-14 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm uppercase"
-      />
-      <input
-        value={row.team_name}
-        onChange={(e) => onTeamNameChange(e.target.value)}
-        placeholder="Team name"
-        className="flex-1 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm min-w-0"
-      />
+      <div className="flex items-center gap-2">
+        {/* Drag handle — only this triggers the drag, so the inputs stay clickable */}
+        <button
+          type="button"
+          {...drag.listeners}
+          {...drag.attributes}
+          aria-label={`Drag pick ${row.pick_number}`}
+          className="cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary px-1 select-none touch-none"
+          title="Drag to swap with another pick"
+        >
+          ⋮⋮
+        </button>
+        <div className="w-7 font-mono text-accent text-sm shrink-0">{row.pick_number}</div>
+        <TeamLogo abbr={row.team} size="xs" />
+        <input
+          value={row.team}
+          onChange={(e) => onTeamChange(e.target.value)}
+          placeholder="TEAM"
+          className="w-14 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm uppercase"
+        />
+        <input
+          value={row.team_name}
+          onChange={(e) => onTeamNameChange(e.target.value)}
+          placeholder="Team name"
+          className="flex-1 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm min-w-0"
+        />
+      </div>
+      <div className="flex items-center gap-2 mt-1.5 pl-10">
+        <span className="caption text-[9px] shrink-0">Needs</span>
+        <input
+          value={needsStr}
+          onChange={(e) => onNeedsChange(e.target.value)}
+          placeholder="QB, WR, OT, EDGE"
+          className="flex-1 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-xs uppercase min-w-0"
+        />
+      </div>
     </li>
   );
 }

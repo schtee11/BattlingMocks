@@ -59,8 +59,11 @@ CREATE TABLE IF NOT EXISTS draft_order (
   pick_number INTEGER PRIMARY KEY CHECK (pick_number BETWEEN 1 AND 32),
   team VARCHAR(5) NOT NULL,
   team_name VARCHAR(80) NOT NULL,
+  team_needs TEXT[] DEFAULT ARRAY[]::TEXT[],
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE draft_order ADD COLUMN IF NOT EXISTS team_needs TEXT[] DEFAULT ARRAY[]::TEXT[];
 
 INSERT INTO draft_settings (id, draft_year, is_locked)
 VALUES (1, 2026, FALSE)

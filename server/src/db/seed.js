@@ -63,12 +63,16 @@ export async function importProspects(prospects) {
 
 export async function seedDraftOrder(order) {
   for (const row of order) {
+    const needs = Array.isArray(row.team_needs) ? row.team_needs : [];
     await pool.query(
-      `INSERT INTO draft_order (pick_number, team, team_name)
-       VALUES ($1, $2, $3)
+      `INSERT INTO draft_order (pick_number, team, team_name, team_needs)
+       VALUES ($1, $2, $3, $4)
        ON CONFLICT (pick_number) DO UPDATE
-         SET team = EXCLUDED.team, team_name = EXCLUDED.team_name, updated_at = NOW()`,
-      [row.pick_number, row.team, row.team_name]
+         SET team = EXCLUDED.team,
+             team_name = EXCLUDED.team_name,
+             team_needs = EXCLUDED.team_needs,
+             updated_at = NOW()`,
+      [row.pick_number, row.team, row.team_name, needs]
     );
   }
 }

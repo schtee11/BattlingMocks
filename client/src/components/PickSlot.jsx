@@ -84,7 +84,17 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
             <div className="text-[11px] text-text-muted truncate hidden lg:block">{player.school}</div>
           </div>
         ) : (
-          <div className="caption mt-1 text-text-muted text-[10px]">Select player</div>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span className="caption text-text-muted text-[10px] shrink-0">Select player</span>
+            {Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
+              <>
+                <span className="text-text-muted text-[10px] px-0.5">·</span>
+                {team.team_needs.map((need) => (
+                  <PositionBadge key={need} position={need} />
+                ))}
+              </>
+            )}
+          </div>
         )}
       </div>
 

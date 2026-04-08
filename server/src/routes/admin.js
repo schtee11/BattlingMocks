@@ -224,7 +224,7 @@ router.post('/fetch-headshots', async (req, res) => {
 // ---------- Draft order ----------
 router.get('/draft-order', async (_req, res) => {
   const { rows } = await pool.query(
-    'SELECT pick_number, team, team_name FROM draft_order ORDER BY pick_number'
+    'SELECT pick_number, team, team_name, team_needs FROM draft_order ORDER BY pick_number'
   );
   res.json(rows);
 });
@@ -238,6 +238,9 @@ router.post('/draft-order', async (req, res) => {
     }
     if (!row.team || !row.team_name) {
       return res.status(400).json({ error: 'team and team_name required' });
+    }
+    if (row.team_needs != null && !Array.isArray(row.team_needs)) {
+      return res.status(400).json({ error: 'team_needs must be an array' });
     }
   }
   try {
