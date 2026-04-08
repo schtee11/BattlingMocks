@@ -115,11 +115,12 @@ export default function Draft() {
   const filteredProspects = useMemo(() => {
     const list = players || [];
     return list.filter((p) => {
+      if (usedPlayerIds.has(p.id)) return false;
       if (posFilter !== 'ALL' && p.position !== posFilter) return false;
       if (debouncedSearch && !p.name.toLowerCase().includes(debouncedSearch)) return false;
       return true;
     });
-  }, [players, posFilter, debouncedSearch]);
+  }, [players, posFilter, debouncedSearch, usedPlayerIds]);
 
   const grouped = useMemo(() => {
     if (view !== 'byposition') return null;
@@ -435,7 +436,7 @@ export default function Draft() {
       <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 p-3 bg-bg-deep/85 backdrop-blur-md border-t border-border-subtle">
         <div className="flex gap-2">
           <Button variant="secondary" className="flex-1" onClick={() => setMobileDrawerOpen(true)}>
-            Prospects ({filteredProspects.filter((p) => !usedPlayerIds.has(p.id)).length})
+            Prospects ({filteredProspects.length})
           </Button>
           <Button
             className="flex-1"
@@ -548,7 +549,7 @@ function ProspectListInner({
         </div>
         <div className="flex items-center justify-between text-[10.5px] px-1">
           <span className="caption text-[9.5px]">
-            {filtered.filter((p) => !used.has(p.id)).length} of {filtered.length} available
+            {filtered.length} available · {used.size} drafted
           </span>
           <div className="inline-flex rounded-lg bg-bg-deep/60 border border-border-subtle p-0.5">
             <button
