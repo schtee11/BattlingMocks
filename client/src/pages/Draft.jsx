@@ -380,7 +380,7 @@ export default function Draft() {
                 </Button>
               </div>
             </div>
-            <ul className="stagger space-y-1.5 max-h-[68vh] overflow-y-auto pr-1">
+            <ul className="stagger space-y-1.5 md:max-h-[68vh] md:overflow-y-auto md:pr-1">
               {!players ? (
                 Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-[58px] w-full rounded-lg" />)
               ) : (
@@ -596,8 +596,8 @@ export default function Draft() {
         This removes every prospect from your current mock.
       </Modal>
 
-      {/* Padding for mobile fixed footer */}
-      <div className="h-20 md:hidden" />
+      {/* Padding for mobile fixed footer (account for the bottom action bar) */}
+      <div className="h-24 md:hidden" />
     </div>
   );
 }
