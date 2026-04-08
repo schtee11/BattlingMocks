@@ -89,67 +89,107 @@ router.post('/import-prospects', async (_req, res) => {
 // ---------- Bulk headshot fetch from ESPN ----------
 // Queries ESPN's undocumented search API, prefers college-football results,
 // matches by school when possible. Stores successes in players.headshot_url.
+
+// Walks an arbitrary object looking for a plausible image URL. Checks common
+// fields first, then falls back to scanning the whole object for any https URL
+// that looks like a player headshot.
+function extractImageUrl(obj) {
+  if (!obj) return null;
+  if (typeof obj === 'string') {
+    return obj.startsWith('http') ? obj : null;
+  }
+  if (typeof obj !== 'object') return null;
+
+  const fields = ['default', 'href', 'url', 'src', 'lg', 'large', 'md', 'medium', 'small'];
+  for (const f of fields) {
+    if (typeof obj[f] === 'string' && obj[f].startsWith('http')) return obj[f];
+  }
+  try {
+    const json = JSON.stringify(obj);
+    const m = json.match(/https?:\/\/[^"]*\.(?:png|jpg|jpeg|webp)[^"]*/i);
+    if (m) return m[0];
+    const m2 = json.match(/https?:\/\/[^"]*(?:headshot|player|athlete|i\/headshots|combiner)[^"]*/i);
+    if (m2) return m2[0];
+  } catch {}
+  return null;
+}
+
+let loggedSample = false; // log the first ESPN response per server start for debugging
+
 async function searchEspnForHeadshot(name, school) {
   const q = encodeURIComponent(name);
-  const url = `https://site.web.api.espn.com/apis/common/v3/search?limit=10&query=${q}&type=player`;
-  try {
-    const r = await fetch(url, {
-      headers: {
-        'User-Agent': 'MockDraftShowdown/1.0 (+https://mockdraftshowdown.netlify.app)',
-        Accept: 'application/json',
-      },
-    });
-    if (!r.ok) return null;
-    const data = await r.json();
+  // Try the v2 search first — it's what ESPN's own apps use and has stable
+  // image URLs on each result. Fall back to common/v3 if v2 misses.
+  const urls = [
+    `https://site.web.api.espn.com/apis/search/v2?region=us&lang=en&query=${q}&limit=10&page=1`,
+    `https://site.web.api.espn.com/apis/common/v3/search?limit=10&query=${q}&type=player`,
+  ];
 
-    // ESPN's response shape varies by endpoint version. Try several paths.
-    const buckets = [
-      data?.items,
-      data?.results?.flatMap?.((g) => g.contents || g.hits || []),
-      data?.results,
-    ].filter(Array.isArray);
-    const items = buckets[0] || [];
-
-    // Prefer college-football hits
-    const isCfb = (it) => {
-      const sport = (it.sport || it.league || '').toString().toLowerCase();
-      if (sport.includes('college')) return true;
-      const sub = (it.subtitle || it.description || '').toLowerCase();
-      return /college|ncaa|fbs/.test(sub);
-    };
-    const cfb = items.filter(isCfb);
-    const candidates = cfb.length > 0 ? cfb : items;
-
-    // Fuzzy match by school
-    let best = candidates[0];
-    if (school && candidates.length > 1) {
-      const sl = school.toLowerCase();
-      const matched = candidates.find((it) => {
-        const blob = `${it.subtitle || ''} ${it.description || ''} ${it.team || ''} ${JSON.stringify(it.team || {})}`.toLowerCase();
-        return blob.includes(sl);
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, {
+        headers: {
+          'User-Agent': 'MockDraftShowdown/1.0 (+https://mockdraftshowdown.netlify.app)',
+          Accept: 'application/json',
+        },
       });
-      if (matched) best = matched;
-    }
-    if (!best) return null;
+      if (!r.ok) continue;
+      const data = await r.json();
 
-    // Pull an image URL from whichever field is populated
-    const img =
-      best.image?.default ||
-      (typeof best.image === 'string' ? best.image : null) ||
-      best.headshot ||
-      best.headshotUrl ||
-      best.thumbnail ||
-      best.img ||
-      null;
-    return typeof img === 'string' && img.startsWith('http') ? img : null;
-  } catch {
-    return null;
+      if (!loggedSample) {
+        loggedSample = true;
+        console.log('[espn search] sample response for', name, JSON.stringify(data).slice(0, 2000));
+      }
+
+      // Normalize candidates from whichever path exists in the response
+      const buckets = [
+        data?.items,
+        data?.results?.flatMap?.((g) => g.contents || g.hits || []),
+        data?.results,
+      ].filter(Array.isArray);
+      const items = (buckets[0] || []).filter((it) => it && typeof it === 'object');
+
+      if (items.length === 0) continue;
+
+      // Prefer college-football hits
+      const isCfb = (it) => {
+        const blob = [it.sport, it.league, it.subtitle, it.description, JSON.stringify(it.link || '')]
+          .filter(Boolean).join(' ').toLowerCase();
+        return /college|ncaa|fbs/.test(blob);
+      };
+      const cfb = items.filter(isCfb);
+      const candidates = cfb.length > 0 ? cfb : items;
+
+      // Fuzzy match by school
+      let best = candidates[0];
+      if (school && candidates.length > 1) {
+        const sl = school.toLowerCase();
+        const matched = candidates.find((it) => {
+          const blob = `${it.subtitle || ''} ${it.description || ''} ${JSON.stringify(it.link || '')}`.toLowerCase();
+          return blob.includes(sl);
+        });
+        if (matched) best = matched;
+      }
+
+      // Try each plausible image source
+      const candidateImages = [best.image, best.headshot, best.thumbnail, best.img, best.logo, best];
+      for (const c of candidateImages) {
+        const u = extractImageUrl(c);
+        if (u) return u;
+      }
+    } catch (e) {
+      console.error('[espn search] error', e.message);
+    }
   }
+  return null;
 }
 
 router.post('/fetch-headshots', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
   const overwrite = req.query.overwrite === '1';
+
+  // Reset the sample logging flag so the first call after deploy logs a sample
+  loggedSample = false;
 
   const { rows: players } = await pool.query(
     overwrite
@@ -160,23 +200,25 @@ router.post('/fetch-headshots', async (req, res) => {
 
   let updated = 0;
   let failed = 0;
+  const samples = [];
   for (const p of players) {
     const url = await searchEspnForHeadshot(p.name, p.school);
     if (url) {
       try {
         await pool.query('UPDATE players SET headshot_url = $1 WHERE id = $2', [url, p.id]);
         updated++;
+        if (samples.length < 5) samples.push({ name: p.name, url });
       } catch {
         failed++;
       }
     } else {
       failed++;
     }
-    // Be a polite client.
     await new Promise((r) => setTimeout(r, 150));
   }
 
-  res.json({ ok: true, scanned: players.length, updated, failed });
+  console.log('[fetch-headshots] done', { scanned: players.length, updated, failed, samples });
+  res.json({ ok: true, scanned: players.length, updated, failed, samples });
 });
 
 // ---------- Draft order ----------

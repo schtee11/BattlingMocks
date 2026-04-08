@@ -227,7 +227,13 @@ export default function Admin() {
     try {
       const r = await api.fetchHeadshots(key, { overwrite });
       toast.dismiss(id);
-      toast.success(`Scanned ${r.scanned} · updated ${r.updated} · missed ${r.failed}`);
+      toast.success(`Scanned ${r.scanned} · updated ${r.updated} · missed ${r.failed}`, { duration: 5000 });
+      if (r.samples?.length) {
+        // Log sample URLs so you can click them in the devtools console to verify
+        // eslint-disable-next-line no-console
+        console.log('[fetch-headshots] sample saved URLs:', r.samples);
+        toast(`Sample: ${r.samples[0].name} → ${r.samples[0].url}`, { duration: 10000 });
+      }
       invalidateCache('players');
       loadAll();
     } catch (e) {
