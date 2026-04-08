@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  DragOverlay,
+} from '@dnd-kit/core';
 import { api } from '../lib/api.js';
 import { isAdmin } from '../lib/admin.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -17,25 +26,12 @@ const TABS = [
 ];
 
 export default function Admin() {
+  // ----- Hooks (must run unconditionally) -----
   const { user } = useAuth();
   const [key, setKey] = useState(localStorage.getItem('mds_admin') || '');
   const [unlocked, setUnlocked] = useState(false);
   const [tab, setTab] = useState('results');
   const playerSearchRef = useRef(null);
-
-  // Access gate: the admin UI is invisible to anyone not on the allow-list.
-  // (Backend routes are still protected by X-Admin-Key header — this is UX,
-  // not a security boundary.)
-  if (!isAdmin(user)) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-32 text-center route-fade">
-        <div className="caption text-accent">Cut in Round 1</div>
-        <div className="font-mono font-bold text-7xl text-accent mt-2">404</div>
-        <div className="text-text-secondary mt-4 mb-6">That page doesn't exist.</div>
-        <Link to="/"><Button>Back to Home</Button></Link>
-      </div>
-    );
-  }
 
   const [players, setPlayers] = useState([]);
   const [actuals, setActuals] = useState([]);
@@ -47,11 +43,15 @@ export default function Admin() {
   const [pickNum, setPickNum] = useState(1);
   const [playerSearch, setPlayerSearch] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState(null);
-  const [team, setTeam] = useState('');
+
+  // Draft Order drag state
+  const [activeDragId, setActiveDragId] = useState(null);
 
   // Players tab state
   const [newP, setNewP] = useState({ name: '', position: '', school: '' });
   const [confirmDelete, setConfirmDelete] = useState(null);
+
+  const userIsAdmin = isAdmin(user);
 
   async function unlock(candidateKey) {
     const trying = candidateKey ?? key;
@@ -70,10 +70,11 @@ export default function Admin() {
 
   // Auto-unlock on mount if we already have a valid stored key
   useEffect(() => {
+    if (!userIsAdmin) return;
     const stored = localStorage.getItem('mds_admin');
     if (stored && !unlocked) unlock(stored);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [userIsAdmin]);
 
   async function loadAll() {
     try {
@@ -91,6 +92,19 @@ export default function Admin() {
   }
 
   useEffect(() => { if (unlocked) loadAll(); /* eslint-disable-next-line */ }, [unlocked]);
+
+  // Access gate (after hooks): non-admins see a 404. Backend X-Admin-Key
+  // is still the real security boundary; this just hides the UI.
+  if (!userIsAdmin) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-32 text-center route-fade">
+        <div className="caption text-accent">Cut in Round 1</div>
+        <div className="font-mono font-bold text-7xl text-accent mt-2">404</div>
+        <div className="text-text-secondary mt-4 mb-6">That page doesn't exist.</div>
+        <Link to="/"><Button>Back to Home</Button></Link>
+      </div>
+    );
+  }
 
   if (!unlocked) {
     return (
@@ -120,10 +134,12 @@ export default function Admin() {
     e.preventDefault();
     if (!selectedPlayer) return toast.error('Select a player');
     try {
+      // Team is derived from the draft order — no need for the user to type it.
+      const teamForPick = order.find((o) => o.pick_number === Number(pickNum))?.team || null;
       await api.setActualPick(key, {
         pick_number: Number(pickNum),
         player_id: selectedPlayer.id,
-        team,
+        team: teamForPick,
       });
       const savedPick = Number(pickNum);
       toast.success(`Pick ${savedPick} saved · scored live`);
@@ -132,9 +148,6 @@ export default function Admin() {
       setPickNum(next);
       setSelectedPlayer(null);
       setPlayerSearch('');
-      // Pre-fill team from draft order for the next pick
-      const nextTeam = order.find((o) => o.pick_number === next)?.team || '';
-      setTeam(nextTeam);
       loadAll();
       // Focus the player search so you can just start typing
       setTimeout(() => playerSearchRef.current?.focus(), 0);
@@ -191,6 +204,43 @@ export default function Admin() {
       toast.success('Draft order saved');
     } catch (e) { toast.error(e.message); }
   }
+
+  // Swap the team data between two pick numbers (the pick_number positions
+  // stay fixed, only the team/team_name fields move). Use this when a trade
+  // sends pick A to the team that owned pick B, and vice versa.
+  function swapOrderTeams(pickA, pickB) {
+    setOrder((prev) => {
+      const next = prev.map((o) => ({ ...o }));
+      const aIdx = next.findIndex((o) => o.pick_number === pickA);
+      const bIdx = next.findIndex((o) => o.pick_number === pickB);
+      if (aIdx < 0 || bIdx < 0) return prev;
+      const aTeam = next[aIdx].team;
+      const aName = next[aIdx].team_name;
+      next[aIdx].team = next[bIdx].team;
+      next[aIdx].team_name = next[bIdx].team_name;
+      next[bIdx].team = aTeam;
+      next[bIdx].team_name = aName;
+      return next;
+    });
+  }
+
+  const orderSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+  function onOrderDragStart(e) { setActiveDragId(String(e.active.id)); }
+  function onOrderDragEnd(e) {
+    setActiveDragId(null);
+    const { active, over } = e;
+    if (!over) return;
+    const a = Number(String(active.id).replace('order-', ''));
+    const b = Number(String(over.id).replace('order-', ''));
+    if (Number.isInteger(a) && Number.isInteger(b) && a !== b) {
+      swapOrderTeams(a, b);
+    }
+  }
+  const draggingRow = activeDragId
+    ? order.find((o) => String(o.pick_number) === activeDragId.replace('order-', ''))
+    : null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 route-fade">
@@ -260,15 +310,12 @@ export default function Admin() {
               {selectedPlayer && (
                 <div className="text-sm text-text-secondary">
                   Selected: <span className="text-text-primary">{selectedPlayer.name}</span>
+                  {' · '}
+                  <span className="text-text-muted">
+                    {order.find((o) => o.pick_number === Number(pickNum))?.team || '—'}
+                  </span>
                 </div>
               )}
-              <input
-                value={team}
-                onChange={(e) => setTeam(e.target.value.toUpperCase())}
-                placeholder="Team abbr (e.g. NYJ)"
-                maxLength={5}
-                className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary uppercase"
-              />
               <Button type="submit" className="w-full">Save Pick</Button>
             </form>
           </Card>
@@ -293,28 +340,44 @@ export default function Admin() {
       {tab === 'order' && (
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-text-primary">2026 Round 1 Draft Order</h3>
+            <div>
+              <h3 className="font-semibold text-text-primary">2026 Round 1 Draft Order</h3>
+              <p className="text-text-muted text-xs mt-0.5">
+                Drag a row onto another to swap teams (use after a trade). Or edit team fields inline.
+              </p>
+            </div>
             <Button size="sm" onClick={saveDraftOrder}>Save</Button>
           </div>
-          <ul className="grid md:grid-cols-2 gap-2">
-            {order.map((o, idx) => (
-              <li key={o.pick_number} className="flex items-center gap-2 p-2 bg-bg-deep rounded border border-border-subtle">
-                <div className="w-8 font-mono text-accent text-sm">{o.pick_number}</div>
-                <input
-                  value={o.team}
-                  onChange={(e) => setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team: e.target.value.toUpperCase().slice(0, 5) } : x))}
-                  placeholder="TEAM"
-                  className="w-16 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm uppercase"
+          <DndContext
+            sensors={orderSensors}
+            onDragStart={onOrderDragStart}
+            onDragEnd={onOrderDragEnd}
+            onDragCancel={() => setActiveDragId(null)}
+          >
+            <ul className="grid md:grid-cols-2 gap-2">
+              {order.map((o, idx) => (
+                <DraftOrderRow
+                  key={o.pick_number}
+                  row={o}
+                  onTeamChange={(val) =>
+                    setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team: val.toUpperCase().slice(0, 5) } : x))
+                  }
+                  onTeamNameChange={(val) =>
+                    setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team_name: val } : x))
+                  }
                 />
-                <input
-                  value={o.team_name}
-                  onChange={(e) => setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team_name: e.target.value } : x))}
-                  placeholder="Team name"
-                  className="flex-1 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm"
-                />
-              </li>
-            ))}
-          </ul>
+              ))}
+            </ul>
+            <DragOverlay>
+              {draggingRow ? (
+                <div className="flex items-center gap-2 p-2 bg-bg-elevated rounded border border-accent shadow-glow text-sm">
+                  <div className="w-8 font-mono text-accent">{draggingRow.pick_number}</div>
+                  <div className="font-display font-semibold text-text-primary">{draggingRow.team}</div>
+                  <div className="text-text-secondary">{draggingRow.team_name}</div>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </Card>
       )}
 
@@ -405,5 +468,52 @@ export default function Admin() {
         any submitted mock can't be deleted.
       </Modal>
     </div>
+  );
+}
+
+// One row in the Draft Order grid. Both draggable (can be picked up) and
+// droppable (can receive another row dropped on it). Editing the team
+// fields inline still works — drag is initiated by the grab handle.
+function DraftOrderRow({ row, onTeamChange, onTeamNameChange }) {
+  const id = `order-${row.pick_number}`;
+  const drag = useDraggable({ id });
+  const drop = useDroppable({ id });
+  const setRefs = (node) => { drag.setNodeRef(node); drop.setNodeRef(node); };
+
+  const ringCls = drop.isOver
+    ? 'ring-2 ring-accent shadow-glow'
+    : 'border border-border-subtle';
+  const dragCls = drag.isDragging ? 'opacity-30' : '';
+
+  return (
+    <li
+      ref={setRefs}
+      className={`flex items-center gap-2 p-2 bg-bg-deep rounded transition-all ${ringCls} ${dragCls}`}
+    >
+      {/* Drag handle — only this triggers the drag, so the inputs stay clickable */}
+      <button
+        type="button"
+        {...drag.listeners}
+        {...drag.attributes}
+        aria-label={`Drag pick ${row.pick_number}`}
+        className="cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary px-1 select-none touch-none"
+        title="Drag to swap with another pick"
+      >
+        ⋮⋮
+      </button>
+      <div className="w-7 font-mono text-accent text-sm shrink-0">{row.pick_number}</div>
+      <input
+        value={row.team}
+        onChange={(e) => onTeamChange(e.target.value)}
+        placeholder="TEAM"
+        className="w-16 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm uppercase"
+      />
+      <input
+        value={row.team_name}
+        onChange={(e) => onTeamNameChange(e.target.value)}
+        placeholder="Team name"
+        className="flex-1 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm min-w-0"
+      />
+    </li>
   );
 }
