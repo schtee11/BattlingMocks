@@ -7,7 +7,7 @@ const router = Router();
 router.get('/', async (_req, res) => {
   const { rows } = await pool.query(
     `SELECT ap.pick_number, ap.player_id, ap.team,
-            p.name, p.position, p.school
+            p.name, p.position, p.school, p.headshot_url
      FROM actual_picks ap JOIN players p ON p.id = ap.player_id
      ORDER BY ap.pick_number`
   );

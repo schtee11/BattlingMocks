@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { posHex } from '../lib/positions.js';
 import { PositionBadge } from './ui/Badge.jsx';
+import { TeamLogo } from './ui/TeamLogo.jsx';
+import { PlayerHeadshot } from './ui/PlayerHeadshot.jsx';
 
 export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
   const { setNodeRef, isOver } = useDroppable({ id: `slot-${slot}` });
@@ -49,6 +51,9 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
         {slot}
       </div>
 
+      {/* Team logo */}
+      <TeamLogo abbr={team?.team} size="md" />
+
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <div className="caption text-[9.5px] tracking-[0.22em] truncate">
@@ -62,6 +67,13 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
         </div>
         {player ? (
           <div className="flex items-center gap-2 mt-0.5">
+            <PlayerHeadshot
+              url={player.headshot_url}
+              name={player.name}
+              position={player.position}
+              size="xs"
+              className="md:hidden"
+            />
             <div className="text-text-primary font-semibold truncate text-[14px]">{player.name}</div>
             <PositionBadge position={player.position} />
             <div className="text-[11px] text-text-muted truncate hidden sm:block">{player.school}</div>

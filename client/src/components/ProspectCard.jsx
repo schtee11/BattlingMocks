@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { posHex } from '../lib/positions.js';
 import { PositionBadge } from './ui/Badge.jsx';
+import { PlayerHeadshot } from './ui/PlayerHeadshot.jsx';
 
 function ProspectCardInner({ player, used, selected, onClick, onDraft, onClockSlot }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -40,9 +41,15 @@ function ProspectCardInner({ player, used, selected, onClick, onDraft, onClockSl
       aria-label={`${player.name}, ${player.position}, ${player.school}`}
     >
       <div className="flex items-center gap-2">
-        <div className="font-mono text-[10px] text-text-muted w-6 shrink-0 text-right">
+        <div className="font-mono text-[10px] text-text-muted w-5 shrink-0 text-right">
           {player.rank ?? ''}
         </div>
+        <PlayerHeadshot
+          url={player.headshot_url}
+          name={player.name}
+          position={player.position}
+          size="xs"
+        />
         <div className="flex-1 min-w-0">
           <div className={`text-[13.5px] font-semibold truncate ${used ? 'line-through text-text-muted' : 'text-text-primary'}`}>
             {player.name}

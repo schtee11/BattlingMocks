@@ -17,6 +17,8 @@ import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { Modal } from '../components/ui/Modal.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
+import { TeamLogo } from '../components/ui/TeamLogo.jsx';
+import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 
 const TABS = [
   ['results', 'Enter Results'],
@@ -206,6 +208,14 @@ export default function Admin() {
     } catch (e) { toast.error(e.message); }
   }
 
+  async function setPlayerHeadshot(id, url) {
+    try {
+      await api.updatePlayer(key, id, { headshot_url: url || null });
+      toast.success('Headshot saved');
+      loadAll();
+    } catch (e) { toast.error(e.message); }
+  }
+
   async function importProspects() {
     try {
       const r = await api.importProspects(key);
@@ -324,8 +334,9 @@ export default function Admin() {
                           o.pick_number === Number(pickNum) ? 'bg-accent/[0.07]' : ''
                         }`}
                       >
-                        <span className="font-mono text-accent w-8 text-right">{o.pick_number}</span>
-                        <span className="font-display font-semibold text-text-primary w-12">{o.team}</span>
+                        <span className="font-mono text-accent w-7 text-right">{o.pick_number}</span>
+                        <TeamLogo abbr={o.team} size="xs" />
+                        <span className="font-display font-semibold text-text-primary w-10">{o.team}</span>
                         <span className="text-text-secondary truncate">{o.team_name}</span>
                       </li>
                     ))}
@@ -384,7 +395,9 @@ export default function Admin() {
             <ul className="space-y-1 max-h-[55vh] overflow-y-auto">
               {actuals.map((a) => (
                 <li key={a.pick_number} className="flex items-center gap-2 py-1.5 border-b border-border-subtle">
-                  <span className="font-mono text-accent w-8 text-sm">{a.pick_number}</span>
+                  <span className="font-mono text-accent w-7 text-sm">{a.pick_number}</span>
+                  <TeamLogo abbr={a.team} size="xs" />
+                  <PlayerHeadshot url={a.headshot_url} name={a.name} position={a.position} size="xs" />
                   <span className="text-text-primary text-sm flex-1 truncate">{a.name}</span>
                   <PositionBadge position={a.position} />
                   <span className="text-text-muted text-xs w-10 text-right">{a.team}</span>
@@ -432,6 +445,7 @@ export default function Admin() {
               {draggingRow ? (
                 <div className="flex items-center gap-2 p-2 bg-bg-elevated rounded border border-accent shadow-glow text-sm">
                   <div className="w-8 font-mono text-accent">{draggingRow.pick_number}</div>
+                  <TeamLogo abbr={draggingRow.team} size="xs" />
                   <div className="font-display font-semibold text-text-primary">{draggingRow.team}</div>
                   <div className="text-text-secondary">{draggingRow.team_name}</div>
                 </div>
@@ -461,9 +475,23 @@ export default function Admin() {
               placeholder="Search…"
               className="w-full bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm mb-2"
             />
+            <div className="text-[11px] text-text-muted mb-2">
+              Click a headshot to paste a URL (or leave blank to remove).
+            </div>
             <ul className="max-h-[50vh] overflow-y-auto divide-y divide-border-subtle">
               {filteredPlayers.map((p) => (
                 <li key={p.id} className="flex items-center gap-2 py-2 text-sm">
+                  <button
+                    type="button"
+                    title="Set headshot URL"
+                    onClick={() => {
+                      const url = window.prompt(`Headshot URL for ${p.name}`, p.headshot_url || '');
+                      if (url !== null) setPlayerHeadshot(p.id, url.trim());
+                    }}
+                    className="rounded-full hover:ring-2 hover:ring-accent/60 transition"
+                  >
+                    <PlayerHeadshot url={p.headshot_url} name={p.name} position={p.position} size="xs" />
+                  </button>
                   <span className="text-text-primary flex-1 truncate">{p.name}</span>
                   <PositionBadge position={p.position} />
                   <span className="text-text-muted truncate w-32 hidden sm:block">{p.school}</span>
@@ -562,11 +590,12 @@ function DraftOrderRow({ row, onTeamChange, onTeamNameChange }) {
         ⋮⋮
       </button>
       <div className="w-7 font-mono text-accent text-sm shrink-0">{row.pick_number}</div>
+      <TeamLogo abbr={row.team} size="xs" />
       <input
         value={row.team}
         onChange={(e) => onTeamChange(e.target.value)}
         placeholder="TEAM"
-        className="w-16 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm uppercase"
+        className="w-14 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm uppercase"
       />
       <input
         value={row.team_name}

@@ -9,6 +9,8 @@ import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
+import { TeamLogo } from '../components/ui/TeamLogo.jsx';
+import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { useCountUp } from '../hooks/useCountUp.js';
 
 function scoreFor(actualSlot, pickSlot) {
@@ -22,17 +24,20 @@ export default function MyMock() {
   const { user } = useAuth();
   const [mock, setMock] = useState(null);
   const [actuals, setActuals] = useState([]);
+  const [draftOrder, setDraftOrder] = useState([]);
   const [err, setErr] = useState('');
 
   const refresh = useCallback(async (opts = {}) => {
     if (!user) return;
     try {
-      const [m, a] = await Promise.all([
+      const [m, a, o] = await Promise.all([
         api.getMock(user.id),
         api.getActualPicks({ fresh: !!opts.fresh }),
+        api.getDraftOrder(),
       ]);
       setMock(m);
       setActuals(a);
+      setDraftOrder(o);
     } catch (e) {
       if (String(e.message).includes('no mock')) setErr('no_mock');
       else setErr(e.message);
@@ -55,6 +60,12 @@ export default function MyMock() {
     actuals.forEach((a) => m.set(a.pick_number, a));
     return m;
   }, [actuals]);
+
+  const teamBySlot = useMemo(() => {
+    const m = new Map();
+    draftOrder.forEach((o) => m.set(o.pick_number, o.team));
+    return m;
+  }, [draftOrder]);
 
   const scored = actuals.length > 0;
   const totalScore = useCountUp(mock?.total_score ?? 0, 1500);
@@ -174,6 +185,7 @@ export default function MyMock() {
           const { pts, label, color } = scoreFor(a?.pick_number, p.pick_number);
           const actualAtThisSlot = actualBySlot.get(p.pick_number);
           const posColor = posHex(p.position);
+          const teamAbbr = teamBySlot.get(p.pick_number);
           return (
             <li
               key={p.pick_number}
@@ -185,11 +197,18 @@ export default function MyMock() {
               }
             >
               <div
-                className="w-11 h-11 rounded-full flex items-center justify-center font-mono font-bold text-[13px] shrink-0"
+                className="w-10 h-10 rounded-full flex items-center justify-center font-mono font-bold text-[13px] shrink-0"
                 style={{ backgroundColor: posColor, color: '#04080f', boxShadow: `0 0 18px -6px ${posColor}` }}
               >
                 {p.pick_number}
               </div>
+              <TeamLogo abbr={teamAbbr} size="sm" />
+              <PlayerHeadshot
+                url={p.headshot_url}
+                name={p.name}
+                position={p.position}
+                size="sm"
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <div className="text-text-primary font-semibold truncate">{p.name}</div>
