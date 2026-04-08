@@ -65,6 +65,7 @@ export const api = {
     request(`/api/leaderboard?limit=${limit}&offset=${offset}`),
 
   // admin
+  adminListUsers: (key) => request('/api/admin/users', { adminKey: key }),
   addPlayer: (key, p) => request('/api/admin/players', { method: 'POST', body: p, adminKey: key }),
   updatePlayer: (key, id, p) =>
     request(`/api/admin/players/${id}`, { method: 'PUT', body: p, adminKey: key }),

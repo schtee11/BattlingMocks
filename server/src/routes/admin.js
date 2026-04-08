@@ -36,6 +36,25 @@ async function runScoringOnClient(client) {
   return mocks.length;
 }
 
+// ---------- Users (admin view) ----------
+router.get('/users', async (_req, res) => {
+  const { rows } = await pool.query(`
+    SELECT
+      u.id,
+      u.display_name,
+      u.avatar_url,
+      u.discord_id,
+      u.created_at,
+      (m.id IS NOT NULL) AS has_mock,
+      COALESCE(m.total_score, 0) AS total_score,
+      m.submitted_at
+    FROM users u
+    LEFT JOIN mocks m ON m.user_id = u.id
+    ORDER BY u.created_at DESC
+  `);
+  res.json(rows);
+});
+
 // ---------- Players CRUD ----------
 router.post('/players', async (req, res) => {
   const { name, position, school, headshot_url } = req.body || {};

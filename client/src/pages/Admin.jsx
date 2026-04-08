@@ -19,11 +19,14 @@ import { Modal } from '../components/ui/Modal.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
+import { Avatar } from '../components/ui/Avatar.jsx';
+import { prettyName } from '../lib/displayName.js';
 
 const TABS = [
   ['results', 'Enter Results'],
   ['order', 'Draft Order'],
   ['players', 'Prospects'],
+  ['users', 'Users'],
   ['scoring', 'Scoring & Lock'],
 ];
 
@@ -38,6 +41,7 @@ export default function Admin() {
   const [players, setPlayers] = useState([]);
   const [actuals, setActuals] = useState([]);
   const [order, setOrder] = useState([]);
+  const [users, setUsers] = useState([]);
   const [settings, setSettings] = useState(null);
   const [scoreSummary, setScoreSummary] = useState(null);
 
@@ -100,6 +104,20 @@ export default function Admin() {
   }
 
   useEffect(() => { if (unlocked) loadAll(); /* eslint-disable-next-line */ }, [unlocked]);
+
+  async function loadUsers() {
+    try {
+      const u = await api.adminListUsers(key);
+      setUsers(u);
+    } catch (e) { toast.error(e.message); }
+  }
+
+  // Fetch users lazily the first time the Users tab opens, and refresh on
+  // subsequent opens so a newly signed-up Discord user shows up without reload.
+  useEffect(() => {
+    if (unlocked && tab === 'users') loadUsers();
+    // eslint-disable-next-line
+  }, [unlocked, tab]);
 
   // Access gate (after hooks): non-admins see a 404. Backend X-Admin-Key
   // is still the real security boundary; this just hides the UI.
@@ -563,6 +581,82 @@ export default function Admin() {
             </ul>
           </Card>
         </div>
+      )}
+
+      {/* Users */}
+      {tab === 'users' && (
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div>
+              <h3 className="font-semibold text-text-primary">Signed Up ({users.length})</h3>
+              <p className="text-text-muted text-xs mt-0.5">
+                {users.filter((u) => u.has_mock).length} have submitted a mock.
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" onClick={loadUsers}>Refresh</Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="text-left caption">
+                  <th className="px-3 py-2 font-display">Name</th>
+                  <th className="px-3 py-2 font-display text-center hidden sm:table-cell">Mock</th>
+                  <th className="px-3 py-2 font-display text-right">Score</th>
+                  <th className="px-3 py-2 font-display text-right hidden md:table-cell">Joined</th>
+                  <th className="px-3 py-2 font-display text-right hidden lg:table-cell">Discord</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-text-muted">
+                      No users yet.
+                    </td>
+                  </tr>
+                ) : (
+                  users.map((u) => (
+                    <tr key={u.id} className="border-t border-border-subtle hover:bg-white/[0.02]">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar url={u.avatar_url} name={u.display_name} size="xs" />
+                          <span className="text-text-primary font-semibold truncate">
+                            {prettyName(u.display_name)}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-center hidden sm:table-cell">
+                        {u.has_mock ? (
+                          <span className="text-emerald-400" title="Submitted a mock">✓</span>
+                        ) : (
+                          <span className="text-text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular">
+                        {u.has_mock ? (
+                          <span className={u.total_score > 0 ? 'text-gold' : 'text-text-secondary'}>
+                            {u.total_score}
+                          </span>
+                        ) : (
+                          <span className="text-text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-text-muted text-[11.5px] hidden md:table-cell">
+                        {new Date(u.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-3 py-2 text-right text-text-muted text-[11px] hidden lg:table-cell">
+                        {u.discord_id ? (
+                          <span title={`Discord ID: ${u.discord_id}`}>Discord</span>
+                        ) : (
+                          <span>Name</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {/* Scoring */}
