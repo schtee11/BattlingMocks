@@ -60,9 +60,23 @@ export default function Draft() {
   const [view, setView] = useState('bigboard');
   const [showConfirm, setShowConfirm] = useState(false);
   const [showClearAll, setShowClearAll] = useState(false);
-  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  // Mobile-only: which pick slot the drawer is currently drafting for.
+  // null means the drawer is closed.
+  const [draftingForSlot, setDraftingForSlot] = useState(null);
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+
+  // Reactive isMobile flag — branches the slot click behavior.
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     if (!user) { nav('/join'); return; }
@@ -159,14 +173,30 @@ export default function Draft() {
 
   const handleSlotClick = useCallback((slot) => {
     if (locked) return;
+    // Mobile: tap any slot to open the drawer for that specific slot.
+    // Re-tapping a filled slot lets you replace that pick.
+    if (isMobile) {
+      setDraftingForSlot(slot);
+      return;
+    }
+    // Desktop: select-then-place flow.
     if (selectedPlayer != null) {
       assignPlayerToSlot(selectedPlayer, slot);
       setSelectedPlayer(null);
-      setMobileDrawerOpen(false);
     } else if (picks[slot]) {
       clearSlot(slot);
     }
-  }, [locked, selectedPlayer, picks, assignPlayerToSlot, clearSlot]);
+  }, [isMobile, locked, selectedPlayer, picks, assignPlayerToSlot, clearSlot]);
+
+  // Mobile drawer prospect tap: assign to the slot the drawer was opened for,
+  // then close. No "select first" step needed.
+  const pickForDrawerSlot = useCallback((player) => {
+    if (draftingForSlot == null || locked) return;
+    assignPlayerToSlot(player.id, draftingForSlot);
+    const team = orderByPick.get(draftingForSlot);
+    toast.success(`Pick ${draftingForSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`);
+    setDraftingForSlot(null);
+  }, [draftingForSlot, locked, orderByPick, assignPlayerToSlot]);
 
   const handleProspectClick = useCallback((player) => {
     setSelectedPlayer((prev) => {
@@ -184,10 +214,6 @@ export default function Draft() {
   }, [locked, onClockSlot, orderByPick, assignPlayerToSlot]);
 
   // Mobile wrapper: draft + close the drawer
-  const draftToOnClockMobile = useCallback((player) => {
-    draftToOnClockCb(player);
-    setMobileDrawerOpen(false);
-  }, [draftToOnClockCb]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -432,47 +458,109 @@ export default function Draft() {
         </Button>
       </div>
 
-      {/* Mobile — prospect drawer trigger & fixed submit */}
-      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 p-3 bg-bg-deep/85 backdrop-blur-md border-t border-border-subtle">
-        <div className="flex gap-2">
-          <Button variant="secondary" className="flex-1" onClick={() => setMobileDrawerOpen(true)}>
-            Prospects ({filteredProspects.length})
-          </Button>
-          <Button
-            className="flex-1"
-            onClick={() => setShowConfirm(true)}
-            disabled={!complete || locked || busy}
-          >
-            {complete ? 'Submit' : `${filledCount}/32`}
-          </Button>
+      {/* Mobile — fixed bottom action bar */}
+      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 p-3 bg-bg-deep/90 backdrop-blur-md border-t border-border-subtle">
+        <div className="flex items-center gap-3">
+          <div className="text-left shrink-0">
+            <div className="caption text-[9px] leading-none">Picks</div>
+            <div className="font-mono font-bold text-lg leading-tight">
+              <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
+              <span className="text-text-muted">/32</span>
+            </div>
+          </div>
+          {complete ? (
+            <Button
+              className="flex-1"
+              size="lg"
+              onClick={() => setShowConfirm(true)}
+              disabled={locked || busy}
+            >
+              {submitted ? 'Submitted ✓' : 'Submit Mock'}
+            </Button>
+          ) : (
+            <Button
+              className="flex-1"
+              size="lg"
+              onClick={() => onClockSlot && setDraftingForSlot(onClockSlot)}
+              disabled={locked || !onClockSlot}
+            >
+              {onClockSlot ? `Pick #${onClockSlot}${orderByPick.get(onClockSlot) ? ` · ${orderByPick.get(onClockSlot).team}` : ''} →` : 'Done'}
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Mobile prospect drawer */}
-      {mobileDrawerOpen && (
-        <div className="md:hidden fixed inset-0 z-40" onClick={() => setMobileDrawerOpen(false)}>
+      {/* Mobile prospect drawer — opens for a specific slot, tap to assign */}
+      {draftingForSlot != null && (
+        <div className="md:hidden fixed inset-0 z-40" onClick={() => setDraftingForSlot(null)}>
           <div className="absolute inset-0 bg-black/60 animate-fade-in" />
           <div
-            className="absolute left-0 right-0 bottom-0 max-h-[80vh] glass rounded-t-2xl p-3 flex flex-col drawer-slide-up"
+            className="absolute left-0 right-0 bottom-0 max-h-[88vh] glass rounded-t-2xl flex flex-col drawer-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-3" />
-            <ProspectListInner
-              players={players}
-              filtered={filteredProspects}
-              grouped={grouped}
-              used={usedPlayerIds}
-              selected={selectedPlayer}
-              onClick={handleProspectClick}
-              onDraft={draftToOnClockMobile}
-              onClockSlot={onClockSlot}
-              search={search}
-              setSearch={setSearch}
-              posFilter={posFilter}
-              setPosFilter={setPosFilter}
-              view={view}
-              setView={setView}
-            />
+            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mt-2 mb-2" />
+
+            {/* Drawer header — shows what we're drafting for */}
+            <div className="px-4 pb-3 border-b border-border-subtle">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="caption text-[9px]">Drafting</div>
+                  <div className="font-display font-bold text-text-primary text-lg uppercase tracking-wide leading-tight">
+                    Pick {draftingForSlot}
+                    {orderByPick.get(draftingForSlot) && (
+                      <span className="text-accent ml-2">{orderByPick.get(draftingForSlot).team}</span>
+                    )}
+                  </div>
+                  {orderByPick.get(draftingForSlot)?.team_name && (
+                    <div className="text-text-muted text-[11px] truncate">
+                      {orderByPick.get(draftingForSlot).team_name}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDraftingForSlot(null)}
+                  aria-label="Close"
+                  className="text-text-muted hover:text-text-primary text-2xl px-3 -mr-1"
+                >
+                  ✕
+                </button>
+              </div>
+              {picks[draftingForSlot] && (
+                <div className="mt-2 text-[11px] text-text-secondary">
+                  Currently:{' '}
+                  <span className="text-text-primary font-semibold">
+                    {playerById.get(picks[draftingForSlot])?.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { clearSlot(draftingForSlot); setDraftingForSlot(null); }}
+                    className="ml-2 text-red-400 hover:text-red-300 text-[11px] underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 flex-1 overflow-hidden flex flex-col">
+              <ProspectListInner
+                players={players}
+                filtered={filteredProspects}
+                grouped={grouped}
+                used={usedPlayerIds}
+                selected={null}
+                onClick={pickForDrawerSlot}
+                onDraft={null}
+                onClockSlot={null}
+                search={search}
+                setSearch={setSearch}
+                posFilter={posFilter}
+                setPosFilter={setPosFilter}
+                view={view}
+                setView={setView}
+              />
+            </div>
           </div>
         </div>
       )}
