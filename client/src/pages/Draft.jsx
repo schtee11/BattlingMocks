@@ -183,20 +183,13 @@ export default function Draft() {
     }
   }, [isMobile, draftingForSlot, onClockSlot]);
 
-  // Mobile only: lock body scroll + disable pull-to-refresh while the Draft
-  // page is mounted. This prevents the deep empty scroll past the bottom bar
-  // and stops iOS Safari's pull-to-refresh from firing inside the panels.
-  useEffect(() => {
-    if (!isMobile) return undefined;
-    const prevOverflow = document.body.style.overflow;
-    const prevOverscroll = document.body.style.overscrollBehaviorY;
-    document.body.style.overflow = 'hidden';
-    document.body.style.overscrollBehaviorY = 'none';
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      document.body.style.overscrollBehaviorY = prevOverscroll;
-    };
-  }, [isMobile]);
+  // Mobile: pull-to-refresh from inside the panels is killed via
+  // `overscroll-behavior: contain` on each panel's scroll container (set on
+  // the <ul> inline below). The body itself stays unlocked so iOS Safari's
+  // pull-to-refresh still works when you swipe down from the navbar area.
+  // Deep empty scroll past the bottom bar is prevented because nothing in
+  // normal flow extends past the viewport (the mobile two-panel layout is
+  // position: fixed).
 
   // Mobile: when the active pick changes (or top panel uncollapses), scroll
   // its row into view inside the top board panel.
