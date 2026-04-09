@@ -34,8 +34,20 @@ router.get('/', async (req, res) => {
   }
 
   try {
+    // Send real browser headers. ESPN CDN serves different content (a
+    // generic placeholder silhouette) when the User-Agent looks bot-like,
+    // which is why the team logo was showing as a player photo in the
+    // captured export. A standard Chrome UA + Referer fixes it.
     const upstream = await fetch(parsed.toString(), {
-      headers: { 'User-Agent': 'MockDraftShowdown/1.0' },
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept':
+          'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        Referer: 'https://www.espn.com/',
+      },
     });
     if (!upstream.ok) {
       return res.status(upstream.status).json({ error: `upstream ${upstream.status}` });

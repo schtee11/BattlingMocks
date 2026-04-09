@@ -161,7 +161,10 @@ function SavedView({ savedMock, players, onRestart }) {
       )
     );
     const dataUrl = await toPng(exportRef.current, {
-      cacheBust: false,
+      // cacheBust forces html-to-image to append a unique query param to
+      // every image URL, defeating any stale browser cache. Necessary
+      // because switching themes was producing wrong-theme captures.
+      cacheBust: true,
       pixelRatio: 2,
       backgroundColor: themeBg,
     });
@@ -503,17 +506,37 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
     >
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 32 }}>
-        <img
-          src={proxyImageUrl(teamLogoEspnUrl(userTeam))}
-          alt=""
-          crossOrigin="anonymous"
+        {/* Text-only team badge. Previously rendered the real ESPN logo via
+            proxy but it was unreliable across themes (light mode was
+            returning a wrong image) and added a network dependency to every
+            export. A clean styled text box with the team abbreviation is
+            always readable, always identifies the team, and works
+            identically in dark and light themes. */}
+        <div
           style={{
             width: 96,
             height: 96,
-            objectFit: 'contain',
+            borderRadius: 18,
+            background: `linear-gradient(135deg, ${C.accent}22 0%, ${C.accent}08 100%)`,
+            boxShadow: `inset 0 0 0 2px ${C.accent}55`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             flexShrink: 0,
           }}
-        />
+        >
+          <div
+            style={{
+              fontSize: userTeam.length >= 4 ? 22 : 30,
+              fontWeight: 900,
+              letterSpacing: 1.5,
+              color: C.accent,
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
+            }}
+          >
+            {userTeam}
+          </div>
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
