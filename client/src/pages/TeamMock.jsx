@@ -116,10 +116,12 @@ function SavedView({ savedMock, players, onRestart }) {
           <TeamLogo abbr={userTeam} size="lg" />
           <div>
             <h2 className="font-display text-xl font-bold uppercase tracking-[0.1em] text-text-primary">
-              Your Team Mock
+              {savedMock.title || `${userTeam} Team Mock`}
             </h2>
             <p className="text-text-secondary text-xs">
-              Saved · {new Date(savedMock.submitted_at).toLocaleDateString()}
+              Saved · {new Date(savedMock.submitted_at).toLocaleString(undefined, {
+                month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+              })}
             </p>
           </div>
         </div>
@@ -127,7 +129,7 @@ function SavedView({ savedMock, players, onRestart }) {
           onClick={onRestart}
           className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] px-3 py-1.5 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition"
         >
-          Start Over
+          ← Back
         </button>
       </div>
       <div className="space-y-5">
@@ -320,6 +322,15 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   async function handleSave() {
     if (!user) { toast.error('Sign in to save'); return; }
     if (phase !== PHASE_DONE) return;
+    // Prompt for an optional title — defaults to team + short timestamp.
+    // Using window.prompt keeps the UX ultra-lightweight; a modal input
+    // can come later if it's worth the weight.
+    const defaultTitle = `${team} · ${new Date().toLocaleDateString(undefined, {
+      month: 'short', day: 'numeric',
+    })}`;
+    const rawTitle = window.prompt('Name this mock (optional):', defaultTitle);
+    if (rawTitle === null) return; // user cancelled
+    const title = rawTitle.trim() || defaultTitle;
     setSaving(true);
     try {
       const payload = picks.map((p) => ({
@@ -327,7 +338,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         player_id: p.player_id,
         round: p.round,
       }));
-      await api.submitTeamMock(user.id, team, payload);
+      await api.submitTeamMock(user.id, team, payload, title);
       toast.success('Team mock saved!');
       onSaved();
     } catch (e) {
@@ -1182,13 +1193,79 @@ function TradeModal({ userTeam, liveOrder, picksMadeCount, tradeValues, onClose,
   );
 }
 
+// ─── Saved Mocks List ─────────────────────────────────────────────────────────
+function SavedMocksList({ mocks, onOpen, onDelete, onNew }) {
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold uppercase tracking-[0.12em] text-text-primary">
+            Team Mocks
+          </h1>
+          <p className="text-text-secondary text-[11px] mt-1">
+            {mocks.length} saved · unlimited
+          </p>
+        </div>
+        <button
+          onClick={onNew}
+          className="font-display font-bold uppercase tracking-[0.14em] text-[11px] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 active:scale-[0.98]"
+          style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+        >
+          + New Team Mock
+        </button>
+      </div>
+
+      {mocks.length === 0 ? (
+        <div className="text-center py-16 text-text-muted">
+          <p className="text-sm mb-2">No team mocks yet.</p>
+          <p className="text-[11px]">Start one to build your first sandbox draft.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {mocks.map((m) => (
+            <div
+              key={m.id}
+              className="group relative flex items-center gap-3 p-3 rounded-xl border border-border-subtle bg-bg-surface/40 hover:border-accent/50 hover:bg-white/[0.02] transition-all cursor-pointer"
+              onClick={() => onOpen(m)}
+            >
+              <TeamLogo abbr={m.team_abbr} size="lg" />
+              <div className="flex-1 min-w-0">
+                <div className="font-display font-bold text-[13px] uppercase tracking-[0.08em] text-text-primary truncate">
+                  {m.title || `${m.team_abbr} Mock`}
+                </div>
+                <div className="text-[10.5px] text-text-muted">
+                  {new Date(m.submitted_at).toLocaleString(undefined, {
+                    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                  })}
+                </div>
+                <div className="text-[10px] text-text-muted mt-0.5">
+                  {m.pick_count} picks
+                </div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(m); }}
+                className="opacity-0 group-hover:opacity-100 font-display text-[9px] uppercase tracking-wider text-text-muted hover:text-[color:var(--color-danger,#ef4444)] transition px-2 py-1"
+                title="Delete mock"
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page Shell ───────────────────────────────────────────────────────────────
 export default function TeamMock() {
   const { user } = useAuth();
   const nav = useNavigate();
   const [players, setPlayers] = useState(null);
   const [draftOrder, setDraftOrder] = useState(null);
-  const [savedMock, setSavedMock] = useState(undefined); // undefined = loading, null = none
+  // undefined = loading, [] = none yet
+  const [savedMocks, setSavedMocks] = useState(undefined);
+  const [activeMock, setActiveMock] = useState(null); // currently-viewed saved mock
   const [team, setTeam] = useState(null); // currently drafting for
 
   // Load players + full draft order (all 7 rounds) on mount. Always pull the
@@ -1208,38 +1285,56 @@ export default function TeamMock() {
   }
   useEffect(() => { loadData(); }, []);
 
-  // Load saved team mock if user is signed in
-  useEffect(() => {
-    if (!user) { setSavedMock(null); return; }
-    api.getTeamMock(user.id)
-      .then((m) => setSavedMock(m))
-      .catch(() => setSavedMock(null));
-  }, [user]);
+  // Load the user's saved team mocks list
+  function loadSavedMocks() {
+    if (!user) { setSavedMocks([]); return; }
+    api.listTeamMocks(user.id)
+      .then((list) => setSavedMocks(Array.isArray(list) ? list : []))
+      .catch(() => setSavedMocks([]));
+  }
+  useEffect(() => { loadSavedMocks(); }, [user]);
 
   function handleTeamSelect(abbr) {
     if (!user) { nav('/join'); return; }
-    // draftOrder is guaranteed loaded by the time the grid renders (loading gate above)
     setTeam(abbr);
   }
 
   function handleSaved() {
-    // Reload saved mock
-    if (user) {
-      api.getTeamMock(user.id).then(setSavedMock).catch(() => setSavedMock(null));
-    }
+    // Refresh list, drop out of draft mode
     setTeam(null);
+    loadSavedMocks();
   }
 
-  async function handleRestart() {
-    if (!user) return;
+  async function handleOpen(mockSummary) {
+    // Fetch full picks for the clicked mock
     try {
-      await api.deleteTeamMock(user.id);
-    } catch { /* already gone */ }
-    setSavedMock(null);
-    setTeam(null);
+      const full = await api.getTeamMockById(mockSummary.id);
+      setActiveMock(full);
+    } catch (e) {
+      console.error('[open team mock]', e);
+    }
   }
 
-  const loading = players === null || draftOrder === null || savedMock === undefined;
+  async function handleDelete(mockSummary) {
+    const ok = window.confirm(`Delete "${mockSummary.title || mockSummary.team_abbr + ' Mock'}"?`);
+    if (!ok) return;
+    try {
+      await api.deleteTeamMock(mockSummary.id);
+      loadSavedMocks();
+      if (activeMock?.id === mockSummary.id) setActiveMock(null);
+    } catch (e) {
+      console.error('[delete team mock]', e);
+    }
+  }
+
+  const [showPickerExplicit, setShowPickerExplicit] = useState(false);
+  function startNew() {
+    setActiveMock(null);
+    setTeam(null);
+    setShowPickerExplicit(true);
+  }
+
+  const loading = players === null || draftOrder === null || savedMocks === undefined;
 
   if (loading) {
     return (
@@ -1252,41 +1347,62 @@ export default function TeamMock() {
     );
   }
 
-  // Show saved mock (unless user clicked Change Team)
-  if (savedMock && !team) {
-    return (
-      <div
-        className="flex flex-col"
-        style={{ height: 'calc(100vh - 56px)', overflowY: 'auto' }}
-      >
-        <SavedView savedMock={savedMock} players={players} onRestart={handleRestart} />
-      </div>
-    );
-  }
-
-  // Show draft simulator
+  // 1) Actively drafting
   if (team) {
     return (
-      <div
-        className="flex flex-col"
-        style={{ height: 'calc(100vh - 56px)', overflow: 'hidden' }}
-      >
+      <div className="flex flex-col" style={{ height: 'calc(100vh - 56px)', overflow: 'hidden' }}>
         <DraftSimulator
           team={team}
           players={players}
           draftOrder={draftOrder}
-          savedPicks={savedMock?.picks ?? null}
           onSaved={handleSaved}
-          onChangeTeam={() => setTeam(null)}
+          onChangeTeam={() => { setTeam(null); setShowPickerExplicit(true); }}
         />
       </div>
     );
   }
 
-  // Show team picker
+  // 2) Viewing a saved mock
+  if (activeMock) {
+    return (
+      <div className="flex flex-col" style={{ height: 'calc(100vh - 56px)', overflowY: 'auto' }}>
+        <SavedView
+          savedMock={activeMock}
+          players={players}
+          onRestart={() => setActiveMock(null)}
+        />
+      </div>
+    );
+  }
+
+  // 3) Explicit "new mock" picker
+  if (showPickerExplicit || savedMocks.length === 0) {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 56px)', overflowY: 'auto' }}>
+        {savedMocks.length > 0 && (
+          <div className="max-w-3xl mx-auto px-4 pt-4">
+            <button
+              onClick={() => setShowPickerExplicit(false)}
+              className="font-display text-[11px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+            >
+              ← Back to My Mocks
+            </button>
+          </div>
+        )}
+        <TeamPicker onSelect={handleTeamSelect} draftOrder={draftOrder} onRefresh={loadData} />
+      </div>
+    );
+  }
+
+  // 4) Default: saved-mocks list
   return (
     <div style={{ minHeight: 'calc(100vh - 56px)', overflowY: 'auto' }}>
-      <TeamPicker onSelect={handleTeamSelect} draftOrder={draftOrder} onRefresh={loadData} />
+      <SavedMocksList
+        mocks={savedMocks}
+        onOpen={handleOpen}
+        onDelete={handleDelete}
+        onNew={startNew}
+      />
     </div>
   );
 }

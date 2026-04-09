@@ -7,7 +7,11 @@ export async function runScoringOnClient(client) {
   );
   const actualByPlayer = new Map(actuals.map((a) => [a.player_id, a.pick_number]));
 
-  const { rows: mocks } = await client.query('SELECT id FROM mocks');
+  // Only the round1 showdown mocks get scored; team mocks are unscored
+  // save-for-later sandboxes.
+  const { rows: mocks } = await client.query(
+    "SELECT id FROM mocks WHERE mock_type = 'round1'"
+  );
   for (const m of mocks) {
     const { rows: picks } = await client.query(
       'SELECT pick_number, player_id FROM mock_picks WHERE mock_id = $1',

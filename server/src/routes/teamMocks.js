@@ -4,15 +4,16 @@ import { pool } from '../db/pool.js';
 const router = Router();
 
 // Team-specific mock drafts (Phase 4). Distinct from the scored Round 1 mock
-// stored under mock_type='round1'. A user can hold one of each kind because
-// the unique constraint is (user_id, mock_type).
+// stored under mock_type='round1'. Users can save as many team mocks as they
+// want — each POST inserts a brand-new mock row.
 //
 // V1 keeps simulation client-side: the React page runs the bot picker on
 // every pick and only POSTs the final 262 picks once the user is done. The
 // backend is just a thin persistence layer.
 
+// POST /api/team-mocks — create a new team mock (never updates)
 router.post('/', async (req, res) => {
-  const { user_id, team_abbr, picks } = req.body || {};
+  const { user_id, team_abbr, picks, title } = req.body || {};
   if (!user_id || !team_abbr || !Array.isArray(picks)) {
     return res.status(400).json({ error: 'user_id, team_abbr, picks[] required' });
   }
@@ -35,6 +36,8 @@ router.post('/', async (req, res) => {
     players.add(p.player_id);
   }
 
+  const trimmedTitle = typeof title === 'string' ? title.trim().slice(0, 80) : null;
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -55,29 +58,15 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'one or more player_ids do not exist' });
     }
 
-    // Upsert the parent mock row, keyed on (user_id, mock_type='team').
-    const existing = await client.query(
-      "SELECT id FROM mocks WHERE user_id = $1 AND mock_type = 'team'",
-      [user_id]
+    // Always INSERT — never UPDATE — so users can save unlimited team mocks
+    const ins = await client.query(
+      `INSERT INTO mocks (user_id, mock_type, team_abbr, title)
+       VALUES ($1, 'team', $2, $3)
+       RETURNING id`,
+      [user_id, team_abbr, trimmedTitle]
     );
-    let mockId;
-    if (existing.rows.length) {
-      mockId = existing.rows[0].id;
-      await client.query('DELETE FROM mock_picks WHERE mock_id = $1', [mockId]);
-      await client.query(
-        'UPDATE mocks SET submitted_at = NOW(), team_abbr = $1, total_score = 0 WHERE id = $2',
-        [team_abbr, mockId]
-      );
-    } else {
-      const ins = await client.query(
-        "INSERT INTO mocks (user_id, mock_type, team_abbr) VALUES ($1, 'team', $2) RETURNING id",
-        [user_id, team_abbr]
-      );
-      mockId = ins.rows[0].id;
-    }
+    const mockId = ins.rows[0].id;
 
-    // Bulk insert. Round comes from the client (1..7) so the schema's round
-    // index stays accurate; default to 1 if missing for safety.
     for (const p of picks) {
       const round = Number.isInteger(p.round) ? p.round : 1;
       await client.query(
@@ -97,12 +86,32 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/:userId', async (req, res) => {
-  const { rows: mocks } = await pool.query(
-    `SELECT id, user_id, submitted_at, team_abbr, mock_type
-     FROM mocks
-     WHERE user_id = $1 AND mock_type = 'team'`,
+// GET /api/team-mocks/user/:userId — list all team mocks for a user
+// (metadata only, no picks — keeps the payload small for the list view)
+router.get('/user/:userId', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT m.id, m.user_id, m.submitted_at, m.team_abbr, m.title,
+            COUNT(mp.*)::int AS pick_count
+     FROM mocks m
+     LEFT JOIN mock_picks mp ON mp.mock_id = m.id
+     WHERE m.user_id = $1 AND m.mock_type = 'team'
+     GROUP BY m.id
+     ORDER BY m.submitted_at DESC`,
     [req.params.userId]
+  );
+  res.json(rows);
+});
+
+// GET /api/team-mocks/:id — fetch a single team mock with all its picks
+router.get('/:id', async (req, res) => {
+  const mockId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(mockId)) return res.status(400).json({ error: 'invalid id' });
+
+  const { rows: mocks } = await pool.query(
+    `SELECT id, user_id, submitted_at, team_abbr, title, mock_type
+     FROM mocks
+     WHERE id = $1 AND mock_type = 'team'`,
+    [mockId]
   );
   if (!mocks.length) return res.status(404).json({ error: 'no team mock' });
   const mock = mocks[0];
@@ -119,10 +128,14 @@ router.get('/:userId', async (req, res) => {
   res.json({ ...mock, picks });
 });
 
-router.delete('/:userId', async (req, res) => {
+// DELETE /api/team-mocks/:id — delete a specific team mock
+router.delete('/:id', async (req, res) => {
+  const mockId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(mockId)) return res.status(400).json({ error: 'invalid id' });
+
   const result = await pool.query(
-    "DELETE FROM mocks WHERE user_id = $1 AND mock_type = 'team' RETURNING id",
-    [req.params.userId]
+    "DELETE FROM mocks WHERE id = $1 AND mock_type = 'team' RETURNING id",
+    [mockId]
   );
   if (!result.rows.length) return res.status(404).json({ error: 'no team mock' });
   res.status(204).end();

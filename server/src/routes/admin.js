@@ -253,7 +253,7 @@ router.get('/users', async (_req, res) => {
       COALESCE(m.total_score, 0) AS total_score,
       m.submitted_at
     FROM users u
-    LEFT JOIN mocks m ON m.user_id = u.id
+    LEFT JOIN mocks m ON m.user_id = u.id AND m.mock_type = 'round1'
     ORDER BY u.created_at DESC
   `);
   res.json(rows);
@@ -640,7 +640,7 @@ router.post('/score', async (_req, res) => {
       SELECT COUNT(*)::int AS scored,
              COALESCE(ROUND(AVG(total_score))::int, 0) AS avg_score,
              COALESCE(MAX(total_score), 0) AS max_score
-      FROM mocks WHERE total_score > 0
+      FROM mocks WHERE mock_type = 'round1' AND total_score > 0
     `);
     res.json({ ok: true, ...summary[0], total_mocks: totalMocks });
   } catch (e) {

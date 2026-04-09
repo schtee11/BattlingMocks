@@ -83,11 +83,15 @@ export const api = {
   getLeaderboard: (limit = 100, offset = 0) =>
     request(`/api/leaderboard?limit=${limit}&offset=${offset}`),
 
-  // team-specific mock (Phase 4)
-  getTeamMock: (userId) => request(`/api/team-mocks/${userId}`),
-  submitTeamMock: (user_id, team_abbr, picks) =>
-    request('/api/team-mocks', { method: 'POST', body: { user_id, team_abbr, picks } }),
-  deleteTeamMock: (userId) => request(`/api/team-mocks/${userId}`, { method: 'DELETE' }),
+  // team-specific mock (Phase 4) — unlimited per user
+  listTeamMocks: (userId) => request(`/api/team-mocks/user/${userId}`),
+  getTeamMockById: (id) => request(`/api/team-mocks/${id}`),
+  submitTeamMock: (user_id, team_abbr, picks, title) =>
+    request('/api/team-mocks', {
+      method: 'POST',
+      body: { user_id, team_abbr, picks, title },
+    }),
+  deleteTeamMock: (id) => request(`/api/team-mocks/${id}`, { method: 'DELETE' }),
 
   // admin
   adminListUsers: (key) => request('/api/admin/users', { adminKey: key }),

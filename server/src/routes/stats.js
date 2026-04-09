@@ -6,10 +6,10 @@ const router = Router();
 router.get('/', async (_req, res) => {
   const { rows } = await pool.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM mocks) AS total_mocks,
+      (SELECT COUNT(*)::int FROM mocks WHERE mock_type = 'round1') AS total_mocks,
       (SELECT COUNT(*)::int FROM users) AS total_users,
-      (SELECT COALESCE(ROUND(AVG(total_score))::int, 0) FROM mocks WHERE total_score > 0) AS avg_score,
-      (SELECT COALESCE(MAX(total_score), 0) FROM mocks) AS highest_score,
+      (SELECT COALESCE(ROUND(AVG(total_score))::int, 0) FROM mocks WHERE mock_type = 'round1' AND total_score > 0) AS avg_score,
+      (SELECT COALESCE(MAX(total_score), 0) FROM mocks WHERE mock_type = 'round1') AS highest_score,
       (SELECT draft_year FROM draft_settings WHERE id = 1) AS draft_year,
       (SELECT is_locked FROM draft_settings WHERE id = 1) AS is_locked
   `);

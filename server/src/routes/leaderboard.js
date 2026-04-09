@@ -24,6 +24,7 @@ router.get('/', async (req, res) => {
       JOIN users u ON u.id = m.user_id
       LEFT JOIN mock_picks mp ON mp.mock_id = m.id
       LEFT JOIN actual_picks ap ON ap.player_id = mp.player_id
+      WHERE m.mock_type = 'round1'
       GROUP BY m.id, u.id
     )
     SELECT
@@ -36,7 +37,9 @@ router.get('/', async (req, res) => {
     `,
     [limit, offset]
   );
-  const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS c FROM mocks');
+  const { rows: countRows } = await pool.query(
+    "SELECT COUNT(*)::int AS c FROM mocks WHERE mock_type = 'round1'"
+  );
   res.set('Cache-Control', 'public, max-age=30');
   res.json({ entries: rows, total: countRows[0].c });
 });

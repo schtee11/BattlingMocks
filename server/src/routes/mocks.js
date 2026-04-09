@@ -53,7 +53,10 @@ router.post('/', async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'one or more player_ids do not exist' });
     }
-    const existing = await client.query('SELECT id FROM mocks WHERE user_id = $1', [user_id]);
+    const existing = await client.query(
+      "SELECT id FROM mocks WHERE user_id = $1 AND mock_type = 'round1'",
+      [user_id]
+    );
     let mockId;
     if (existing.rows.length) {
       mockId = existing.rows[0].id;
@@ -61,7 +64,7 @@ router.post('/', async (req, res) => {
       await client.query('UPDATE mocks SET submitted_at = NOW(), total_score = 0 WHERE id = $1', [mockId]);
     } else {
       const ins = await client.query(
-        'INSERT INTO mocks (user_id) VALUES ($1) RETURNING id',
+        "INSERT INTO mocks (user_id, mock_type) VALUES ($1, 'round1') RETURNING id",
         [user_id]
       );
       mockId = ins.rows[0].id;
@@ -85,7 +88,7 @@ router.post('/', async (req, res) => {
 
 router.get('/:userId', async (req, res) => {
   const { rows: mocks } = await pool.query(
-    'SELECT id, user_id, submitted_at, is_locked, total_score FROM mocks WHERE user_id = $1',
+    "SELECT id, user_id, submitted_at, is_locked, total_score FROM mocks WHERE user_id = $1 AND mock_type = 'round1'",
     [req.params.userId]
   );
   if (!mocks.length) return res.status(404).json({ error: 'no mock' });
