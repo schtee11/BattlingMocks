@@ -56,7 +56,15 @@ export const api = {
     );
   },
   getDraftOrder: () => cached('draft-order', 60 * 60_000, () => request('/api/draft-order')),
-  getDraftOrderAll: () => cached('draft-order-all', 60 * 60_000, () => request('/api/draft-order?round=all')),
+  // Short-TTL + cache-bust support so admin syncs of R2-R7 show up immediately.
+  getDraftOrderAll: ({ fresh = false } = {}) => {
+    if (fresh) invalidateCache('draft-order-all');
+    return cached(
+      'draft-order-all',
+      30_000,
+      () => request(fresh ? `/api/draft-order?round=all&_=${Date.now()}` : '/api/draft-order?round=all')
+    );
+  },
   getSettings: () => cached('settings', 30_000, () => request('/api/settings')),
   getStats: () => cached('stats', 30_000, () => request('/api/stats')),
   getActualPicks: ({ fresh = false } = {}) => {

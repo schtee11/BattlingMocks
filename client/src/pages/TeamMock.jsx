@@ -117,7 +117,14 @@ function ProspectRow({ player, used, onClick }) {
 }
 
 // ─── Team Picker ──────────────────────────────────────────────────────────────
-function TeamPicker({ onSelect }) {
+function TeamPicker({ onSelect, draftOrder, onRefresh }) {
+  // Count how many rounds actually loaded — helps diagnose stale caches.
+  const roundsLoaded = useMemo(() => {
+    const s = new Set();
+    for (const row of draftOrder || []) s.add(row.round);
+    return [...s].sort((a, b) => a - b);
+  }, [draftOrder]);
+  const totalPicks = draftOrder?.length || 0;
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       <div className="text-center mb-8">
@@ -128,6 +135,17 @@ function TeamPicker({ onSelect }) {
           Pick your team. You'll draft all their picks across all 7 rounds.
           Bots fill every other team using BPA + team needs.
         </p>
+        <div className="mt-3 flex items-center justify-center gap-2 text-[10px] font-mono text-text-muted">
+          <span>
+            {totalPicks} picks loaded · rounds [{roundsLoaded.join(', ') || '—'}]
+          </span>
+          <button
+            onClick={onRefresh}
+            className="font-display font-semibold uppercase tracking-[0.12em] text-[9.5px] text-accent hover:brightness-125 transition"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
         {NFL_TEAMS.map((t) => (
@@ -626,9 +644,12 @@ export default function TeamMock() {
   const [savedMock, setSavedMock] = useState(undefined); // undefined = loading, null = none
   const [team, setTeam] = useState(null); // currently drafting for
 
-  // Load players + full draft order (all 7 rounds) on mount
-  useEffect(() => {
-    Promise.all([api.getPlayers(), api.getDraftOrderAll()])
+  // Load players + full draft order (all 7 rounds) on mount. Always pull the
+  // draft order fresh so admin syncs of R2-R7 show up without a hard refresh.
+  function loadData() {
+    setPlayers(null);
+    setDraftOrder(null);
+    Promise.all([api.getPlayers(), api.getDraftOrderAll({ fresh: true })])
       .then(([pl, order]) => {
         setPlayers(pl);
         setDraftOrder(order);
@@ -637,7 +658,8 @@ export default function TeamMock() {
         setPlayers([]);
         setDraftOrder([]);
       });
-  }, []);
+  }
+  useEffect(() => { loadData(); }, []);
 
   // Load saved team mock if user is signed in
   useEffect(() => {
@@ -717,7 +739,7 @@ export default function TeamMock() {
   // Show team picker
   return (
     <div style={{ minHeight: 'calc(100vh - 56px)', overflowY: 'auto' }}>
-      <TeamPicker onSelect={handleTeamSelect} />
+      <TeamPicker onSelect={handleTeamSelect} draftOrder={draftOrder} onRefresh={loadData} />
     </div>
   );
 }
