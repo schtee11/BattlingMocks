@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
@@ -37,6 +37,7 @@ import { Button } from '../components/ui/Button.jsx';
 import { Modal } from '../components/ui/Modal.jsx';
 import { ProgressBar } from '../components/ui/ProgressBar.jsx';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
+import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 
@@ -64,8 +65,10 @@ export default function Draft() {
   // Mobile: which pick slot is currently being drafted for. Always non-null
   // on mobile once data has loaded — initialized from on-the-clock.
   const [draftingForSlot, setDraftingForSlot] = useState(null);
-  // Mobile: board sheet (lists all 32 slots for jumping / reviewing)
-  const [boardOpen, setBoardOpen] = useState(false);
+  // Mobile: top "Your Board" panel collapse state. Default collapsed so the
+  // bottom prospect list owns most of the viewport.
+  const [boardExpanded, setBoardExpanded] = useState(false);
+  const boardRowRefs = useRef({}); // pick_number → li element, for scroll-into-view
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -137,6 +140,16 @@ export default function Draft() {
       setDraftingForSlot(onClockSlot);
     }
   }, [isMobile, draftingForSlot, onClockSlot]);
+
+  // Mobile: when the active pick changes, scroll its row into view inside the
+  // top board panel. Centers it whether the panel is collapsed or expanded.
+  useEffect(() => {
+    if (!isMobile || draftingForSlot == null) return;
+    const el = boardRowRefs.current[draftingForSlot];
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
+  }, [isMobile, draftingForSlot, boardExpanded]);
 
   const filteredProspects = useMemo(() => {
     const list = players || [];
@@ -393,87 +406,113 @@ export default function Draft() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        {/* ============= MOBILE LAYOUT ============= */}
-        <div className="md:hidden">
-          {draftingForSlot != null && orderByPick.get(draftingForSlot) && (
-            <Card glass className="p-3 mb-3">
-              <div className="flex items-center gap-3">
-                <TeamLogo abbr={orderByPick.get(draftingForSlot)?.team} size="md" />
-                <div className="min-w-0 flex-1">
-                  <div className="caption text-[9px]">
-                    Drafting Pick {draftingForSlot}
-                  </div>
-                  <div className="font-display font-bold text-text-primary uppercase text-[15px] tracking-wide truncate">
-                    {orderByPick.get(draftingForSlot)?.team_name}
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Previous empty slot (or just previous slot)
-                      let prev = null;
-                      for (let i = draftingForSlot - 1; i >= 1; i--) {
-                        if (!picks[i]) { prev = i; break; }
-                      }
-                      if (prev == null) {
-                        for (let i = 32; i > draftingForSlot; i--) {
-                          if (!picks[i]) { prev = i; break; }
-                        }
-                      }
-                      if (prev != null) setDraftingForSlot(prev);
-                    }}
-                    aria-label="Previous empty pick"
-                    className="w-9 h-9 rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary text-lg"
-                  >
-                    ←
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      let next = null;
-                      for (let i = draftingForSlot + 1; i <= 32; i++) {
-                        if (!picks[i]) { next = i; break; }
-                      }
-                      if (next == null) {
-                        for (let i = 1; i < draftingForSlot; i++) {
-                          if (!picks[i]) { next = i; break; }
-                        }
-                      }
-                      if (next != null) setDraftingForSlot(next);
-                    }}
-                    aria-label="Next empty pick"
-                    className="w-9 h-9 rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary text-lg"
-                  >
-                    →
-                  </button>
-                </div>
+        {/* ============= MOBILE LAYOUT — two-panel ============= */}
+        <div className="md:hidden space-y-3">
+          {/* TOP PANEL — Your Board (collapsible) */}
+          <Card glass className="p-0 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setBoardExpanded((x) => !x)}
+              className="w-full flex items-center justify-between px-4 py-2.5 border-b border-border-subtle"
+              aria-expanded={boardExpanded}
+              aria-label={boardExpanded ? 'Collapse board' : 'Expand board'}
+            >
+              <div className="flex items-center gap-2">
+                <span className="caption text-[10px]">Your Board</span>
+                <span className="font-mono text-[11px] text-text-muted tabular">
+                  <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
+                  <span>/32</span>
+                </span>
               </div>
-              <div className="mt-2">
-                <ProgressBar picks={picks} playerById={playerById} />
-              </div>
-              {picks[draftingForSlot] && (
-                <div className="mt-2 text-[11px] text-text-secondary flex items-center justify-between">
-                  <span>
-                    Currently:{' '}
-                    <span className="text-text-primary font-semibold">
-                      {playerById.get(picks[draftingForSlot])?.name}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => clearSlot(draftingForSlot)}
-                    className="text-red-400 hover:text-red-300 text-[11px] underline"
+              <svg
+                viewBox="0 0 24 24"
+                className={`w-4 h-4 text-text-secondary transition-transform duration-300 ${boardExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            <ul
+              className="overflow-y-auto px-3 py-2 space-y-1.5 transition-[max-height] duration-300 ease-out"
+              style={{ maxHeight: boardExpanded ? '50vh' : '140px' }}
+            >
+              {Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => {
+                const team = orderByPick.get(slot);
+                const player = picks[slot] ? playerById.get(picks[slot]) : null;
+                const isActive = slot === draftingForSlot;
+                const posColor = player ? posHex(player.position) : '#64748b';
+                return (
+                  <li
+                    key={slot}
+                    ref={(el) => { if (el) boardRowRefs.current[slot] = el; }}
+                    onClick={() => setDraftingForSlot(slot)}
+                    className="flex items-center gap-2.5 p-2 rounded-lg border cursor-pointer transition-all"
+                    style={{
+                      background: isActive ? 'rgb(var(--accent-rgb) / 0.08)' : 'var(--bg-surface)',
+                      borderColor: isActive ? 'rgb(var(--accent-rgb) / 0.45)' : 'var(--border-subtle)',
+                      borderLeft: `4px solid ${player ? posColor : 'var(--border-subtle)'}`,
+                      boxShadow: isActive ? '0 0 18px -8px rgb(var(--accent-rgb) / 0.55)' : 'none',
+                    }}
                   >
-                    Clear
-                  </button>
-                </div>
-              )}
-            </Card>
-          )}
+                    <div
+                      className="w-9 h-9 rounded-full flex items-center justify-center font-mono font-bold text-[12px] shrink-0"
+                      style={{
+                        backgroundColor: player ? posColor : 'transparent',
+                        color: player ? '#04080f' : 'var(--text-secondary)',
+                        boxShadow: player ? `0 0 14px -6px ${posColor}` : 'inset 0 0 0 1.5px rgba(255,255,255,0.1)',
+                      }}
+                    >
+                      {slot}
+                    </div>
+                    <TeamLogo abbr={team?.team} size="sm" />
+                    {player ? (
+                      <>
+                        <PlayerHeadshot
+                          url={player.headshot_url}
+                          name={player.name}
+                          position={player.position}
+                          size="xs"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-text-primary font-semibold truncate text-[13px]">{player.name}</div>
+                            <PositionBadge position={player.position} />
+                          </div>
+                          <div className="text-[10px] text-text-muted truncate">{player.school}</div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 min-w-0">
+                        <div className="caption text-[9px] text-text-muted truncate">{team?.team || '—'}</div>
+                        <div className="text-[12px] text-text-secondary truncate">
+                          {isActive ? 'On the clock — pick a player below' : (team?.team_name || 'Empty')}
+                        </div>
+                      </div>
+                    )}
+                    {isActive && player && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); clearSlot(slot); }}
+                        className="text-text-muted hover:text-red-400 text-sm px-1 shrink-0"
+                        aria-label={`Clear pick ${slot}`}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
 
-          {/* Mobile prospect list — always visible, NOT in a modal */}
-          <Card glass className="p-3 flex flex-col max-h-[65vh] mb-4">
+          {/* BOTTOM PANEL — Available Players (persistent) */}
+          <Card glass className="p-3 flex flex-col mb-4 transition-[max-height] duration-300 ease-out"
+            style={{ maxHeight: boardExpanded ? '35vh' : '60vh', minHeight: '30vh' }}
+          >
             <ProspectListInner
               players={players}
               filtered={filteredProspects}
@@ -591,13 +630,11 @@ export default function Draft() {
       {/* Mobile — fixed bottom action bar */}
       <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 p-3 bg-bg-deep/95 backdrop-blur-md border-t border-border-subtle">
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="lg"
-            className="flex-1"
-            onClick={() => setBoardOpen(true)}
-          >
-            Board {filledCount}/32
+          <Button size="xs" variant="outline" onClick={autoFill} disabled={locked || complete} className="shrink-0">
+            Auto-fill
+          </Button>
+          <Button size="xs" variant="outline" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0} className="shrink-0">
+            Clear
           </Button>
           <Button
             size="lg"
@@ -605,60 +642,10 @@ export default function Draft() {
             onClick={() => setShowConfirm(true)}
             disabled={!complete || locked || busy}
           >
-            {submitted ? 'Submitted ✓' : complete ? 'Submit' : `${32 - filledCount} left`}
+            {submitted ? 'Submitted ✓' : complete ? 'Submit Mock' : `${filledCount}/32`}
           </Button>
         </div>
       </div>
-
-      {/* Mobile board sheet — list of all 32 slots, tap to jump */}
-      {boardOpen && (
-        <div className="md:hidden fixed inset-0 z-50" onClick={() => setBoardOpen(false)}>
-          <div className="absolute inset-0 bg-black/60 animate-fade-in" />
-          <div
-            className="absolute left-0 right-0 bottom-0 max-h-[88vh] glass rounded-t-2xl flex flex-col drawer-slide-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mt-2 mb-2" />
-            <div className="px-4 pb-3 border-b border-border-subtle flex items-center justify-between">
-              <div>
-                <div className="caption text-[9px]">Round 1 · 2026</div>
-                <div className="font-display font-bold text-text-primary text-lg uppercase tracking-wide">
-                  Board · {filledCount}/32
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button size="xs" variant="outline" onClick={autoFill} disabled={locked || complete}>
-                  Auto-fill
-                </Button>
-                <Button size="xs" variant="outline" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0}>
-                  Clear
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setBoardOpen(false)}
-                  aria-label="Close"
-                  className="text-text-muted hover:text-text-primary text-2xl px-2 ml-1"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-            <ul className="flex-1 overflow-y-auto p-3 space-y-1.5">
-              {Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => (
-                <PickSlot
-                  key={slot}
-                  slot={slot}
-                  team={orderByPick.get(slot)}
-                  player={picks[slot] ? playerById.get(picks[slot]) : null}
-                  onClear={() => clearSlot(slot)}
-                  onClick={() => handleSlotClick(slot)}
-                  isActive={slot === draftingForSlot}
-                />
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
 
       <Modal
         open={showConfirm}
