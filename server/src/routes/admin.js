@@ -4,6 +4,9 @@ import { pool } from '../db/pool.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { importProspects, seedDraftOrder, PROSPECTS_PATH } from '../db/seed.js';
 import { fetchRoundOne, resetLogFlag } from '../services/espnDraft.js';
+import { runScoringOnClient } from '../services/scoring.js';
+import { syncPicksOnce } from '../services/draftSync.js';
+import { startPoller, stopPoller, getStatus as getPollerStatus } from '../services/draftPoller.js';
 
 const router = Router();
 router.use(adminAuth);
@@ -11,45 +14,12 @@ router.use(adminAuth);
 // Shared scoring logic — runs inside whatever transaction client is passed.
 // Used by both the explicit POST /score endpoint and the auto-score that
 // runs after an actual-pick is entered during draft night.
-async function runScoringOnClient(client) {
-  const { rows: actuals } = await client.query(
-    'SELECT pick_number, player_id FROM actual_picks'
-  );
-  const actualByPlayer = new Map(actuals.map((a) => [a.player_id, a.pick_number]));
-
-  const { rows: mocks } = await client.query('SELECT id FROM mocks');
-  for (const m of mocks) {
-    const { rows: picks } = await client.query(
-      'SELECT pick_number, player_id FROM mock_picks WHERE mock_id = $1',
-      [m.id]
-    );
-    let total = 0;
-    for (const p of picks) {
-      const actualSlot = actualByPlayer.get(p.player_id);
-      if (actualSlot == null) continue;
-      if (actualSlot === p.pick_number) total += 15;
-      else if (Math.abs(actualSlot - p.pick_number) <= 5) total += 8;
-      else total += 5;
-    }
-    await client.query('UPDATE mocks SET total_score = $1 WHERE id = $2', [total, m.id]);
-  }
-  await client.query('UPDATE draft_settings SET scoring_run_at = NOW() WHERE id = 1');
-  return mocks.length;
-}
+// runScoringOnClient and sync-picks logic live in services/ so the poller
+// can reuse them. The route handlers here are thin wrappers.
 
 // ---------- ESPN draft sync (Phase 1, Round 1 only, manual trigger) ----------
 // Both endpoints support ?dry=1 which returns what WOULD be written without
 // touching the DB. Use the dry run first to verify the data looks sane.
-
-function normalizeName(s) {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 // GET /api/admin/sync/preview?year=2026 — returns the raw parsed ESPN round-1
 // data without writing anything. Useful for verifying the parser.
@@ -114,93 +84,41 @@ router.post('/sync/draft-order', async (req, res) => {
 });
 
 // POST /api/admin/sync/picks?year=2026[&dry=1]
-// Pulls Round 1 actual picks from ESPN, matches each by player name against
-// the local players table, upserts actual_picks, then re-scores all mocks.
+// Thin wrapper around the shared syncPicksOnce service (also used by the
+// auto-poller). Matches by player name, upserts actual_picks, re-scores all
+// mocks inside one transaction.
 router.post('/sync/picks', async (req, res) => {
   const year = parseInt(req.query.year, 10) || 2026;
   const dry = req.query.dry === '1';
-  resetLogFlag();
-
   try {
-    const picks = await fetchRoundOne(year);
-    const withPlayer = picks.filter(
-      (p) => p.round === 1 && p.pick >= 1 && p.pick <= 32 && p.player_name
-    );
-
-    // Load local players once for matching
-    const { rows: localPlayers } = await pool.query(
-      'SELECT id, name, school FROM players'
-    );
-    const byName = new Map();
-    for (const lp of localPlayers) byName.set(normalizeName(lp.name), lp);
-
-    const matched = [];
-    const unmatched = [];
-    for (const p of withPlayer) {
-      const key = normalizeName(p.player_name);
-      let local = byName.get(key);
-      if (!local) {
-        // Last-name + first-initial fuzzy fallback
-        const [first = '', ...rest] = key.split(' ');
-        const last = rest[rest.length - 1] || '';
-        if (last) {
-          local = localPlayers.find((lp) => {
-            const lk = normalizeName(lp.name);
-            return lk.endsWith(' ' + last) && lk.startsWith(first[0] || '');
-          });
-        }
-      }
-      if (local) {
-        matched.push({ ...p, player_id: local.id, matched_name: local.name });
-      } else {
-        unmatched.push(p);
-      }
-    }
-
-    const summary = {
-      year,
-      dry,
-      fetched: picks.length,
-      round1_with_player: withPlayer.length,
-      matched: matched.length,
-      unmatched: unmatched.length,
-      unmatched_samples: unmatched.slice(0, 10),
-      matched_samples: matched.slice(0, 5),
-    };
-
-    if (dry) return res.json(summary);
-
-    // Upsert each matched pick and re-score inside one transaction
-    const client = await pool.connect();
-    let saved = 0;
-    try {
-      await client.query('BEGIN');
-      for (const m of matched) {
-        await client.query(
-          `INSERT INTO actual_picks (pick_number, player_id, team)
-             VALUES ($1, $2, $3)
-           ON CONFLICT (pick_number) DO UPDATE
-             SET player_id = EXCLUDED.player_id,
-                 team = EXCLUDED.team,
-                 entered_at = NOW()`,
-          [m.pick, m.player_id, m.team_abbr || null]
-        );
-        saved++;
-      }
-      const scoredMocks = await runScoringOnClient(client);
-      await client.query('COMMIT');
-      res.json({ ...summary, saved, scored_mocks: scoredMocks });
-    } catch (e) {
-      await client.query('ROLLBACK');
-      console.error('[sync picks]', e);
-      res.status(500).json({ error: e.message });
-    } finally {
-      client.release();
-    }
+    const summary = await syncPicksOnce({ year, dry });
+    res.json(summary);
   } catch (e) {
     console.error('[sync picks]', e);
     res.status(500).json({ error: e.message });
   }
+});
+
+// ---------- Auto-poller (Phase 2) ----------
+router.get('/sync/poll-status', (_req, res) => {
+  res.json(getPollerStatus());
+});
+
+router.post('/sync/poll-start', (req, res) => {
+  const year = parseInt(req.query.year, 10) || 2026;
+  const intervalSec = parseInt(req.query.interval, 10) || 20;
+  try {
+    const status = startPoller({ year, intervalSec });
+    res.json(status);
+  } catch (e) {
+    console.error('[poller start]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/sync/poll-stop', (_req, res) => {
+  const status = stopPoller();
+  res.json(status);
 });
 
 // ---------- Users (admin view) ----------

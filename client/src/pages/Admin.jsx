@@ -65,6 +65,8 @@ export default function Admin() {
   const [fetchingHeadshots, setFetchingHeadshots] = useState(false);
   const [syncYear, setSyncYear] = useState(2026);
   const [syncing, setSyncing] = useState(false);
+  const [pollStatus, setPollStatus] = useState(null);
+  const [pollInterval, setPollInterval] = useState(20);
 
   const userIsAdmin = isAdmin(user);
 
@@ -121,6 +123,38 @@ export default function Admin() {
     if (unlocked && tab === 'users') loadUsers();
     // eslint-disable-next-line
   }, [unlocked, tab]);
+
+  // Poll the server-side auto-sync status while the Results tab is visible.
+  // Keeps the "last sync" indicator fresh without hammering when inactive.
+  useEffect(() => {
+    if (!unlocked || tab !== 'results') return undefined;
+    let cancelled = false;
+    async function fetchOnce() {
+      try {
+        const s = await api.pollStatus(key);
+        if (!cancelled) setPollStatus(s);
+      } catch { /* ignore transient errors */ }
+    }
+    fetchOnce();
+    const id = setInterval(fetchOnce, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line
+  }, [unlocked, tab, key]);
+
+  async function startPolling() {
+    try {
+      const s = await api.pollStart(key, { year: syncYear, intervalSec: pollInterval });
+      setPollStatus(s);
+      toast.success(`Auto-sync ON · every ${s.interval_sec}s`);
+    } catch (e) { toast.error(e.message); }
+  }
+  async function stopPolling() {
+    try {
+      const s = await api.pollStop(key);
+      setPollStatus(s);
+      toast('Auto-sync OFF');
+    } catch (e) { toast.error(e.message); }
+  }
 
   // Access gate (after hooks): non-admins see a 404. Backend X-Admin-Key
   // is still the real security boundary; this just hides the UI.
@@ -404,9 +438,9 @@ export default function Admin() {
           <Card className="p-4">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <h3 className="font-semibold text-text-primary">Auto-sync picks from ESPN</h3>
+                <h3 className="font-semibold text-text-primary">One-shot sync from ESPN</h3>
                 <p className="text-text-muted text-xs mt-0.5">
-                  Phase 1 · Round 1 only · manual trigger. Preview first, then sync to save + re-score.
+                  Manual trigger · Round 1 only · preview first, then sync to save + re-score.
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -423,6 +457,64 @@ export default function Admin() {
                 <Button size="sm" onClick={() => syncPicksFromEspn(false)} disabled={syncing}>
                   {syncing ? 'Syncing…' : 'Sync Picks'}
                 </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Auto-sync poller */}
+          <Card className="p-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-text-primary">Draft-night auto-sync</h3>
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] font-display uppercase tracking-[0.14em] px-2 py-0.5 rounded-full ${
+                      pollStatus?.running
+                        ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30'
+                        : 'bg-white/5 text-text-muted ring-1 ring-border-subtle'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${pollStatus?.running ? 'bg-emerald-400 animate-pulse' : 'bg-text-muted'}`} />
+                    {pollStatus?.running ? 'Running' : 'Off'}
+                  </span>
+                </div>
+                <p className="text-text-muted text-xs mt-0.5">
+                  Server hits ESPN every N seconds, saves new picks, re-scores every mock.
+                </p>
+                {pollStatus?.running && (
+                  <div className="text-[11px] text-text-secondary mt-2 flex flex-wrap gap-x-4 gap-y-0.5 font-mono tabular">
+                    <span>year: <span className="text-text-primary">{pollStatus.year}</span></span>
+                    <span>interval: <span className="text-text-primary">{pollStatus.interval_sec}s</span></span>
+                    <span>ticks: <span className="text-text-primary">{pollStatus.ticks}</span></span>
+                    <span>saved this run: <span className="text-gold">{pollStatus.total_saved}</span></span>
+                    {pollStatus.last_sync_at && (
+                      <span>last: <span className="text-text-primary">{new Date(pollStatus.last_sync_at).toLocaleTimeString()}</span></span>
+                    )}
+                  </div>
+                )}
+                {pollStatus?.last_error && (
+                  <div className="text-[11px] text-red-400 mt-1 break-all">
+                    last error: {pollStatus.last_error}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-[11px] text-text-muted font-display uppercase tracking-wide">Every</label>
+                <input
+                  type="number"
+                  min={10}
+                  max={300}
+                  value={pollInterval}
+                  onChange={(e) => setPollInterval(parseInt(e.target.value, 10) || 20)}
+                  disabled={pollStatus?.running}
+                  className="w-16 bg-bg-deep border border-border-focus rounded px-2 py-1.5 text-text-primary text-sm font-mono disabled:opacity-50"
+                />
+                <span className="text-[11px] text-text-muted">sec</span>
+                {pollStatus?.running ? (
+                  <Button size="sm" variant="danger" onClick={stopPolling}>Stop</Button>
+                ) : (
+                  <Button size="sm" onClick={startPolling}>Start</Button>
+                )}
               </div>
             </div>
           </Card>

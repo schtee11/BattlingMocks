@@ -91,6 +91,15 @@ export const api = {
       method: 'POST',
       adminKey: key,
     }),
+  // Draft-night auto-poller
+  pollStatus: (key) => request('/api/admin/sync/poll-status', { adminKey: key }),
+  pollStart: (key, { year = 2026, intervalSec = 20 } = {}) =>
+    request(`/api/admin/sync/poll-start?year=${year}&interval=${intervalSec}`, {
+      method: 'POST',
+      adminKey: key,
+    }),
+  pollStop: (key) =>
+    request('/api/admin/sync/poll-stop', { method: 'POST', adminKey: key }),
   adminGetDraftOrder: (key) => request('/api/admin/draft-order', { adminKey: key }),
   adminSetDraftOrder: (key, order) =>
     request('/api/admin/draft-order', { method: 'POST', body: { order }, adminKey: key }),
