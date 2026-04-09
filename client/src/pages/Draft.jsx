@@ -475,7 +475,7 @@ export default function Draft() {
                 onClick={() => setTradeOpen(true)}
                 title="Simulate a trade between any two teams"
               >
-                Propose Trade
+                Simulate Trade
               </Button>
             )}
             <div className="text-right">

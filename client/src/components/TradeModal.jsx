@@ -115,6 +115,10 @@ export function TradeModal({
   //   3. Trading DOWN (giving fewer picks, receiving more) — bot takes up
   //      to a 5% discount since they're getting quantity for quality.
   //   4. Equal pick count (2-for-2) needs at least chart parity.
+  // When fromTeamEditable is true the user is an observer simulating
+  // realistic trades between any two teams — all wording stays neutral and
+  // references the teams by name. When false (Team Mock mode), the user IS
+  // the "from" team so "you" wording is appropriate.
   function evaluateTrade() {
     if (yourCount === 0 || theirCount === 0) {
       return { ok: false, reason: 'empty', text: 'Pick at least one from each side' };
@@ -123,7 +127,9 @@ export function TradeModal({
       return {
         ok: false,
         reason: 'one_for_one',
-        text: `${partnerTeam} won't do a 1-for-1 swap — add more picks`,
+        text: fromTeamEditable
+          ? 'No 1-for-1 swaps — add more picks to the deal'
+          : `${partnerTeam} won't do a 1-for-1 swap — add more picks`,
       };
     }
     const minRatio = yourCount > theirCount ? 1.10 : yourCount < theirCount ? 0.95 : 1.00;
@@ -133,13 +139,25 @@ export function TradeModal({
       return {
         ok: false,
         reason: 'undervalued',
-        text: `${partnerTeam} rejects — needs ${shortBy} more value`,
+        text: fromTeamEditable
+          ? `${partnerTeam} rejects — ${effectiveFromTeam} needs to add ${shortBy} value`
+          : `${partnerTeam} rejects — needs ${shortBy} more value`,
       };
     }
     if (yourTotal > required * 1.15) {
-      return { ok: true, reason: 'overpaying', text: "Accepted — you're overpaying" };
+      return {
+        ok: true,
+        reason: 'overpaying',
+        text: fromTeamEditable
+          ? `Accepted — ${effectiveFromTeam} overpays`
+          : "Accepted — you're overpaying",
+      };
     }
-    return { ok: true, reason: 'fair', text: `${partnerTeam} accepts` };
+    return {
+      ok: true,
+      reason: 'fair',
+      text: fromTeamEditable ? 'Fair trade — both sides accept' : `${partnerTeam} accepts`,
+    };
   }
 
   const evalResult = evaluateTrade();
@@ -190,6 +208,17 @@ export function TradeModal({
   const verdictText = evalResult.text;
   const verdictSubtext = (() => {
     if (yourCount === 0 && theirCount === 0) return '';
+    if (fromTeamEditable) {
+      // Neutral team-based phrasing for R1 simulation mode.
+      if (yourCount > theirCount) {
+        return `${effectiveFromTeam} trading UP (${yourCount} → ${theirCount} picks)`;
+      }
+      if (yourCount < theirCount) {
+        return `${effectiveFromTeam} trading DOWN (${yourCount} → ${theirCount} picks)`;
+      }
+      return `Even pick count (${yourCount}-for-${theirCount})`;
+    }
+    // Team Mock mode: user IS the team, "you" phrasing is fine.
     if (yourCount > theirCount) return `You're trading UP (${yourCount} → ${theirCount} picks)`;
     if (yourCount < theirCount) return `You're trading DOWN (${yourCount} → ${theirCount} picks)`;
     return `Even pick count (${yourCount}-for-${theirCount})`;
@@ -209,7 +238,7 @@ export function TradeModal({
         <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
           <div>
             <h2 className="font-display text-[16px] font-bold uppercase tracking-[0.1em] text-text-primary">
-              Propose Trade
+              {fromTeamEditable ? 'Simulate Trade' : 'Propose Trade'}
             </h2>
             <p className="text-[10.5px] text-text-muted">Rich Hill value chart</p>
           </div>
@@ -353,7 +382,11 @@ export function TradeModal({
             className="flex-1 font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: 'var(--gradient-accent)' }}
           >
-            {canPropose ? `Propose to ${partnerTeam || '—'}` : 'Trade Not Allowed'}
+            {canPropose
+              ? fromTeamEditable
+                ? 'Execute Trade'
+                : `Propose to ${partnerTeam || '—'}`
+              : 'Trade Not Allowed'}
           </button>
         </div>
       </div>
