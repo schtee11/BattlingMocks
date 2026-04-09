@@ -362,6 +362,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
   // Draft history — most recent first so users see the latest pick at top
   const recentPicks = useMemo(() => [...picks].reverse(), [picks]);
+  // Only the user's picks, in draft order (not reversed — small list, easier to
+  // read chronologically so users can see their roster build out top to bottom)
+  const myPicks = useMemo(() => picks.filter((p) => p.is_user), [picks]);
 
   // Mobile: resizable top panel
   const [topH, setTopH] = useState(() => {
@@ -547,23 +550,77 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     );
   }
 
+  // Compact "My Picks" row — denser than the history row since the panel is
+  // height-constrained and this list only ever has ~6-10 entries.
+  function renderMyPick(pick) {
+    const player = byId.get(pick.player_id);
+    if (!player) return null;
+    const color = posHex(player.position);
+    return (
+      <div
+        key={pick.pick_number}
+        className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-accent/[0.05] border border-accent/20"
+        style={{ borderLeft: `3px solid ${color}` }}
+      >
+        <span className="font-mono text-[9px] text-text-muted w-8 text-right shrink-0">
+          {ROUND_LABELS[pick.round] || `R${pick.round}`} · {pick.pick_number}
+        </span>
+        <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="xs" />
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] font-semibold truncate text-text-primary leading-tight">
+            {player.name}
+          </div>
+          <div className="text-[9px] text-text-muted truncate leading-tight">
+            {player.school}
+          </div>
+        </div>
+        <PositionBadge position={player.position} />
+      </div>
+    );
+  }
+
   // ── Layout ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full">
       {/* ── Desktop ── */}
       <div className="hidden md:flex flex-1 overflow-hidden gap-0">
-        {/* Left: Draft history */}
+        {/* Left: My picks + Draft history */}
         <div className="w-80 shrink-0 flex flex-col border-r border-border-subtle overflow-hidden">
-          <div className="px-4 py-3 border-b border-border-subtle flex items-center gap-2">
-            <div className="font-display text-[12px] font-bold uppercase tracking-[0.14em] text-text-primary flex-1">
+          {/* My Picks — compact, fixed height */}
+          <div className="shrink-0 border-b border-border-subtle">
+            <div className="px-4 py-2 flex items-center gap-2">
+              <TeamLogo abbr={team} size="xs" />
+              <span className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary flex-1">
+                My Picks
+              </span>
+              <span className="font-mono text-[10px] text-text-muted">
+                {myPicks.length}/{userSlotCount}
+              </span>
+              <button
+                onClick={onChangeTeam}
+                className="text-[10px] font-display uppercase tracking-wider text-text-muted hover:text-text-primary transition"
+              >
+                Change
+              </button>
+            </div>
+            <div className="px-2 pb-2 max-h-52 overflow-y-auto space-y-1">
+              {myPicks.length === 0 ? (
+                <div className="text-center text-text-muted text-[10.5px] py-3">
+                  No picks yet
+                </div>
+              ) : (
+                myPicks.map(renderMyPick)
+              )}
+            </div>
+          </div>
+          {/* Draft Board — all picks, most recent first */}
+          <div className="px-4 py-2 border-b border-border-subtle flex items-center gap-2">
+            <div className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary flex-1">
               Draft Board
             </div>
-            <button
-              onClick={onChangeTeam}
-              className="text-[10px] font-display uppercase tracking-wider text-text-muted hover:text-text-primary transition"
-            >
-              Change Team
-            </button>
+            <span className="font-mono text-[10px] text-text-muted">
+              {picks.length}/{liveOrder.length}
+            </span>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {recentPicks.length === 0 ? (
@@ -746,13 +803,36 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             <span className="text-text-muted text-[10px]">{topCollapsed ? '▼' : '▲'}</span>
           </button>
           {!topCollapsed && (
-            <div className="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1">
+            <div className="flex-1 overflow-y-auto overscroll-contain p-2 space-y-2">
+              {/* My Picks — sticky sub-section */}
+              {myPicks.length > 0 && (
+                <div className="space-y-1 pb-1 border-b border-border-subtle">
+                  <div className="flex items-center gap-1.5 px-1">
+                    <TeamLogo abbr={team} size="xs" />
+                    <span className="font-display text-[9px] font-bold uppercase tracking-wider text-text-muted flex-1">
+                      My Picks
+                    </span>
+                    <span className="font-mono text-[9px] text-text-muted">
+                      {myPicks.length}/{userSlotCount}
+                    </span>
+                  </div>
+                  {myPicks.map(renderMyPick)}
+                </div>
+              )}
+              {/* Everyone else's picks */}
               {recentPicks.length === 0 ? (
                 <div className="text-center text-text-muted text-xs py-6">
                   Tap Start Mock Draft above to begin
                 </div>
               ) : (
-                recentPicks.map(renderHistoryPick)
+                <div className="space-y-1">
+                  {myPicks.length > 0 && (
+                    <div className="px-1 font-display text-[9px] font-bold uppercase tracking-wider text-text-muted">
+                      Full Board
+                    </div>
+                  )}
+                  {recentPicks.map(renderHistoryPick)}
+                </div>
               )}
             </div>
           )}
