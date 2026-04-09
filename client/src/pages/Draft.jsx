@@ -183,6 +183,21 @@ export default function Draft() {
     }
   }, [isMobile, draftingForSlot, onClockSlot]);
 
+  // Mobile only: lock body scroll + disable pull-to-refresh while the Draft
+  // page is mounted. This prevents the deep empty scroll past the bottom bar
+  // and stops iOS Safari's pull-to-refresh from firing inside the panels.
+  useEffect(() => {
+    if (!isMobile) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    const prevOverscroll = document.body.style.overscrollBehaviorY;
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehaviorY = 'none';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.overscrollBehaviorY = prevOverscroll;
+    };
+  }, [isMobile]);
+
   // Mobile: when the active pick changes (or top panel uncollapses), scroll
   // its row into view inside the top board panel.
   useEffect(() => {
@@ -497,7 +512,10 @@ export default function Draft() {
               </svg>
             </button>
             {!topCollapsed && (
-            <ul className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 min-h-0">
+            <ul
+              className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 min-h-0"
+              style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+            >
               {Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => {
                 const team = orderByPick.get(slot);
                 const player = picks[slot] ? playerById.get(picks[slot]) : null;
@@ -789,8 +807,8 @@ export default function Draft() {
         This removes every prospect from your current mock.
       </Modal>
 
-      {/* Padding for mobile fixed footer (account for the bottom action bar) */}
-      <div className="h-24 md:hidden" />
+      {/* No mobile bottom spacer needed — the mobile two-panel layout is
+          fixed-positioned and the body scroll is locked via useEffect. */}
     </div>
   );
 }
@@ -853,7 +871,10 @@ function ProspectListInner({
         </div>
       </div>
 
-      <ul className="overflow-y-auto flex-1 space-y-1.5 pr-1 stagger">
+      <ul
+        className="overflow-y-auto flex-1 space-y-1.5 pr-1 stagger"
+        style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
+      >
         {!players ? (
           Array.from({ length: 14 }, (_, i) => <Skeleton key={i} className="h-[46px] w-full rounded-lg" />)
         ) : view === 'bigboard' ? (
