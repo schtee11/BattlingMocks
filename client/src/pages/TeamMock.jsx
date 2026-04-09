@@ -1141,6 +1141,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           userTeam={team}
           liveOrder={liveOrder}
           picksMadeCount={picks.length}
+          onClockTeam={currentSlot?.team}
           tradeValues={tradeValues}
           onClose={() => setTradeOpen(false)}
           onAccepted={(swap) => {
@@ -1160,7 +1161,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 // which of their future picks go out and which incoming picks they want in
 // return. Bot auto-accepts if the incoming value is >= outgoing * 0.92 (bot
 // wants a slight win); otherwise it counters with rejection.
-function TradeModal({ userTeam, liveOrder, picksMadeCount, tradeValues, onClose, onAccepted }) {
+function TradeModal({ userTeam, liveOrder, picksMadeCount, onClockTeam, tradeValues, onClose, onAccepted }) {
   // Quick lookup pick_number → value
   const valueMap = useMemo(() => {
     const m = new Map();
@@ -1177,12 +1178,28 @@ function TradeModal({ userTeam, liveOrder, picksMadeCount, tradeValues, onClose,
     () => futurePicks.filter((s) => s.team === userTeam),
     [futurePicks, userTeam]
   );
+  // Partner teams sorted by their NEXT pick (soonest-on-the-clock first). This
+  // also puts the current on-clock team at the top of the row.
   const otherTeams = useMemo(() => {
-    const set = new Set(futurePicks.filter((s) => s.team !== userTeam).map((s) => s.team));
-    return [...set].sort();
+    const nextPickByTeam = new Map();
+    for (const s of futurePicks) {
+      if (s.team === userTeam) continue;
+      if (!nextPickByTeam.has(s.team)) nextPickByTeam.set(s.team, s.pick_number);
+    }
+    return [...nextPickByTeam.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .map(([t]) => t);
   }, [futurePicks, userTeam]);
 
-  const [partnerTeam, setPartnerTeam] = useState(otherTeams[0] || null);
+  // Default to whoever is currently on the clock (that's why the user opened
+  // the modal — to trade up before the bot grabs their guy). If the user is
+  // on the clock themselves, fall back to the next team after them.
+  const initialPartner = useMemo(() => {
+    if (onClockTeam && onClockTeam !== userTeam) return onClockTeam;
+    return otherTeams[0] || null;
+  }, [onClockTeam, userTeam, otherTeams]);
+
+  const [partnerTeam, setPartnerTeam] = useState(initialPartner);
   const [yourSelected, setYourSelected] = useState(new Set());
   const [theirSelected, setTheirSelected] = useState(new Set());
 
