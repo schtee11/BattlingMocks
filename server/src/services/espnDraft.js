@@ -1,10 +1,12 @@
-// Fetches draft data from ESPN's undocumented APIs. Phase 1: Round 1 only,
-// read-only. Nothing here writes to the DB — the route layer handles that.
+// ESPN draft fetcher — Phase 1, Round 1 only, read-only.
+// Writes nothing to the DB; the route layer handles persistence.
 //
-// ESPN exposes several endpoints that can return draft data and their shapes
-// shift without notice. We try multiple endpoints in order, fall back to the
-// next on any failure, and log the first raw response so we can diagnose
-// shape changes.
+// Works off ESPN's site.web.api scoreboard/header endpoint. The endpoint
+// requires a sport/league filter otherwise it defaults to basketball.
+// Response shape (verified against NBA 2025 data):
+//   sports[0].leagues[0].draft.rounds[N].picks[N]
+// Each pick has: { pick, overall, round, team: "Chiefs",
+//                  displayName, position, college, link: "/name/kc/..." }
 
 const UA = 'MockDraftShowdown/1.0 (+https://mockdraftshowdown.netlify.app)';
 
@@ -22,125 +24,121 @@ function logRawOnce(label, data) {
   if (loggedRaw) return;
   loggedRaw = true;
   try {
-    console.log(`[espn ${label}] sample`, JSON.stringify(data).slice(0, 3000));
+    console.log(`[espn ${label}] sample`, JSON.stringify(data).slice(0, 3500));
   } catch {}
 }
 
-// Normalized pick record:
-// { pick, round, team_abbr, team_name, player_name, player_position, player_school }
+// Parse the `link` field (e.g. "/nfl/draft/teams/_/name/kc/kansas-city-chiefs")
+// and pull the abbr + full name slug.
+function parseTeamLink(link) {
+  if (!link || typeof link !== 'string') return { abbr: null, name: null };
+  const m = link.match(/\/name\/([a-z0-9]+)(?:\/([a-z0-9-]+))?/i);
+  if (!m) return { abbr: null, name: null };
+  const abbr = m[1].toUpperCase();
+  const name = m[2]
+    ? m[2]
+        .split('-')
+        .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+        .join(' ')
+    : null;
+  return { abbr, name };
+}
 
-// Strategy A: ESPN core API — items with $ref pointers. Most reliable for
-// completed drafts, slowest (N+1 fetches) but works once we follow refs.
-async function fromCore(year, round = 1) {
-  const base = `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${year}/draft/rounds/${round}/picks?limit=40`;
-  const data = await fetchJson(base);
-  logRawOnce(`core list year=${year} rd=${round}`, data);
-
-  const items = data?.items || [];
-  const picks = [];
-  for (const item of items) {
-    try {
-      // Each item is either a full pick object or a {$ref} that must be fetched
-      const pickData = item.$ref ? await fetchJson(item.$ref) : item;
-
-      const teamRef = pickData.team?.$ref;
-      const athleteRef = pickData.athlete?.$ref;
-      const team = teamRef ? await fetchJson(teamRef).catch(() => null) : pickData.team;
-      const athlete = athleteRef
-        ? await fetchJson(athleteRef).catch(() => null)
-        : pickData.athlete;
-
-      const overall = pickData.overall ?? pickData.pick ?? pickData.overallPick;
-      const roundNum = pickData.round?.number ?? pickData.round ?? round;
-
-      picks.push({
-        pick: Number(overall),
-        round: Number(roundNum),
-        team_abbr: team?.abbreviation || null,
-        team_name: team?.displayName || team?.name || null,
-        player_name: athlete?.displayName || athlete?.fullName || null,
-        player_position:
-          athlete?.position?.abbreviation || athlete?.position?.displayName || null,
-        player_school: athlete?.college?.name || athlete?.birthPlace?.city || null,
-      });
-    } catch (e) {
-      console.warn('[espn core] pick parse error', e.message);
+// Walk ESPN's response looking for an NFL league with a draft section.
+function extractNflDraft(data) {
+  const sports = Array.isArray(data?.sports) ? data.sports : [];
+  for (const sport of sports) {
+    const leagues = Array.isArray(sport.leagues) ? sport.leagues : [];
+    for (const league of leagues) {
+      const looksLikeNfl =
+        league.slug === 'nfl' ||
+        league.abbreviation === 'NFL' ||
+        /national football/i.test(league.name || '');
+      if (looksLikeNfl && league.draft) return league.draft;
     }
   }
-  return picks;
+  return null;
 }
 
-// Strategy B: site web API with embedded data. Typically faster (single
-// request) and sometimes has richer data. Shape varies by year.
-async function fromSiteWeb(year, round = 1) {
-  const url = `https://site.web.api.espn.com/apis/v2/scoreboard/header?draft_year=${year}&draft_round=${round}`;
-  const data = await fetchJson(url);
-  logRawOnce(`siteweb year=${year} rd=${round}`, data);
-
-  // Walk the response for anything that looks like a pick list
-  const candidates = [
-    data?.picks,
-    data?.sports?.[0]?.leagues?.[0]?.events,
-    data?.events,
-    data?.rounds?.flatMap?.((r) => r.picks || []),
-    data?.items,
-  ].filter(Array.isArray);
-
-  for (const list of candidates) {
-    const picks = list
-      .map(normalizeEmbeddedPick)
-      .filter((p) => p && Number.isInteger(p.pick));
-    if (picks.length > 0) return picks;
-  }
-  return [];
-}
-
-function normalizeEmbeddedPick(raw) {
+function normalizePick(raw, fallbackRound) {
   if (!raw || typeof raw !== 'object') return null;
-  const overall =
-    raw.overall ?? raw.pick ?? raw.overallPick ?? raw.number ?? raw.pickNumber;
-  if (overall == null) return null;
+  const overall = raw.overall ?? raw.pick ?? raw.pickNumber;
+  if (!Number.isInteger(Number(overall))) return null;
 
-  const team =
-    raw.team || raw.franchise || raw.competitors?.[0]?.team || null;
-  const athlete = raw.athlete || raw.player || raw.competitors?.[0]?.athlete || null;
+  // Team: can be a string ("Chiefs"), an object, or parsed from link
+  const { abbr: linkAbbr, name: linkName } = parseTeamLink(raw.link);
+  let teamAbbr = linkAbbr;
+  let teamName = null;
+  if (typeof raw.team === 'string') {
+    teamName = linkName || raw.team;
+  } else if (raw.team && typeof raw.team === 'object') {
+    teamAbbr = teamAbbr || raw.team.abbreviation || null;
+    teamName = raw.team.displayName || raw.team.name || linkName;
+  } else {
+    teamName = linkName;
+  }
 
   return {
     pick: Number(overall),
-    round: Number(raw.round?.number ?? raw.round ?? raw.roundNumber ?? 0),
-    team_abbr: team?.abbreviation || team?.abbrev || null,
-    team_name: team?.displayName || team?.name || null,
-    player_name: athlete?.displayName || athlete?.fullName || athlete?.name || null,
+    round: Number(raw.round ?? fallbackRound ?? 1),
+    team_abbr: teamAbbr,
+    team_name: teamName,
+    player_name: raw.displayName || raw.fullName || raw.name || null,
     player_position:
-      athlete?.position?.abbreviation || athlete?.position?.displayName || null,
-    player_school: athlete?.college?.name || athlete?.school || null,
+      (raw.position && (raw.position.abbreviation || raw.position.displayName)) ||
+      (typeof raw.position === 'string' ? raw.position : null),
+    player_school:
+      raw.college ||
+      raw.school ||
+      (raw.athlete && (raw.athlete.college?.name || raw.athlete.school)) ||
+      null,
+    traded: !!raw.traded,
   };
 }
 
-// Public: fetch round 1 picks, trying each strategy until one works.
-export async function fetchRoundOne(year) {
-  const strategies = [
-    () => fromCore(year, 1),
-    () => fromSiteWeb(year, 1),
+// Try a list of candidate URLs until one returns an NFL draft with picks.
+async function fetchFromSiteWeb(year, round) {
+  const urls = [
+    // Primary: scoreboard header with sport + league filters (prevents NBA default)
+    `https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=football&league=nfl&draft_year=${year}&draft_round=${round}`,
+    // Secondary: classic site API draft endpoint
+    `https://site.api.espn.com/apis/site/v2/sports/football/nfl/draft?year=${year}`,
+    // Tertiary: common v3 draft
+    `https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/draft?year=${year}`,
   ];
 
-  for (const fn of strategies) {
+  for (const url of urls) {
     try {
-      const picks = await fn();
-      if (picks && picks.length > 0) {
-        // Sort and dedupe by pick number
-        const byPick = new Map();
-        for (const p of picks) if (p && p.pick) byPick.set(p.pick, p);
-        return Array.from(byPick.values()).sort((a, b) => a.pick - b.pick);
-      }
+      const data = await fetchJson(url);
+      logRawOnce(`siteweb ${year} r${round} @ ${url.replace(/^.*espn\.com/, '')}`, data);
+      const draft = extractNflDraft(data);
+      if (!draft) continue;
+
+      const rounds = Array.isArray(draft.rounds) ? draft.rounds : [];
+      const target =
+        rounds.find((r) => Number(r.number) === Number(round)) || rounds[0];
+      const rawPicks = Array.isArray(target?.picks) ? target.picks : [];
+      if (rawPicks.length === 0) continue;
+
+      const picks = rawPicks
+        .map((p) => normalizePick(p, round))
+        .filter((p) => p && p.pick);
+      if (picks.length > 0) return picks;
     } catch (e) {
-      console.warn('[espn draft] strategy failed:', e.message);
+      console.warn(`[espn draft] strategy failed:`, e.message);
     }
   }
   return [];
 }
 
-// For diagnostics from the route layer
+// Public: fetch round N (default 1), deduped and sorted by pick number.
+export async function fetchRoundOne(year) {
+  const picks = await fetchFromSiteWeb(year, 1);
+  const byPick = new Map();
+  for (const p of picks) if (p && p.pick) byPick.set(p.pick, p);
+  return Array.from(byPick.values()).sort((a, b) => a.pick - b.pick);
+}
+
 export function resetLogFlag() {
   loggedRaw = false;
 }
