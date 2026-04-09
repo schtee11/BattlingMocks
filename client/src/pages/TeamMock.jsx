@@ -145,6 +145,14 @@ function SavedView({ savedMock, players, onRestart }) {
 
   const themeBg = theme === 'light' ? '#f0f2f7' : '#04080f';
 
+  // Count how many headshots we expect to fetch. On slow mobile networks the
+  // fetches can take several seconds, so the Share/Copy handlers wait for
+  // this count to be matched before generating the blob.
+  const expectedHeadshotCount = useMemo(
+    () => myPicks.filter((p) => byId.get(p.player_id)?.headshot_url).length,
+    [myPicks, byId]
+  );
+
   // Pre-fetch the team logo and all prospect headshots as base64 data URLs.
   // This way the ExportCard's <img> tags reference inlined data URLs that
   // html-to-image captures without any network fetching — eliminates CORS,
@@ -197,6 +205,24 @@ function SavedView({ savedMock, players, onRestart }) {
     });
     return () => { cancelled = true; };
   }, [myPicks, byId]);
+
+  // Refs mirror state so async handlers can poll for readiness without
+  // capturing stale closure values.
+  const logoReadyRef = useRef(!!teamLogoDataUrl);
+  const headshotCountRef = useRef(Object.keys(headshotDataUrls).length);
+  useEffect(() => { logoReadyRef.current = !!teamLogoDataUrl; }, [teamLogoDataUrl]);
+  useEffect(() => { headshotCountRef.current = Object.keys(headshotDataUrls).length; }, [headshotDataUrls]);
+
+  async function waitForImages(timeoutMs = 6000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const logoReady = logoReadyRef.current;
+      const headshotsReady = headshotCountRef.current >= expectedHeadshotCount;
+      if (logoReady && headshotsReady) return true;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return false; // Timed out — proceed anyway with whatever loaded
+  }
 
   async function generateBlob() {
     if (!exportRef.current) return null;
@@ -255,16 +281,18 @@ function SavedView({ savedMock, players, onRestart }) {
       return;
     }
     setExporting(true);
-    // If we already have a cached blob, reuse it; otherwise kick off a fresh
-    // render. Either way, clipboard.write sees a Promise immediately.
-    const blobPromise = cachedBlobRef.current
-      ? Promise.resolve(cachedBlobRef.current)
-      : (async () => {
-          const blob = await generateBlob();
-          if (!blob) throw new Error('render failed');
-          cachedBlobRef.current = blob;
-          return blob;
-        })();
+    // Always re-generate fresh so we pick up any data URLs that finished
+    // loading after the pre-render. Cached blobs were producing stale
+    // captures on slow networks where images hadn't loaded yet when the
+    // pre-render ran.
+    const blobPromise = (async () => {
+      await waitForImages();
+      cachedBlobRef.current = null;
+      const blob = await generateBlob();
+      if (!blob) throw new Error('render failed');
+      cachedBlobRef.current = blob;
+      return blob;
+    })();
     navigator.clipboard
       .write([new ClipboardItem({ 'image/png': blobPromise })])
       .then(() => {
@@ -305,11 +333,13 @@ function SavedView({ savedMock, players, onRestart }) {
   async function handleMobileShare() {
     setExporting(true);
     try {
-      let blob = cachedBlobRef.current;
-      if (!blob) {
-        blob = await generateBlob();
-        if (blob) cachedBlobRef.current = blob;
-      }
+      // Wait for all data URLs to finish loading before capturing. On slow
+      // mobile networks the pre-render can run before images arrive, and
+      // the cached blob ends up missing all the photos.
+      await waitForImages();
+      cachedBlobRef.current = null;
+      const blob = await generateBlob();
+      if (blob) cachedBlobRef.current = blob;
       if (!blob) throw new Error('render failed');
 
       const file = new File([blob], fileName, { type: 'image/png' });
