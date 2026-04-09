@@ -64,6 +64,10 @@ export default function Admin() {
   const [newP, setNewP] = useState({ name: '', position: '', school: '' });
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [fetchingHeadshots, setFetchingHeadshots] = useState(false);
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [bulkImportText, setBulkImportText] = useState('');
+  const [bulkImportBusy, setBulkImportBusy] = useState(false);
+  const [syncProspectsBusy, setSyncProspectsBusy] = useState(false);
   const [syncYear, setSyncYear] = useState(2026);
   const [syncing, setSyncing] = useState(false);
   const [pollStatus, setPollStatus] = useState(null);
@@ -469,6 +473,56 @@ export default function Admin() {
       toast.success(`Added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}`);
       loadAll();
     } catch (e) { toast.error(e.message); }
+  }
+
+  async function syncProspectsFromEspn(dry = false) {
+    if (syncProspectsBusy) return;
+    setSyncProspectsBusy(true);
+    const id = toast.loading(dry ? 'Previewing prospects from ESPN…' : 'Syncing prospects from ESPN…');
+    try {
+      const r = await api.syncProspectsFromEspn(key, { year: syncYear, limit: 400, dry });
+      toast.dismiss(id);
+      // eslint-disable-next-line no-console
+      console.log('[sync prospects] result', r);
+      if (dry) {
+        toast(`Preview: ${r.fetched} prospects · first=${r.samples?.[0]?.name}`, { duration: 10000 });
+      } else {
+        toast.success(`Added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}`);
+        invalidateCache('players');
+        loadAll();
+      }
+    } catch (e) {
+      toast.dismiss(id);
+      toast.error(e.message);
+    } finally {
+      setSyncProspectsBusy(false);
+    }
+  }
+
+  async function submitBulkImport() {
+    setBulkImportBusy(true);
+    try {
+      let parsed;
+      try {
+        parsed = JSON.parse(bulkImportText);
+      } catch {
+        throw new Error('Invalid JSON — paste a JSON array of { name, position, school?, headshot_url? }');
+      }
+      const prospects = Array.isArray(parsed) ? parsed : parsed.prospects;
+      if (!Array.isArray(prospects)) {
+        throw new Error('Expected an array of prospects');
+      }
+      const r = await api.bulkImportProspects(key, prospects);
+      toast.success(`Received ${r.received} · added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}${r.invalid_count ? ` · ${r.invalid_count} invalid` : ''}`);
+      invalidateCache('players');
+      setBulkImportText('');
+      setBulkImportOpen(false);
+      loadAll();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBulkImportBusy(false);
+    }
   }
 
   async function saveDraftOrder() {
@@ -917,12 +971,32 @@ export default function Admin() {
               <div className="flex gap-2 flex-wrap">
                 <Button
                   size="sm"
+                  onClick={() => syncProspectsFromEspn(false)}
+                  disabled={syncProspectsBusy}
+                  title="Pull the draft prospect list from ESPN (up to 400)"
+                >
+                  {syncProspectsBusy ? 'Syncing…' : 'Sync Prospects from ESPN'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => syncProspectsFromEspn(true)}
+                  disabled={syncProspectsBusy}
+                  title="Dry-run preview — see what ESPN returns without writing"
+                >
+                  Preview
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setBulkImportOpen(true)}>
+                  Paste JSON
+                </Button>
+                <Button
+                  size="sm"
                   variant="secondary"
                   onClick={() => fetchHeadshots(false)}
                   disabled={fetchingHeadshots}
-                  title="Query ESPN for any prospect without a headshot"
+                  title="Batch-fetch headshots for prospects without one"
                 >
-                  {fetchingHeadshots ? 'Fetching…' : 'Fetch from ESPN'}
+                  {fetchingHeadshots ? 'Fetching…' : 'Headshots'}
                 </Button>
                 <Button
                   size="sm"
@@ -935,9 +1009,9 @@ export default function Admin() {
                   disabled={fetchingHeadshots}
                   title="Re-query ESPN for every prospect and overwrite"
                 >
-                  Refetch all
+                  Refetch
                 </Button>
-                <Button size="sm" variant="secondary" onClick={importProspects}>Import from JSON</Button>
+                <Button size="sm" variant="secondary" onClick={importProspects}>Import JSON file</Button>
               </div>
             </div>
             <form onSubmit={addPlayer} className="grid md:grid-cols-4 gap-2 mb-4">
@@ -1099,6 +1173,39 @@ export default function Admin() {
       >
         This removes <span className="text-text-primary">{confirmDelete?.name}</span>. Players referenced by
         any submitted mock can't be deleted.
+      </Modal>
+
+      <Modal
+        open={bulkImportOpen}
+        onClose={() => setBulkImportOpen(false)}
+        title="Bulk Import Prospects"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setBulkImportOpen(false)} disabled={bulkImportBusy}>
+              Cancel
+            </Button>
+            <Button onClick={submitBulkImport} disabled={bulkImportBusy || !bulkImportText.trim()}>
+              {bulkImportBusy ? 'Importing…' : 'Import'}
+            </Button>
+          </>
+        }
+      >
+        <p className="mb-3">
+          Paste a JSON array of prospects. Required fields: <code className="text-accent font-mono text-[11px]">name</code>,{' '}
+          <code className="text-accent font-mono text-[11px]">position</code>. Optional:{' '}
+          <code className="text-accent font-mono text-[11px]">school</code>,{' '}
+          <code className="text-accent font-mono text-[11px]">headshot_url</code>.
+        </p>
+        <p className="mb-3 text-text-muted text-[11px]">
+          Existing players (matched case-insensitive by name) get updated. No deletes.
+        </p>
+        <textarea
+          value={bulkImportText}
+          onChange={(e) => setBulkImportText(e.target.value)}
+          placeholder={'[\n  { "name": "Cam Ward", "position": "QB", "school": "Miami (FL)" },\n  { "name": "Travis Hunter", "position": "WR", "school": "Colorado" }\n]'}
+          className="w-full bg-bg-deep border border-border-focus rounded px-3 py-2 text-text-primary text-[12px] font-mono h-48"
+          spellCheck={false}
+        />
       </Modal>
     </div>
   );

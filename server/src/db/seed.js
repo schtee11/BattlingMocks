@@ -34,26 +34,28 @@ export async function importProspects(prospects) {
     if (!name) continue;
     const position = normalizePosition(p.position);
     const school = p.school?.trim() || null;
+    const headshot = p.headshot_url?.trim() || null;
 
     const { rows } = await pool.query(
-      'SELECT id, position, school FROM players WHERE LOWER(name) = LOWER($1) LIMIT 1',
+      'SELECT id, position, school, headshot_url FROM players WHERE LOWER(name) = LOWER($1) LIMIT 1',
       [name]
     );
     if (rows.length) {
       const cur = rows[0];
-      if (cur.position === position && cur.school === school) {
+      const nextHeadshot = headshot ?? cur.headshot_url; // don't clobber existing with null
+      if (cur.position === position && cur.school === school && cur.headshot_url === nextHeadshot) {
         unchanged++;
       } else {
         await pool.query(
-          'UPDATE players SET position = $1, school = $2 WHERE id = $3',
-          [position, school, cur.id]
+          'UPDATE players SET position = $1, school = $2, headshot_url = $3 WHERE id = $4',
+          [position, school, nextHeadshot, cur.id]
         );
         updated++;
       }
     } else {
       await pool.query(
-        'INSERT INTO players (name, position, school) VALUES ($1, $2, $3)',
-        [name, position, school]
+        'INSERT INTO players (name, position, school, headshot_url) VALUES ($1, $2, $3, $4)',
+        [name, position, school, headshot]
       );
       added++;
     }

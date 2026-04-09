@@ -167,6 +167,101 @@ export async function fetchAllRounds(year) {
   return Array.from(byPick.values()).sort((a, b) => a.pick - b.pick);
 }
 
+// -------- Draft prospects fetch --------
+// Tries several ESPN endpoint patterns that are known to return prospect
+// data. Response shapes vary wildly; we normalize everything we find into
+// { name, position, school, headshot_url, rank }.
+
+function normalizeProspect(raw, fallbackRank) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  // Name
+  const name =
+    raw.displayName ||
+    raw.fullName ||
+    raw.name ||
+    (raw.firstName && raw.lastName ? `${raw.firstName} ${raw.lastName}` : null);
+  if (!name) return null;
+
+  // Position — can be a string or an object
+  let position = null;
+  if (typeof raw.position === 'string') position = raw.position;
+  else if (raw.position && typeof raw.position === 'object')
+    position = raw.position.abbreviation || raw.position.displayName || raw.position.name || null;
+  if (!position && raw.pos) position = raw.pos;
+  if (!position) return null;
+
+  // School — ESPN calls it college/school/team in different places
+  let school = null;
+  if (typeof raw.college === 'string') school = raw.college;
+  else if (raw.college && typeof raw.college === 'object')
+    school = raw.college.name || raw.college.displayName || null;
+  if (!school) school = raw.school || raw.team || null;
+
+  // Headshot
+  let headshot_url = null;
+  if (typeof raw.headshot === 'string') headshot_url = raw.headshot;
+  else if (raw.headshot && typeof raw.headshot === 'object')
+    headshot_url = raw.headshot.href || raw.headshot.default || null;
+  if (!headshot_url && raw.image)
+    headshot_url = typeof raw.image === 'string' ? raw.image : raw.image.default || raw.image.href || null;
+
+  // Rank
+  const rank = Number(raw.rank ?? raw.ranking ?? raw.grade ?? fallbackRank) || null;
+
+  return { name, position, school, headshot_url, rank };
+}
+
+async function fetchProspectsFromEspnAttempts(year, limit) {
+  const urls = [
+    `https://site.api.espn.com/apis/site/v2/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
+    `https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
+    `https://site.web.api.espn.com/apis/v3/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${year}/draft/prospects?limit=${limit}`,
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/draft/prospects?limit=${limit}`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const data = await fetchJson(url);
+      logRawOnce(`prospects ${year} @ ${url.replace(/^.*espn\.com/, '')}`, data);
+
+      // Find an array of prospects anywhere in the response
+      const candidates = [
+        data?.prospects,
+        data?.items,
+        data?.athletes,
+        data?.results,
+        data?.rankings,
+        data?.data,
+      ].filter(Array.isArray);
+
+      for (const arr of candidates) {
+        // If items are $refs, we'd need to follow them, but core API is slow
+        // so we only use direct data and skip ref-only responses.
+        const flat = arr.filter((x) => x && typeof x === 'object' && !x.$ref);
+        if (flat.length === 0) continue;
+
+        const prospects = flat
+          .map((raw, i) => normalizeProspect(raw, i + 1))
+          .filter(Boolean);
+
+        if (prospects.length > 0) {
+          console.log(`[espn prospects] got ${prospects.length} from ${url.replace(/^.*espn\.com/, '')}`);
+          return prospects;
+        }
+      }
+    } catch (e) {
+      console.warn('[espn prospects] strategy failed:', e.message);
+    }
+  }
+  return [];
+}
+
+export async function fetchProspects(year, limit = 400) {
+  return fetchProspectsFromEspnAttempts(year, limit);
+}
+
 export function resetLogFlag() {
   loggedRaw = false;
 }

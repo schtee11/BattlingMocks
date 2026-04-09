@@ -73,6 +73,17 @@ export const api = {
     request(`/api/admin/players/${id}`, { method: 'DELETE', adminKey: key }),
   importProspects: (key) =>
     request('/api/admin/import-prospects', { method: 'POST', adminKey: key }),
+  bulkImportProspects: (key, prospects) =>
+    request('/api/admin/prospects/bulk-import', {
+      method: 'POST',
+      body: { prospects },
+      adminKey: key,
+    }),
+  syncProspectsFromEspn: (key, { year = 2026, limit = 400, dry = false } = {}) =>
+    request(
+      `/api/admin/prospects/sync-from-espn?year=${year}&limit=${limit}${dry ? '&dry=1' : ''}`,
+      { method: 'POST', adminKey: key }
+    ),
   fetchHeadshots: (key, { overwrite = false } = {}) =>
     request(`/api/admin/fetch-headshots${overwrite ? '?overwrite=1' : ''}`, {
       method: 'POST',

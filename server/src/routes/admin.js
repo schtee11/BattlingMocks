@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { pool } from '../db/pool.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { importProspects, seedDraftOrder, PROSPECTS_PATH } from '../db/seed.js';
-import { fetchRoundOne, fetchAllRounds, resetLogFlag } from '../services/espnDraft.js';
+import { fetchRoundOne, fetchAllRounds, fetchProspects, resetLogFlag } from '../services/espnDraft.js';
 import { runScoringOnClient } from '../services/scoring.js';
 import { syncPicksOnce } from '../services/draftSync.js';
 import { startPoller, stopPoller, getStatus as getPollerStatus } from '../services/draftPoller.js';
@@ -305,6 +305,82 @@ router.post('/import-prospects', async (_req, res) => {
     res.json(result);
   } catch (e) {
     console.error(e);
+    res.status(500).json({ error: 'import failed: ' + e.message });
+  }
+});
+
+// ---------- Sync prospects from ESPN ----------
+// Tries several ESPN prospects endpoints, normalizes, upserts. Dry-run
+// mode returns the first few parsed prospects without writing.
+router.post('/prospects/sync-from-espn', async (req, res) => {
+  const year = parseInt(req.query.year, 10) || 2026;
+  const limit = Math.min(parseInt(req.query.limit, 10) || 400, 1000);
+  const dry = req.query.dry === '1';
+  resetLogFlag();
+
+  try {
+    const prospects = await fetchProspects(year, limit);
+    if (prospects.length === 0) {
+      return res.status(502).json({
+        error: 'ESPN returned no prospects from any endpoint; check logs',
+        hint: 'Use the bulk-import JSON paste instead',
+      });
+    }
+
+    const summary = {
+      year,
+      dry,
+      fetched: prospects.length,
+      samples: prospects.slice(0, 10),
+    };
+
+    if (dry) return res.json(summary);
+
+    const result = await importProspects(prospects);
+    res.json({ ...summary, ...result });
+  } catch (e) {
+    console.error('[prospects sync-from-espn]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- Bulk import from pasted JSON ----------
+// Accepts an array of { name, position, school?, headshot_url?, rank? }.
+// Uses the same upsert semantics as importProspects — matches on lowercase
+// name. Existing players get position/school/headshot updated, new names
+// get inserted. Nothing deletes.
+router.post('/prospects/bulk-import', async (req, res) => {
+  const body = req.body || {};
+  const list = Array.isArray(body) ? body : body.prospects;
+  if (!Array.isArray(list)) {
+    return res.status(400).json({ error: 'expected array or { prospects: [...] }' });
+  }
+
+  // Shallow validation — every entry needs at least a name + position
+  const invalid = [];
+  const clean = [];
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    if (!p || typeof p !== 'object') { invalid.push({ index: i, reason: 'not an object' }); continue; }
+    if (!p.name || typeof p.name !== 'string') { invalid.push({ index: i, reason: 'missing name' }); continue; }
+    if (!p.position || typeof p.position !== 'string') { invalid.push({ index: i, reason: 'missing position' }); continue; }
+    clean.push({
+      name: p.name.trim(),
+      position: String(p.position).trim(),
+      school: p.school ? String(p.school).trim() : null,
+      headshot_url: p.headshot_url ? String(p.headshot_url).trim() : null,
+    });
+  }
+
+  if (clean.length === 0) {
+    return res.status(400).json({ error: 'no valid prospects in payload', invalid });
+  }
+
+  try {
+    const result = await importProspects(clean);
+    res.json({ ...result, received: list.length, invalid_count: invalid.length, invalid: invalid.slice(0, 10) });
+  } catch (e) {
+    console.error('[bulk-import]', e);
     res.status(500).json({ error: 'import failed: ' + e.message });
   }
 });
