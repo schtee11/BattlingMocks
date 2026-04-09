@@ -145,6 +145,59 @@ function SavedView({ savedMock, players, onRestart }) {
 
   const themeBg = theme === 'light' ? '#f0f2f7' : '#04080f';
 
+  // Pre-fetch the team logo and all prospect headshots as base64 data URLs.
+  // This way the ExportCard's <img> tags reference inlined data URLs that
+  // html-to-image captures without any network fetching — eliminates CORS,
+  // stale cache, and theme-timing issues in one shot.
+  const [teamLogoDataUrl, setTeamLogoDataUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const url = proxyImageUrl(teamLogoEspnUrl(userTeam));
+    fetch(url)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((blob) => {
+        if (!blob || cancelled) return;
+        const reader = new FileReader();
+        reader.onloadend = () => { if (!cancelled) setTeamLogoDataUrl(reader.result); };
+        reader.readAsDataURL(blob);
+      })
+      .catch(() => { /* fall back to empty = badge fallback */ });
+    return () => { cancelled = true; };
+  }, [userTeam]);
+
+  const [headshotDataUrls, setHeadshotDataUrls] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const toFetch = myPicks
+      .map((p) => {
+        const player = byId.get(p.player_id);
+        return player?.headshot_url ? { id: p.player_id, url: player.headshot_url } : null;
+      })
+      .filter(Boolean);
+    Promise.all(
+      toFetch.map(({ id, url }) =>
+        fetch(proxyImageUrl(url))
+          .then((r) => (r.ok ? r.blob() : null))
+          .then(
+            (blob) =>
+              new Promise((resolve) => {
+                if (!blob) return resolve([id, null]);
+                const reader = new FileReader();
+                reader.onloadend = () => resolve([id, reader.result]);
+                reader.readAsDataURL(blob);
+              })
+          )
+          .catch(() => [id, null])
+      )
+    ).then((pairs) => {
+      if (cancelled) return;
+      const map = {};
+      for (const [id, dataUrl] of pairs) if (dataUrl) map[id] = dataUrl;
+      setHeadshotDataUrls(map);
+    });
+    return () => { cancelled = true; };
+  }, [myPicks, byId]);
+
   async function generateBlob() {
     if (!exportRef.current) return null;
     // Wait for all <img> inside the card to finish loading before capture,
@@ -173,20 +226,23 @@ function SavedView({ savedMock, players, onRestart }) {
   }
 
   // Pre-render the blob as soon as the card has data + the DOM is ready so
-  // Share has something to hand off instantly. Re-render if the theme or the
-  // underlying picks change.
+  // Share has something to hand off instantly. Re-render whenever the theme,
+  // the underlying mock, or the inlined image data URLs change (images load
+  // asynchronously after mount, so the first render is usually text-only).
+  const headshotsLoadedCount = Object.keys(headshotDataUrls).length;
   useEffect(() => {
     let cancelled = false;
     cachedBlobRef.current = null;
-    // Give the DOM a tick to mount the ExportCard, then render.
+    // Give the DOM a tick to mount the ExportCard with the latest data URLs,
+    // then render. Slightly longer delay gives React time to commit.
     const t = setTimeout(() => {
       generateBlob()
         .then((blob) => { if (!cancelled) cachedBlobRef.current = blob; })
         .catch((e) => { console.warn('[pre-render]', e); });
-    }, 400);
+    }, 500);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedMock.id, theme]);
+  }, [savedMock.id, theme, teamLogoDataUrl, headshotsLoadedCount]);
 
   const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
 
@@ -301,6 +357,8 @@ function SavedView({ savedMock, players, onRestart }) {
           byId={byId}
           userTeam={userTeam}
           theme={theme}
+          teamLogoDataUrl={teamLogoDataUrl}
+          headshotDataUrls={headshotDataUrls}
         />
       </div>
 
@@ -477,7 +535,24 @@ function teamLogoEspnUrl(abbr) {
   return `https://a.espncdn.com/i/teamlogos/nfl/500/${key}.png`;
 }
 
-const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, userTeam, theme }, ref) {
+// Primary brand colors for each NFL team. Used for the fallback team badge
+// when the ESPN logo fetch fails or returns wrong content — every team gets
+// a distinctive on-brand look instead of a generic accent-colored box.
+const TEAM_BRAND = {
+  BUF: '#00338D', MIA: '#008E97', NE: '#002244', NYJ: '#125740',
+  BAL: '#241773', CIN: '#FB4F14', CLE: '#311D00', PIT: '#FFB612',
+  HOU: '#03202F', IND: '#002C5F', JAX: '#006778', TEN: '#0C2340',
+  DEN: '#FB4F14', KC: '#E31837', LV: '#000000', LAC: '#0080C6',
+  DAL: '#003594', NYG: '#0B2265', PHI: '#004C54', WAS: '#5A1414',
+  CHI: '#0B162A', DET: '#0076B6', GB: '#203731', MIN: '#4F2683',
+  ATL: '#A71930', CAR: '#0085CA', NO: '#D3BC8D', TB: '#D50A0A',
+  ARI: '#97233F', LAR: '#003594', SF: '#AA0000', SEA: '#002244',
+};
+
+const ExportCard = forwardRef(function ExportCard(
+  { savedMock, myPicks, byId, userTeam, theme, teamLogoDataUrl, headshotDataUrls = {} },
+  ref
+) {
   const title = savedMock.title || `${userTeam} Team Mock`;
   const dateStr = new Date(savedMock.submitted_at).toLocaleDateString(undefined, {
     month: 'long', day: 'numeric', year: 'numeric',
@@ -506,37 +581,49 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
     >
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 32 }}>
-        {/* Text-only team badge. Previously rendered the real ESPN logo via
-            proxy but it was unreliable across themes (light mode was
-            returning a wrong image) and added a network dependency to every
-            export. A clean styled text box with the team abbreviation is
-            always readable, always identifies the team, and works
-            identically in dark and light themes. */}
-        <div
-          style={{
-            width: 96,
-            height: 96,
-            borderRadius: 18,
-            background: `linear-gradient(135deg, ${C.accent}22 0%, ${C.accent}08 100%)`,
-            boxShadow: `inset 0 0 0 2px ${C.accent}55`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
+        {/* Real ESPN team logo, inlined as a base64 data URL so html-to-image
+            captures the actual bytes already in the DOM — no network fetch
+            during capture, no CORS headaches, no theme-timing weirdness.
+            Falls back to a team-branded color badge if the pre-fetch hasn't
+            completed yet or the upstream fetch failed entirely. */}
+        {teamLogoDataUrl ? (
+          <img
+            src={teamLogoDataUrl}
+            alt=""
+            style={{
+              width: 96,
+              height: 96,
+              objectFit: 'contain',
+              flexShrink: 0,
+            }}
+          />
+        ) : (
           <div
             style={{
-              fontSize: userTeam.length >= 4 ? 22 : 30,
-              fontWeight: 900,
-              letterSpacing: 1.5,
-              color: C.accent,
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
+              width: 96,
+              height: 96,
+              borderRadius: 18,
+              background: TEAM_BRAND[userTeam] || C.accent,
+              boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.18)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
             }}
           >
-            {userTeam}
+            <div
+              style={{
+                fontSize: userTeam.length >= 4 ? 22 : 30,
+                fontWeight: 900,
+                letterSpacing: 1.5,
+                color: '#ffffff',
+                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
+              }}
+            >
+              {userTeam}
+            </div>
           </div>
-        </div>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
@@ -602,7 +689,11 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
             {picksByRound[r].map((pick) => {
               const player = byId.get(pick.player_id) || pick;
               const color = posHex(player.position);
-              const headshotSrc = player.headshot_url ? proxyImageUrl(player.headshot_url) : null;
+              // Prefer inlined data URL (pre-fetched in SavedView's useEffect)
+              // so html-to-image captures a purely-local image. Falls back to
+              // the initials circle if the pre-fetch hasn't completed or the
+              // player has no headshot_url.
+              const headshotDataUrl = headshotDataUrls[pick.player_id];
               return (
                 <div
                   key={pick.pick_number}
@@ -617,13 +708,10 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
                     border: `1px solid ${C.subtle}`,
                   }}
                 >
-                  {/* Real headshot via proxy, falling back to the initials
-                      circle if the player has no photo on file. */}
-                  {headshotSrc ? (
+                  {headshotDataUrl ? (
                     <img
-                      src={headshotSrc}
+                      src={headshotDataUrl}
                       alt=""
-                      crossOrigin="anonymous"
                       style={{
                         width: 56,
                         height: 56,
