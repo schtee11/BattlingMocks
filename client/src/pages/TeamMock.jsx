@@ -115,61 +115,87 @@ function SavedView({ savedMock, players, onRestart }) {
   const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <TeamLogo abbr={userTeam} size="lg" />
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between flex-wrap gap-4 mb-8 sm:mb-10">
+        <div className="flex items-center gap-4 sm:gap-5">
+          <TeamLogo abbr={userTeam} size="xl" className="hidden sm:block" />
+          <TeamLogo abbr={userTeam} size="lg" className="sm:hidden" />
           <div>
-            <h2 className="font-display text-xl font-bold uppercase tracking-[0.1em] text-text-primary">
+            <div className="font-display text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
+              Team Mock · {userTeam}
+            </div>
+            <h2 className="font-display text-2xl sm:text-4xl font-bold uppercase tracking-[0.08em] text-text-primary leading-tight">
               {savedMock.title || `${userTeam} Team Mock`}
             </h2>
-            <p className="text-text-secondary text-xs">
+            <p className="text-text-secondary text-xs sm:text-sm mt-1">
               Saved · {new Date(savedMock.submitted_at).toLocaleString(undefined, {
                 month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
               })}
-            </p>
-            <p className="text-text-muted text-[10px] mt-0.5">
-              {myPicks.length} {userTeam} pick{myPicks.length === 1 ? '' : 's'}
+              <span className="mx-2 text-text-muted">·</span>
+              {myPicks.length} pick{myPicks.length === 1 ? '' : 's'}
             </p>
           </div>
         </div>
         <button
           onClick={onRestart}
-          className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] px-3 py-1.5 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition"
+          className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition"
         >
           ← Back
         </button>
       </div>
-      <div className="space-y-5">
+
+      {/* ── Picks by round ── */}
+      <div className="space-y-8">
         {rounds.map((r) => (
           <div key={r}>
-            <div className="text-[10px] font-display font-semibold uppercase tracking-[0.16em] text-text-muted mb-2">
-              {ROUND_LABELS[r] || `Round ${r}`} Round
+            <div className="flex items-center gap-3 mb-3">
+              <div className="font-display text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+                {ROUND_LABELS[r] || `Round ${r}`} Round
+              </div>
+              <div className="flex-1 h-px bg-border-subtle" />
+              <div className="font-mono text-[10px] text-text-muted">
+                {myPicksByRound[r].length} pick{myPicksByRound[r].length === 1 ? '' : 's'}
+              </div>
             </div>
-            <div className="space-y-1.5">
+            {/* Grid: 1 col mobile, 2 cols tablet, 3 cols desktop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {myPicksByRound[r].map((pick) => {
                 const player = byId.get(pick.player_id) || pick;
                 const color = posHex(player.position);
                 return (
                   <div
                     key={pick.pick_number}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-accent/30 bg-accent/[0.05]"
-                    style={{ borderLeft: `3px solid ${color}` }}
+                    className="relative flex items-center gap-4 p-4 rounded-xl border border-border-subtle bg-bg-surface/40 hover:border-accent/40 transition-colors overflow-hidden"
+                    style={{ borderLeft: `4px solid ${color}` }}
                   >
-                    <span className="font-mono text-[9.5px] text-text-muted w-6 text-right shrink-0">
-                      {pick.pick_number}
-                    </span>
-                    <TeamLogo abbr={pick.team} size="xs" />
-                    <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="xs" />
+                    {/* Pick number overlay */}
+                    <div
+                      className="absolute top-2 right-3 font-mono text-[10px] font-semibold"
+                      style={{ color }}
+                    >
+                      #{pick.pick_number}
+                    </div>
+                    {/* Big player photo */}
+                    <PlayerHeadshot
+                      url={player.headshot_url}
+                      name={player.name}
+                      position={player.position}
+                      size="lg"
+                    />
                     <div className="flex-1 min-w-0">
-                      <div className="text-[12.5px] font-semibold truncate text-text-primary">
+                      <div className="text-[15px] sm:text-[16px] font-bold truncate text-text-primary leading-tight">
                         {player.name}
                       </div>
                       {player.school && (
-                        <div className="text-[10px] text-text-muted truncate">{player.school}</div>
+                        <div className="text-[11px] text-text-muted truncate mt-0.5">
+                          {player.school}
+                        </div>
                       )}
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <PositionBadge position={player.position} />
+                      </div>
                     </div>
-                    <PositionBadge position={player.position} />
                   </div>
                 );
               })}
