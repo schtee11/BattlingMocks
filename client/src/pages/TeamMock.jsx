@@ -149,25 +149,43 @@ function SavedView({ savedMock, players, onRestart }) {
 
   const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
 
-  async function handleCopy() {
+  function handleCopy() {
+    // CRITICAL: navigator.clipboard.write MUST be called synchronously from
+    // within the user gesture (click event). If we `await generateBlob()`
+    // first, Chrome/Edge lose the gesture and the write silently "succeeds"
+    // without actually placing anything in the system clipboard — which is
+    // exactly what was happening on Windows: Copy → paste → nothing.
+    //
+    // Workaround: pass a Promise<Blob> directly to ClipboardItem. The
+    // ClipboardItem spec explicitly supports this for async sources, and
+    // browsers keep the gesture alive until the promise resolves.
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      // Older browsers: no clipboard API, fall back to Share handler.
+      toast.error('Clipboard unsupported — use Share instead');
+      return;
+    }
     setExporting(true);
-    try {
+    // Build the Promise<Blob> without awaiting it, so clipboard.write is
+    // invoked inside the click callstack.
+    const blobPromise = (async () => {
       const blob = await generateBlob();
       if (!blob) throw new Error('render failed');
-      if (!navigator.clipboard || !window.ClipboardItem) {
-        // Older browsers: no clipboard API, fall back to download
-        triggerDownload(blob);
-        toast.success('Downloaded (clipboard unsupported)');
-        return;
-      }
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      toast.success('Copied — paste into Discord with Ctrl+V');
-    } catch (e) {
-      console.error('[copy]', e);
-      toast.error(e.message?.includes('Document is not focused') ? 'Click the page first, then Copy' : 'Copy failed — try Share instead');
-    } finally {
-      setExporting(false);
-    }
+      return blob;
+    })();
+    navigator.clipboard
+      .write([new ClipboardItem({ 'image/png': blobPromise })])
+      .then(() => {
+        toast.success('Copied — paste into Discord with Ctrl+V');
+      })
+      .catch((e) => {
+        console.error('[copy]', e);
+        if (e.name === 'NotAllowedError' || e.message?.includes('focused')) {
+          toast.error('Click the page first, then tap Copy');
+        } else {
+          toast.error('Copy failed — try Share instead');
+        }
+      })
+      .finally(() => setExporting(false));
   }
 
   function triggerDownload(blob) {
