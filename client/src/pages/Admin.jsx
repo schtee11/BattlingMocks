@@ -25,6 +25,7 @@ import { prettyName } from '../lib/displayName.js';
 const TABS = [
   ['results', 'Enter Results'],
   ['order', 'Draft Order'],
+  ['trades', 'Trades'],
   ['players', 'Prospects'],
   ['users', 'Users'],
   ['scoring', 'Scoring & Lock'],
@@ -67,6 +68,14 @@ export default function Admin() {
   const [syncing, setSyncing] = useState(false);
   const [pollStatus, setPollStatus] = useState(null);
   const [pollInterval, setPollInterval] = useState(20);
+  // Trade calculator state
+  const [tradeValues, setTradeValues] = useState([]);
+  const [sideAPicks, setSideAPicks] = useState([]);
+  const [sideBPicks, setSideBPicks] = useState([]);
+  const [sideATeam, setSideATeam] = useState('');
+  const [sideBTeam, setSideBTeam] = useState('');
+  const [tradeResult, setTradeResult] = useState(null);
+  const [tradePickSearch, setTradePickSearch] = useState('');
 
   const userIsAdmin = isAdmin(user);
 
@@ -154,6 +163,70 @@ export default function Admin() {
       setPollStatus(s);
       toast('Auto-sync OFF');
     } catch (e) { toast.error(e.message); }
+  }
+
+  // ---------- Trades ----------
+  useEffect(() => {
+    if (!unlocked || tab !== 'trades') return;
+    if (tradeValues.length > 0) return;
+    api.tradeValues(key)
+      .then(setTradeValues)
+      .catch((e) => toast.error(e.message));
+    // eslint-disable-next-line
+  }, [unlocked, tab]);
+
+  // Recalculate whenever either side changes
+  useEffect(() => {
+    if (tab !== 'trades') return;
+    if (sideAPicks.length === 0 && sideBPicks.length === 0) {
+      setTradeResult(null);
+      return;
+    }
+    let cancelled = false;
+    api.tradeCalculate(key, { side_a_picks: sideAPicks, side_b_picks: sideBPicks })
+      .then((r) => { if (!cancelled) setTradeResult(r); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line
+  }, [sideAPicks, sideBPicks, tab]);
+
+  function addPickToSide(side, pickNum) {
+    const setter = side === 'a' ? setSideAPicks : setSideBPicks;
+    setter((prev) => (prev.includes(pickNum) ? prev : [...prev, pickNum]));
+  }
+  function removePickFromSide(side, pickNum) {
+    const setter = side === 'a' ? setSideAPicks : setSideBPicks;
+    setter((prev) => prev.filter((p) => p !== pickNum));
+  }
+  function clearTrade() {
+    setSideAPicks([]);
+    setSideBPicks([]);
+    setSideATeam('');
+    setSideBTeam('');
+    setTradeResult(null);
+  }
+
+  async function applyTradeAction() {
+    if (!sideATeam || !sideBTeam) return toast.error('Set both team abbreviations');
+    if (sideAPicks.length === 0 && sideBPicks.length === 0) return toast.error('Add picks to trade');
+    if (!window.confirm(`Apply trade? ${sideATeam} ↔ ${sideBTeam}`)) return;
+    try {
+      const r = await api.tradeApply(key, {
+        side_a_team: sideATeam.toUpperCase(),
+        side_a_picks: sideAPicks,
+        side_b_team: sideBTeam.toUpperCase(),
+        side_b_picks: sideBPicks,
+      });
+      toast.success(`Applied ${r.applied.length} pick changes${r.skipped.length ? ` · ${r.skipped.length} skipped` : ''}`);
+      if (r.skipped.length) {
+        console.log('[trade apply] skipped', r.skipped);
+      }
+      invalidateCache('draft-order');
+      clearTrade();
+      loadAll();
+    } catch (e) {
+      toast.error(e.message);
+    }
   }
 
   // Access gate (after hooks): non-admins see a 404. Backend X-Admin-Key
@@ -774,6 +847,26 @@ export default function Admin() {
         </div>
       )}
 
+      {/* Trades */}
+      {tab === 'trades' && (
+        <TradesPanel
+          values={tradeValues}
+          sideAPicks={sideAPicks}
+          sideBPicks={sideBPicks}
+          sideATeam={sideATeam}
+          sideBTeam={sideBTeam}
+          setSideATeam={setSideATeam}
+          setSideBTeam={setSideBTeam}
+          addPickToSide={addPickToSide}
+          removePickFromSide={removePickFromSide}
+          tradeResult={tradeResult}
+          clearTrade={clearTrade}
+          applyTradeAction={applyTradeAction}
+          tradePickSearch={tradePickSearch}
+          setTradePickSearch={setTradePickSearch}
+        />
+      )}
+
       {/* Players */}
       {tab === 'players' && (
         <div className="space-y-4">
@@ -973,6 +1066,222 @@ export default function Admin() {
 // One row in the Draft Order grid. Both draggable (can be picked up) and
 // droppable (can receive another row dropped on it). Editing the team
 // fields inline still works — drag is initiated by the grab handle.
+function TradesPanel({
+  values,
+  sideAPicks,
+  sideBPicks,
+  sideATeam,
+  sideBTeam,
+  setSideATeam,
+  setSideBTeam,
+  addPickToSide,
+  removePickFromSide,
+  tradeResult,
+  clearTrade,
+  applyTradeAction,
+  tradePickSearch,
+  setTradePickSearch,
+}) {
+  const byPick = new Map(values.map((v) => [v.pick, v]));
+  const q = tradePickSearch.trim().toLowerCase();
+  const filtered = values.filter((v) => {
+    if (!q) return true;
+    return (
+      String(v.pick).includes(q) ||
+      (v.team || '').toLowerCase().includes(q)
+    );
+  });
+
+  const verdictLabel = tradeResult?.verdict
+    ? { fair: 'Fair', slight_lean: 'Slight lean', lopsided: 'Lopsided' }[tradeResult.verdict]
+    : null;
+  const verdictColor = {
+    fair: 'text-emerald-400',
+    slight_lean: 'text-gold',
+    lopsided: 'text-red-400',
+  }[tradeResult?.verdict] || 'text-text-secondary';
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-5">
+        <h3 className="font-semibold text-text-primary mb-1">Trade Calculator · Rich Hill Chart</h3>
+        <p className="text-text-muted text-xs">
+          Add picks to each side. Calculator updates live. Apply only affects picks 1-32 in the draft board; picks outside R1 are counted in value but skipped on apply.
+        </p>
+      </Card>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <TradeSide
+          label="Side A"
+          team={sideATeam}
+          setTeam={setSideATeam}
+          picks={sideAPicks}
+          byPick={byPick}
+          onRemove={(p) => removePickFromSide('a', p)}
+          total={tradeResult?.side_a?.total ?? 0}
+        />
+        <TradeSide
+          label="Side B"
+          team={sideBTeam}
+          setTeam={setSideBTeam}
+          picks={sideBPicks}
+          byPick={byPick}
+          onRemove={(p) => removePickFromSide('b', p)}
+          total={tradeResult?.side_b?.total ?? 0}
+        />
+      </div>
+
+      {/* Verdict bar */}
+      <Card className="p-4">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-4 font-mono tabular">
+            <div>
+              <div className="caption text-[9px]">Side A</div>
+              <div className="text-2xl font-bold text-text-primary">{tradeResult?.side_a?.total ?? 0}</div>
+            </div>
+            <div className="text-text-muted text-xl">↔</div>
+            <div>
+              <div className="caption text-[9px]">Side B</div>
+              <div className="text-2xl font-bold text-text-primary">{tradeResult?.side_b?.total ?? 0}</div>
+            </div>
+            {tradeResult && (
+              <div className="ml-4">
+                <div className="caption text-[9px]">Diff</div>
+                <div className={`text-xl font-bold ${verdictColor}`}>
+                  {tradeResult.diff > 0 ? '+' : ''}{tradeResult.diff}
+                  <span className="text-text-muted text-xs ml-1">({tradeResult.pct_diff}%)</span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {verdictLabel && (
+              <span className={`font-display uppercase tracking-[0.14em] text-[11px] ${verdictColor}`}>
+                {verdictLabel}
+                {tradeResult.favors && (
+                  <span className="ml-1 text-text-secondary">
+                    · favors {tradeResult.favors.toUpperCase()}
+                  </span>
+                )}
+              </span>
+            )}
+            <Button size="sm" variant="ghost" onClick={clearTrade}>Clear</Button>
+            <Button size="sm" onClick={applyTradeAction} disabled={!sideATeam || !sideBTeam || (sideAPicks.length === 0 && sideBPicks.length === 0)}>
+              Apply
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Pick browser */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h3 className="font-semibold text-text-primary">Pick browser</h3>
+          <input
+            value={tradePickSearch}
+            onChange={(e) => setTradePickSearch(e.target.value)}
+            placeholder="Search by pick # or team…"
+            autoComplete="off"
+            className="w-64 bg-bg-deep border border-border-focus rounded px-3 py-1.5 text-text-primary text-sm"
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-[60vh] overflow-y-auto">
+          {filtered.map((v) => {
+            const inA = sideAPicks.includes(v.pick);
+            const inB = sideBPicks.includes(v.pick);
+            const used = inA || inB;
+            return (
+              <div
+                key={v.pick}
+                className={`flex items-center gap-2 p-2 rounded border text-sm ${
+                  used ? 'border-accent/40 bg-accent/[0.05]' : 'border-border-subtle bg-bg-deep'
+                }`}
+              >
+                <span className="font-mono text-accent w-8 text-right text-xs">{v.pick}</span>
+                <TeamLogo abbr={v.team} size="xs" />
+                <span className="font-display font-semibold text-text-primary text-xs w-10">{v.team}</span>
+                <span className="font-mono text-gold text-xs flex-1 text-right">{v.value}</span>
+                {used ? (
+                  <button
+                    onClick={() => (inA ? removePickFromSide('a', v.pick) : removePickFromSide('b', v.pick))}
+                    className="text-[10px] text-red-400 hover:text-red-300 px-1 font-display uppercase"
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => addPickToSide('a', v.pick)}
+                      className="text-[10px] text-text-secondary hover:text-text-primary px-1.5 py-0.5 rounded border border-border-subtle hover:border-border-focus font-display uppercase"
+                      title="Add to Side A"
+                    >
+                      A
+                    </button>
+                    <button
+                      onClick={() => addPickToSide('b', v.pick)}
+                      className="text-[10px] text-text-secondary hover:text-text-primary px-1.5 py-0.5 rounded border border-border-subtle hover:border-border-focus font-display uppercase"
+                      title="Add to Side B"
+                    >
+                      B
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="col-span-full text-center text-text-muted text-sm py-4">No matches</div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function TradeSide({ label, team, setTeam, picks, byPick, onRemove, total }) {
+  return (
+    <Card className="p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="caption text-[10px]">{label}</div>
+        <input
+          value={team}
+          onChange={(e) => setTeam(e.target.value.toUpperCase().slice(0, 5))}
+          placeholder="TEAM"
+          className="w-16 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-sm uppercase font-display font-semibold"
+        />
+        {team && <TeamLogo abbr={team} size="xs" />}
+        <div className="flex-1 text-right">
+          <span className="font-mono text-2xl font-bold text-gold tabular">{total}</span>
+        </div>
+      </div>
+      <ul className="space-y-1 min-h-[60px]">
+        {picks.length === 0 ? (
+          <li className="text-text-muted text-xs text-center py-3">No picks yet</li>
+        ) : (
+          picks.map((p) => {
+            const row = byPick.get(p);
+            if (!row) return null;
+            return (
+              <li key={p} className="flex items-center gap-2 p-2 bg-bg-deep rounded border border-border-subtle text-sm">
+                <span className="font-mono text-accent w-8 text-right text-xs">{p}</span>
+                <TeamLogo abbr={row.team} size="xs" />
+                <span className="font-display font-semibold text-text-primary w-10 text-xs">{row.team}</span>
+                <span className="font-mono text-gold flex-1 text-right text-xs">{row.value}</span>
+                <button
+                  onClick={() => onRemove(p)}
+                  className="text-[10px] text-red-400 hover:text-red-300 px-1 font-display uppercase"
+                >
+                  ✕
+                </button>
+              </li>
+            );
+          })
+        )}
+      </ul>
+    </Card>
+  );
+}
+
 function DraftOrderRow({ row, onTeamChange, onTeamNameChange, onNeedsChange }) {
   const id = `order-${row.pick_number}`;
   const drag = useDraggable({ id });

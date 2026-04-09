@@ -100,6 +100,12 @@ export const api = {
     }),
   pollStop: (key) =>
     request('/api/admin/sync/poll-stop', { method: 'POST', adminKey: key }),
+  // Trade calculator (admin only for Phase 3a)
+  tradeValues: (key) => request('/api/admin/trades/values', { adminKey: key }),
+  tradeCalculate: (key, body) =>
+    request('/api/admin/trades/calculate', { method: 'POST', body, adminKey: key }),
+  tradeApply: (key, body) =>
+    request('/api/admin/trades/apply', { method: 'POST', body, adminKey: key }),
   adminGetDraftOrder: (key) => request('/api/admin/draft-order', { adminKey: key }),
   adminSetDraftOrder: (key, order) =>
     request('/api/admin/draft-order', { method: 'POST', body: { order }, adminKey: key }),
