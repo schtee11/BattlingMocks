@@ -237,16 +237,97 @@ function findProspectArrays(node, depth = 0, out = []) {
   return out;
 }
 
+// Follow a single $ref URL and return the resolved object (or null on fail).
+async function followRef(ref) {
+  if (!ref || typeof ref !== 'string') return null;
+  try {
+    return await fetchJson(ref);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Resolve a list of refs in parallel with a concurrency cap to avoid hammering.
+async function resolveRefs(items, cap = 10) {
+  const refs = items.map((it) => it?.$ref).filter(Boolean);
+  const out = [];
+  for (let i = 0; i < refs.length; i += cap) {
+    const batch = refs.slice(i, i + cap);
+    const resolved = await Promise.all(batch.map(followRef));
+    out.push(...resolved.filter(Boolean));
+  }
+  return out;
+}
+
 async function fetchProspectsFromEspnAttempts(year, limit) {
-  // Strategy A: direct JSON API attempts (speculative — ESPN may or may not expose these)
+  // Strategy A: core API reference-following. The core API returns items with
+  // $ref pointers — we follow them to get the actual athlete data. This is
+  // how ESPN's own apps consume the endpoint.
+  const corePaths = [
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${year}/draft/athletes?limit=${limit}`,
+    `https://sports.core.api.espn.com/v3/sports/football/leagues/nfl/seasons/${year}/draft/athletes?limit=${limit}`,
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/draft/athletes?limit=${limit}`,
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${year}/draft?limit=${limit}`,
+  ];
+
+  for (const url of corePaths) {
+    try {
+      const data = await fetchJson(url);
+      logRawOnce(`prospects core @ ${url.replace(/^.*espn\.com/, '')}`, data);
+
+      // Core API typically returns { items: [{ $ref }, ...], pageCount, ... }
+      const items = Array.isArray(data?.items) ? data.items : null;
+      if (items && items.length > 0) {
+        // Items may already be full objects, or they may be $ref pointers
+        const refItems = items.filter((x) => x?.$ref);
+        const directItems = items.filter((x) => x && !x.$ref && typeof x === 'object');
+
+        let resolved = [...directItems];
+        if (refItems.length > 0) {
+          console.log(`[espn prospects] following ${Math.min(refItems.length, limit)} refs from ${url.replace(/^.*espn\.com/, '')}`);
+          const capped = refItems.slice(0, limit);
+          const followed = await resolveRefs(capped, 10);
+          resolved = [...resolved, ...followed];
+        }
+
+        // Each resolved object may still have nested refs for position/college.
+        // Follow those in parallel batches.
+        const fullyResolved = [];
+        for (let i = 0; i < resolved.length; i += 10) {
+          const batch = resolved.slice(i, i + 10);
+          const enriched = await Promise.all(
+            batch.map(async (obj) => {
+              if (!obj || typeof obj !== 'object') return null;
+              const out = { ...obj };
+              if (out.position?.$ref) out.position = await followRef(out.position.$ref);
+              if (out.college?.$ref) out.college = await followRef(out.college.$ref);
+              return out;
+            })
+          );
+          fullyResolved.push(...enriched.filter(Boolean));
+        }
+
+        const prospects = fullyResolved
+          .map((raw, i) => normalizeProspect(raw, i + 1))
+          .filter(Boolean);
+
+        if (prospects.length >= 10) {
+          console.log(`[espn prospects] core API got ${prospects.length} from ${url.replace(/^.*espn\.com/, '')}`);
+          return prospects;
+        }
+      }
+    } catch (e) {
+      console.warn('[espn prospects] core strategy failed:', e.message);
+    }
+  }
+
+  // Strategy B: site API variants — speculative
   const apiUrls = [
     `https://site.api.espn.com/apis/site/v2/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
     `https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
     `https://site.web.api.espn.com/apis/v3/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
-    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${year}/draft/prospects?limit=${limit}`,
-    `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/draft/prospects?limit=${limit}`,
-    // Also try the scoreboard/header endpoint which works for draft order —
-    // it might have a bestAvailable or prospects section we didn't look at.
+    // Reuse the working scoreboard/header endpoint — it might have prospects
+    // tucked somewhere we didn't look.
     `https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=football&league=nfl&draft_year=${year}&draft_round=1`,
   ];
 
