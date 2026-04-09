@@ -1149,7 +1149,11 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             applyTradeLocal(swap);
             setTradeOpen(false);
             toast.success('Trade accepted!');
-            if (phase === PHASE_PAUSED) setPhase(PHASE_RUNNING);
+            // Always resume after a trade. The engine effect will detect
+            // whether the current slot still belongs to the user (stays on
+            // clock) or to someone else (bot picks next). Without this,
+            // trading during PHASE_ON_CLOCK leaves the draft stuck.
+            setPhase(PHASE_RUNNING);
           }}
         />
       )}
