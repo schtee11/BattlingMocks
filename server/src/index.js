@@ -11,6 +11,7 @@ import stats from './routes/stats.js';
 import actuals from './routes/actuals.js';
 import auth from './routes/auth.js';
 import teamMocks from './routes/teamMocks.js';
+import tradeValues from './routes/tradeValues.js';
 import { pool } from './db/pool.js';
 
 dotenv.config();
@@ -63,6 +64,7 @@ app.use('/api/stats', stats);
 app.use('/api/actual-picks', actuals);
 app.use('/api/auth', auth);
 app.use('/api/team-mocks', teamMocks);
+app.use('/api/trade-values', tradeValues);
 
 // Consistent error fallback
 app.use((err, _req, res, _next) => {
