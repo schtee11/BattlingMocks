@@ -1,4 +1,19 @@
-// Client-side bot picker — mirrors server/src/services/botPicker.js (pure logic).
+// Client-side bot picker — mirrors server/src/services/botPicker.js.
+//
+// Scoring: each available player gets a score = baseScore * needsMultiplier * jitter.
+//
+//   baseScore      exponential decay off rank so top picks dominate but
+//                  mid-round picks are still competitive when needs intervene.
+//                  rank 1 = 1.00, rank 5 = 0.91, rank 10 = 0.80, rank 20 = 0.62,
+//                  rank 50 = 0.29 (factor per rank step = e^-0.025 ≈ 0.975).
+//
+//   needsMultiplier +20% for the team's top need position, +13% for second,
+//                  +7% for third, 1.0 otherwise. With the exponential base,
+//                  this lets the bot reach ~6-8 ranks for a top need and
+//                  ~3-4 ranks for a secondary need, then BPA takes over.
+//
+//   jitter         multiplicative 1 ± randomness/2. At default randomness 0.15
+//                  that's ±7.5%; at 1.0 (max chaos slider) it's ±50%.
 
 const POS_ALIASES = {
   DL: 'DT', DE: 'EDGE', OG: 'IOL', OC: 'IOL',
@@ -11,35 +26,42 @@ function normalizePos(pos) {
   return POS_ALIASES[up] || up;
 }
 
-export function pickForTeam({ available, teamNeeds = [], randomness = 0.15, needsWeight = 30 }) {
+export function pickForTeam({ available, teamNeeds = [], randomness = 0.15 }) {
   if (!available || available.length === 0) return null;
-  const poolSize = available.length;
-  const needs = teamNeeds.map(normalizePos);
-  const needsRank = new Map();
-  needs.forEach((pos, i) => { if (!needsRank.has(pos)) needsRank.set(pos, i); });
+
+  const needs = (teamNeeds || []).map(normalizePos).filter(Boolean);
+  const needsPriority = new Map();
+  needs.forEach((pos, i) => {
+    if (!needsPriority.has(pos)) needsPriority.set(pos, i);
+  });
 
   let bestScore = -Infinity;
   let best = null;
   for (const p of available) {
-    const rank = Number.isFinite(p.rank) ? p.rank : poolSize;
-    const baseScore = poolSize - rank;
+    const rank = Number.isFinite(p.rank) ? p.rank : 500;
+    const baseScore = Math.exp(-0.025 * (rank - 1));
+
     const pos = normalizePos(p.position);
-    let needsBonus = 0;
-    if (needsRank.has(pos)) {
-      const idx = needsRank.get(pos);
-      const decay = idx === 0 ? 1 : idx === 1 ? 0.85 : 0.6;
-      needsBonus = needsWeight * decay;
+    let needsMultiplier = 1;
+    if (needsPriority.has(pos)) {
+      const priority = needsPriority.get(pos);
+      needsMultiplier = priority === 0 ? 1.20 : priority === 1 ? 1.13 : 1.07;
     }
-    const jitter = Math.random() * randomness * poolSize;
-    const score = baseScore + needsBonus + jitter;
-    if (score > bestScore) { bestScore = score; best = p; }
+
+    const jitter = 1 + (Math.random() - 0.5) * randomness;
+
+    const score = baseScore * needsMultiplier * jitter;
+    if (score > bestScore) {
+      bestScore = score;
+      best = p;
+    }
   }
   return best;
 }
 
 /**
- * Simulate the full draft. Returns array of picks:
- * { pick_number, team, player_id, player, is_user, round }
+ * Full non-sequential simulation — kept for legacy callers/tests. The live
+ * team-mock page uses its own pick-by-pick loop instead.
  */
 export function simulateDraft({ draftOrder, players, userTeam, userPicks = {}, randomness = 0.15 }) {
   const used = new Set(Object.values(userPicks).filter(Number.isFinite));

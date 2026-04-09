@@ -93,21 +93,26 @@ function TeamPicker({ onSelect, draftOrder, onRefresh }) {
 // ─── Saved View ───────────────────────────────────────────────────────────────
 function SavedView({ savedMock, players, onRestart }) {
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
-  const byTeam = savedMock.picks.filter((p) => p.is_user !== false);
-  // savedMock.picks are already filtered when we show only "user" picks... actually
-  // the saved mock stores all picks. We need to know which picks are the user's team.
-  // The team_abbr is stored on savedMock. For display, let's show all picks grouped by round.
-  const byRound = useMemo(() => {
+  const userTeam = savedMock.team_abbr;
+  // Only show the user's own picks — the full 262-pick board is noise when
+  // reviewing a saved team mock. The actual user_team picks are stored along
+  // with bot picks in savedMock.picks; filter by team.
+  const myPicks = useMemo(
+    () =>
+      savedMock.picks
+        .filter((p) => p.team === userTeam)
+        .sort((a, b) => a.pick_number - b.pick_number),
+    [savedMock.picks, userTeam]
+  );
+  const myPicksByRound = useMemo(() => {
     const map = {};
-    for (const p of savedMock.picks) {
+    for (const p of myPicks) {
       if (!map[p.round]) map[p.round] = [];
       map[p.round].push(p);
     }
     return map;
-  }, [savedMock.picks]);
-
-  const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
-  const userTeam = savedMock.team_abbr;
+  }, [myPicks]);
+  const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
@@ -122,6 +127,9 @@ function SavedView({ savedMock, players, onRestart }) {
               Saved · {new Date(savedMock.submitted_at).toLocaleString(undefined, {
                 month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
               })}
+            </p>
+            <p className="text-text-muted text-[10px] mt-0.5">
+              {myPicks.length} {userTeam} pick{myPicks.length === 1 ? '' : 's'}
             </p>
           </div>
         </div>
@@ -139,40 +147,29 @@ function SavedView({ savedMock, players, onRestart }) {
               {ROUND_LABELS[r] || `Round ${r}`} Round
             </div>
             <div className="space-y-1.5">
-              {byRound[r].map((pick) => {
+              {myPicksByRound[r].map((pick) => {
                 const player = byId.get(pick.player_id) || pick;
-                const isUserPick = pick.team === userTeam;
+                const color = posHex(player.position);
                 return (
                   <div
                     key={pick.pick_number}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${
-                      isUserPick
-                        ? 'border-accent/30 bg-accent/[0.05]'
-                        : 'border-border-subtle bg-bg-surface/30'
-                    }`}
-                    style={isUserPick ? { borderLeft: `3px solid ${posHex(player.position)}` } : undefined}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-accent/30 bg-accent/[0.05]"
+                    style={{ borderLeft: `3px solid ${color}` }}
                   >
-                    <span className="font-mono text-[9.5px] text-text-muted w-5 text-right shrink-0">
+                    <span className="font-mono text-[9.5px] text-text-muted w-6 text-right shrink-0">
                       {pick.pick_number}
                     </span>
-                    {isUserPick && (
-                      <TeamLogo abbr={pick.team} size="xs" />
-                    )}
-                    {!isUserPick && (
-                      <span className="font-display text-[9px] font-semibold uppercase tracking-wide text-text-muted w-7 shrink-0">
-                        {pick.team}
-                      </span>
-                    )}
+                    <TeamLogo abbr={pick.team} size="xs" />
                     <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="xs" />
                     <div className="flex-1 min-w-0">
-                      <div className={`text-[12.5px] font-semibold truncate ${isUserPick ? 'text-text-primary' : 'text-text-secondary'}`}>
+                      <div className="text-[12.5px] font-semibold truncate text-text-primary">
                         {player.name}
                       </div>
                       {player.school && (
                         <div className="text-[10px] text-text-muted truncate">{player.school}</div>
                       )}
                     </div>
-                    <PositionBadge position={player.position} muted={!isUserPick} />
+                    <PositionBadge position={player.position} />
                   </div>
                 );
               })}
