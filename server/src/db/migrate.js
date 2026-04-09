@@ -84,6 +84,21 @@ CREATE INDEX IF NOT EXISTS idx_draft_order_round ON draft_order(round);
 CREATE INDEX IF NOT EXISTS idx_actual_picks_round ON actual_picks(round);
 CREATE INDEX IF NOT EXISTS idx_mock_picks_round ON mock_picks(round);
 
+-- Phase 4: team-specific mock drafts. Existing R1 scored mocks default to
+-- mock_type='round1'; the new bot-driven team mock uses mock_type='team'.
+-- Swap the per-user UNIQUE constraint so a user can hold one of each kind.
+ALTER TABLE mocks ADD COLUMN IF NOT EXISTS mock_type VARCHAR(20) NOT NULL DEFAULT 'round1';
+ALTER TABLE mocks ADD COLUMN IF NOT EXISTS team_abbr VARCHAR(5);
+ALTER TABLE mocks DROP CONSTRAINT IF EXISTS mocks_user_id_key;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'mocks_user_id_mock_type_key'
+  ) THEN
+    ALTER TABLE mocks ADD CONSTRAINT mocks_user_id_mock_type_key UNIQUE (user_id, mock_type);
+  END IF;
+END $$;
+
 INSERT INTO draft_settings (id, draft_year, is_locked)
 VALUES (1, 2026, FALSE)
 ON CONFLICT (id) DO NOTHING;

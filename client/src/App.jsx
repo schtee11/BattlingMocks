@@ -12,6 +12,7 @@ const Draft = lazy(() => import('./pages/Draft.jsx'));
 const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage.jsx'));
 const MyMock = lazy(() => import('./pages/MyMock.jsx'));
 const Admin = lazy(() => import('./pages/Admin.jsx'));
+const TeamMock = lazy(() => import('./pages/TeamMock.jsx'));
 const AuthCallback = lazy(() => import('./pages/AuthCallback.jsx'));
 const NotFound = lazy(() => import('./pages/NotFound.jsx'));
 
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="/draft" element={<Draft />} />
               <Route path="/leaderboard" element={<LeaderboardPage />} />
               <Route path="/my-mock" element={<MyMock />} />
+              <Route path="/team-mock" element={<TeamMock />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="*" element={<NotFound />} />

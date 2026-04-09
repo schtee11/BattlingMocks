@@ -36,6 +36,9 @@ export default function Navbar() {
           <NavLink to="/draft" className={linkCls}>
             {({ isActive }) => (<><span>Draft</span>{isActive && activeBar}</>)}
           </NavLink>
+          <NavLink to="/team-mock" className={linkCls}>
+            {({ isActive }) => (<><span>Team Mock</span>{isActive && activeBar}</>)}
+          </NavLink>
           <NavLink to="/leaderboard" className={linkCls}>
             {({ isActive }) => (<><span>Leaderboard</span>{isActive && activeBar}</>)}
           </NavLink>

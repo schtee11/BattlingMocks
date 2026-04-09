@@ -56,6 +56,7 @@ export const api = {
     );
   },
   getDraftOrder: () => cached('draft-order', 60 * 60_000, () => request('/api/draft-order')),
+  getDraftOrderAll: () => cached('draft-order-all', 60 * 60_000, () => request('/api/draft-order?round=all')),
   getSettings: () => cached('settings', 30_000, () => request('/api/settings')),
   getStats: () => cached('stats', 30_000, () => request('/api/stats')),
   getActualPicks: ({ fresh = false } = {}) => {
@@ -73,6 +74,12 @@ export const api = {
   getMock: (userId) => request(`/api/mocks/${userId}`),
   getLeaderboard: (limit = 100, offset = 0) =>
     request(`/api/leaderboard?limit=${limit}&offset=${offset}`),
+
+  // team-specific mock (Phase 4)
+  getTeamMock: (userId) => request(`/api/team-mocks/${userId}`),
+  submitTeamMock: (user_id, team_abbr, picks) =>
+    request('/api/team-mocks', { method: 'POST', body: { user_id, team_abbr, picks } }),
+  deleteTeamMock: (userId) => request(`/api/team-mocks/${userId}`, { method: 'DELETE' }),
 
   // admin
   adminListUsers: (key) => request('/api/admin/users', { adminKey: key }),
