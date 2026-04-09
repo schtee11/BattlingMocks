@@ -70,6 +70,10 @@ ALTER TABLE draft_order ADD COLUMN IF NOT EXISTS team_needs TEXT[] DEFAULT ARRAY
 ALTER TABLE draft_order ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE actual_picks ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE mock_picks ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
+-- Phase 4: team ownership is snapshotted onto each mock_pick so saved team
+-- mocks can show who owned each pick AT THE TIME OF SAVE (including any
+-- trades the user made during that simulation).
+ALTER TABLE mock_picks ADD COLUMN IF NOT EXISTS team VARCHAR(5);
 
 ALTER TABLE draft_order DROP CONSTRAINT IF EXISTS draft_order_pick_number_check;
 ALTER TABLE draft_order ADD CONSTRAINT draft_order_pick_number_check CHECK (pick_number BETWEEN 1 AND 262);

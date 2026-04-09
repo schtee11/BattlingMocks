@@ -517,6 +517,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         pick_number: p.pick_number,
         player_id: p.player_id,
         round: p.round,
+        team: p.team,
       }));
       await api.submitTeamMock(user.id, team, payload, title);
       toast.success('Team mock saved!');

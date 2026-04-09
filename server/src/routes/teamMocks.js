@@ -69,9 +69,10 @@ router.post('/', async (req, res) => {
 
     for (const p of picks) {
       const round = Number.isInteger(p.round) ? p.round : 1;
+      const pickTeam = typeof p.team === 'string' ? p.team.toUpperCase().slice(0, 5) : null;
       await client.query(
-        'INSERT INTO mock_picks (mock_id, pick_number, player_id, round) VALUES ($1, $2, $3, $4)',
-        [mockId, p.pick_number, p.player_id, round]
+        'INSERT INTO mock_picks (mock_id, pick_number, player_id, round, team) VALUES ($1, $2, $3, $4, $5)',
+        [mockId, p.pick_number, p.player_id, round, pickTeam]
       );
     }
 
@@ -116,11 +117,15 @@ router.get('/:id', async (req, res) => {
   if (!mocks.length) return res.status(404).json({ error: 'no team mock' });
   const mock = mocks[0];
 
+  // COALESCE gives older saves (where mp.team was not yet snapshotted) a
+  // fallback to the current draft_order team for the same pick_number.
   const { rows: picks } = await pool.query(
     `SELECT mp.pick_number, mp.player_id, mp.round,
+            COALESCE(mp.team, do2.team) AS team,
             p.name, p.position, p.school, p.headshot_url
      FROM mock_picks mp
      JOIN players p ON p.id = mp.player_id
+     LEFT JOIN draft_order do2 ON do2.pick_number = mp.pick_number
      WHERE mp.mock_id = $1
      ORDER BY mp.pick_number`,
     [mock.id]
