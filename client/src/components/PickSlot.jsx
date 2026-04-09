@@ -1,14 +1,26 @@
-import { useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { posHex } from '../lib/positions.js';
 import { PositionBadge } from './ui/Badge.jsx';
 import { TeamLogo } from './ui/TeamLogo.jsx';
 import { PlayerHeadshot } from './ui/PlayerHeadshot.jsx';
 
-export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
+// Memoized so that picking a single slot only re-renders that one row
+// instead of all 32. Parent passes STABLE onClear/onClick identities (via
+// useCallback with empty deps + latestRef pattern) so the memo comparator
+// stays effective — inline arrow functions would defeat it.
+function PickSlotInner({ slot, team, player, onClear, onClick, isActive }) {
   const { setNodeRef, isOver } = useDroppable({ id: `slot-${slot}` });
   const [flash, setFlash] = useState(false);
   const [prevPid, setPrevPid] = useState(player?.id ?? null);
+
+  // Bind slot into the handlers so the parent can pass slot-agnostic
+  // callbacks and still get per-slot behavior.
+  const handleClick = useCallback(() => onClick?.(slot), [onClick, slot]);
+  const handleClear = useCallback(
+    (e) => { e.stopPropagation(); onClear?.(slot); },
+    [onClear, slot]
+  );
 
   useEffect(() => {
     if (player?.id && player.id !== prevPid) {
@@ -34,7 +46,7 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
   return (
     <li
       ref={setNodeRef}
-      onClick={onClick}
+      onClick={handleClick}
       tabIndex={0}
       aria-label={`Pick ${slot}${team ? ` - ${team.team_name}` : ''}${player ? ` - ${player.name}` : ' - empty'}`}
       className={`${baseCls} ${filledCls} ${overCls} ${activeCls} ${flashCls}`}
@@ -100,7 +112,7 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
 
       {player && (
         <button
-          onClick={(e) => { e.stopPropagation(); onClear?.(); }}
+          onClick={handleClear}
           className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition p-1 text-sm shrink-0"
           aria-label={`Clear pick ${slot}`}
           tabIndex={-1}
@@ -111,3 +123,12 @@ export function PickSlot({ slot, team, player, onClear, onClick, isActive }) {
     </li>
   );
 }
+
+export const PickSlot = memo(PickSlotInner, (prev, next) =>
+  prev.slot === next.slot &&
+  prev.team === next.team &&
+  prev.player === next.player &&
+  prev.isActive === next.isActive &&
+  prev.onClear === next.onClear &&
+  prev.onClick === next.onClick
+);

@@ -40,6 +40,7 @@ import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
+import { TradeModal } from '../components/TradeModal.jsx';
 
 const FILTERS = ['ALL', ...POSITIONS];
 
@@ -79,6 +80,7 @@ export default function Draft() {
   const boardRowRefs = useRef({}); // pick_number → li element, for scroll-into-view
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [tradeOpen, setTradeOpen] = useState(false);
 
   // Persist resize across reloads
   useEffect(() => {
@@ -218,8 +220,26 @@ export default function Draft() {
     return g;
   }, [view, filteredProspects]);
 
+  // ── Stable callback pattern ────────────────────────────────────────────────
+  // All user-facing event callbacks (prospect click, slot click, draft-to-
+  // on-clock, etc.) have EMPTY useCallback deps so their identity never
+  // changes. They read the latest state via `latestRef.current` which is
+  // updated on every render. This keeps ProspectCard/PickSlot memoization
+  // stable, so making a pick no longer invalidates all ~700 prospect rows.
+  const latestRef = useRef({});
+  latestRef.current = {
+    locked,
+    isMobile,
+    onClockSlot,
+    picks,
+    usedPlayerIds,
+    orderByPick,
+    selectedPlayer,
+    draftingForSlot,
+  };
+
   const assignPlayerToSlot = useCallback((playerId, slot) => {
-    if (locked) return;
+    if (latestRef.current.locked) return;
     setPicks((prev) => {
       const next = { ...prev };
       for (const [k, v] of Object.entries(next)) {
@@ -229,7 +249,7 @@ export default function Draft() {
       return next;
     });
     setSubmitted(false);
-  }, [locked]);
+  }, []);
 
   const clearSlot = useCallback((slot) => {
     setPicks((prev) => { const next = { ...prev }; delete next[slot]; return next; });
@@ -246,36 +266,52 @@ export default function Draft() {
     });
   }, []);
 
+  // Apply an accepted trade: swap team ownership on the affected pick numbers.
+  // Only picks that haven't been assigned yet can change hands — swapping a
+  // pick that's already been made would orphan the player.
+  const applyTradeLocal = useCallback(({ fromTeam, partnerTeam, yourPicks, theirPicks }) => {
+    const yourSet = new Set(yourPicks);
+    const theirSet = new Set(theirPicks);
+    setDraftOrder((prev) =>
+      prev.map((row) => {
+        if (latestRef.current.picks[row.pick_number]) return row; // already drafted — locked
+        if (yourSet.has(row.pick_number)) {
+          return { ...row, team: partnerTeam };
+        }
+        if (theirSet.has(row.pick_number)) {
+          return { ...row, team: fromTeam };
+        }
+        return row;
+      })
+    );
+    toast.success(`Trade accepted: ${fromTeam} ↔ ${partnerTeam}`);
+  }, []);
+
   const handleSlotClick = useCallback((slot) => {
-    if (locked) return;
-    // Mobile: tapping a slot in the board sheet sets it as the current pick
-    // and closes the sheet. The user lands back in the drafting view.
-    if (isMobile) {
+    const s = latestRef.current;
+    if (s.locked) return;
+    if (s.isMobile) {
       setDraftingForSlot(slot);
       setBoardOpen(false);
       return;
     }
-    // Desktop: select-then-place flow.
-    if (selectedPlayer != null) {
-      assignPlayerToSlot(selectedPlayer, slot);
+    if (s.selectedPlayer != null) {
+      assignPlayerToSlot(s.selectedPlayer, slot);
       setSelectedPlayer(null);
-    } else if (picks[slot]) {
+    } else if (s.picks[slot]) {
       clearSlot(slot);
     }
-  }, [isMobile, locked, selectedPlayer, picks, assignPlayerToSlot, clearSlot]);
+  }, [assignPlayerToSlot, clearSlot]);
 
-  // Mobile prospect tap: assign to the current pick, then auto-advance to
-  // the next empty slot. Doesn't close anything — the prospect list is the
-  // page itself on mobile, not a modal.
+  // Mobile prospect tap: assign to the current pick, then auto-advance.
   const pickForDrawerSlot = useCallback((player) => {
-    if (draftingForSlot == null || locked) return;
-    const justFilled = draftingForSlot;
+    const s = latestRef.current;
+    if (s.draftingForSlot == null || s.locked) return;
+    const justFilled = s.draftingForSlot;
     assignPlayerToSlot(player.id, justFilled);
-    const team = orderByPick.get(justFilled);
+    const team = s.orderByPick.get(justFilled);
     toast.success(`Pick ${justFilled}${team ? ` · ${team.team}` : ''}: ${player.name}`);
-    // Find the next empty slot — search forward, then wrap. Treat justFilled
-    // as filled (it isn't yet in `picks` until React commits the state update).
-    const isEmpty = (i) => i !== justFilled && !picks[i];
+    const isEmpty = (i) => i !== justFilled && !s.picks[i];
     let next = null;
     for (let i = justFilled + 1; i <= 32; i++) {
       if (isEmpty(i)) { next = i; break; }
@@ -285,25 +321,24 @@ export default function Draft() {
         if (isEmpty(i)) { next = i; break; }
       }
     }
-    // When all 32 are filled, stay on the just-filled pick so the user can
-    // see what they did and re-edit if they want — don't strand them on null.
     setDraftingForSlot(next ?? justFilled);
-  }, [draftingForSlot, locked, orderByPick, assignPlayerToSlot, picks]);
+  }, [assignPlayerToSlot]);
 
   const handleProspectClick = useCallback((player) => {
     setSelectedPlayer((prev) => {
       if (prev === player.id) return null;
-      if (usedPlayerIds.has(player.id)) return prev;
+      if (latestRef.current.usedPlayerIds.has(player.id)) return prev;
       return player.id;
     });
-  }, [usedPlayerIds]);
+  }, []);
 
   const draftToOnClockCb = useCallback((player) => {
-    if (locked || !onClockSlot) return;
-    assignPlayerToSlot(player.id, onClockSlot);
-    const team = orderByPick.get(onClockSlot);
-    toast.success(`Pick ${onClockSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`);
-  }, [locked, onClockSlot, orderByPick, assignPlayerToSlot]);
+    const s = latestRef.current;
+    if (s.locked || !s.onClockSlot) return;
+    assignPlayerToSlot(player.id, s.onClockSlot);
+    const team = s.orderByPick.get(s.onClockSlot);
+    toast.success(`Pick ${s.onClockSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`);
+  }, [assignPlayerToSlot]);
 
   // Mobile wrapper: draft + close the drawer
 
@@ -428,6 +463,16 @@ export default function Draft() {
                   )}
                 </div>
               </div>
+            )}
+            {!locked && draftOrder.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setTradeOpen(true)}
+                title="Simulate a trade between any two teams"
+              >
+                Propose Trade
+              </Button>
             )}
             <div className="text-right">
               <div className="caption text-[10px]">Progress</div>
@@ -681,8 +726,8 @@ export default function Draft() {
                     slot={slot}
                     team={orderByPick.get(slot)}
                     player={picks[slot] ? playerById.get(picks[slot]) : null}
-                    onClear={() => clearSlot(slot)}
-                    onClick={() => handleSlotClick(slot)}
+                    onClear={clearSlot}
+                    onClick={handleSlotClick}
                     isActive={selectedPlayer != null}
                   />
                 ))
@@ -799,6 +844,24 @@ export default function Draft() {
       >
         This removes every prospect from your current mock.
       </Modal>
+
+      {/* Trade simulator modal — lets the user swap picks between any two
+          teams. Trades are local to this session; only the final picks are
+          persisted when the user submits their mock. */}
+      {tradeOpen && (
+        <TradeModal
+          userTeam={orderByPick.get(onClockSlot || 1)?.team || 'TBD'}
+          fromTeamEditable
+          liveOrder={draftOrder}
+          lockedPicks={new Set(Object.keys(picks).map(Number))}
+          onClockTeam={orderByPick.get(onClockSlot || 1)?.team}
+          onClose={() => setTradeOpen(false)}
+          onAccepted={(swap) => {
+            applyTradeLocal(swap);
+            setTradeOpen(false);
+          }}
+        />
+      )}
 
       {/* No mobile bottom spacer needed — the mobile two-panel layout is
           fixed-positioned and the body scroll is locked via useEffect. */}

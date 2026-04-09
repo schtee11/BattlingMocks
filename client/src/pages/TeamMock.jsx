@@ -5,12 +5,12 @@ import { toPng } from 'html-to-image';
 import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam } from '../lib/botPicker.js';
-import tradeValuesChart from '../lib/tradeValues2026.json';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
+import { TradeModal } from '../components/TradeModal.jsx';
 
 // ─── NFL Teams ────────────────────────────────────────────────────────────────
 const NFL_TEAMS = [
@@ -1084,10 +1084,6 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [posFilter, setPosFilter] = useState('ALL');
   const [saving, setSaving] = useState(false);
 
-  // Rich Hill trade value chart — imported directly from the client bundle
-  // so the modal is always ready without a fetch round-trip.
-  const tradeValues = tradeValuesChart;
-
   const currentIdx = picks.length; // next slot to fill
   const currentSlot = currentIdx < liveOrder.length ? liveOrder[currentIdx] : null;
   const usedIds = useMemo(() => new Set(picks.map((p) => p.player_id)), [picks]);
@@ -1556,8 +1552,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               {(phase === PHASE_RUNNING || phase === PHASE_PAUSED || phase === PHASE_ON_CLOCK) && (
                 <button
                   onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
-                  disabled={!tradeValues}
-                  className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-primary rounded-lg px-3 py-1.5 border border-accent/40 hover:bg-accent/[0.08] transition disabled:opacity-40"
+                  className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-primary rounded-lg px-3 py-1.5 border border-accent/40 hover:bg-accent/[0.08] transition"
                 >
                   Propose Trade
                 </button>
@@ -1656,8 +1651,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 )}
                 <button
                   onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
-                  disabled={!tradeValues?.length}
-                  className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-accent/40 text-text-primary disabled:opacity-40"
+                  className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-accent/40 text-text-primary"
                 >
                   Trade
                 </button>
@@ -1802,13 +1796,12 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       </div>
 
       {/* ── Trade modal ── */}
-      {tradeOpen && tradeValues?.length > 0 && (
+      {tradeOpen && (
         <TradeModal
           userTeam={team}
           liveOrder={liveOrder}
           picksMadeCount={picks.length}
           onClockTeam={currentSlot?.team}
-          tradeValues={tradeValues}
           onClose={() => setTradeOpen(false)}
           onAccepted={(swap) => {
             applyTradeLocal(swap);
@@ -1822,307 +1815,6 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           }}
         />
       )}
-    </div>
-  );
-}
-
-// ─── Trade Modal ──────────────────────────────────────────────────────────────
-// Pure client-side trade proposal using the Rich Hill value chart. User picks
-// which of their future picks go out and which incoming picks they want in
-// return. Bot auto-accepts if the incoming value is >= outgoing * 0.92 (bot
-// wants a slight win); otherwise it counters with rejection.
-function TradeModal({ userTeam, liveOrder, picksMadeCount, onClockTeam, tradeValues, onClose, onAccepted }) {
-  // Quick lookup pick_number → value
-  const valueMap = useMemo(() => {
-    const m = new Map();
-    for (const r of tradeValues) m.set(r.pick, r.value);
-    return m;
-  }, [tradeValues]);
-
-  // Future (not-yet-made) picks grouped by team
-  const futurePicks = useMemo(
-    () => liveOrder.filter((s) => s.pick_number > picksMadeCount),
-    [liveOrder, picksMadeCount]
-  );
-  const myFuturePicks = useMemo(
-    () => futurePicks.filter((s) => s.team === userTeam),
-    [futurePicks, userTeam]
-  );
-  // Partner teams sorted by their NEXT pick (soonest-on-the-clock first). This
-  // also puts the current on-clock team at the top of the row.
-  const otherTeams = useMemo(() => {
-    const nextPickByTeam = new Map();
-    for (const s of futurePicks) {
-      if (s.team === userTeam) continue;
-      if (!nextPickByTeam.has(s.team)) nextPickByTeam.set(s.team, s.pick_number);
-    }
-    return [...nextPickByTeam.entries()]
-      .sort((a, b) => a[1] - b[1])
-      .map(([t]) => t);
-  }, [futurePicks, userTeam]);
-
-  // Default to whoever is currently on the clock (that's why the user opened
-  // the modal — to trade up before the bot grabs their guy). If the user is
-  // on the clock themselves, fall back to the next team after them.
-  const initialPartner = useMemo(() => {
-    if (onClockTeam && onClockTeam !== userTeam) return onClockTeam;
-    return otherTeams[0] || null;
-  }, [onClockTeam, userTeam, otherTeams]);
-
-  const [partnerTeam, setPartnerTeam] = useState(initialPartner);
-  const [yourSelected, setYourSelected] = useState(new Set());
-  const [theirSelected, setTheirSelected] = useState(new Set());
-
-  // Reset their selection when partner changes
-  useEffect(() => { setTheirSelected(new Set()); }, [partnerTeam]);
-
-  const partnerFuturePicks = useMemo(
-    () => futurePicks.filter((s) => s.team === partnerTeam),
-    [futurePicks, partnerTeam]
-  );
-
-  const yourTotal = [...yourSelected].reduce((n, p) => n + (valueMap.get(p) ?? 0), 0);
-  const theirTotal = [...theirSelected].reduce((n, p) => n + (valueMap.get(p) ?? 0), 0);
-  const yourCount = yourSelected.size;
-  const theirCount = theirSelected.size;
-
-  // Realistic NFL trade acceptance rules:
-  //   1. Hard reject 1-for-1 swaps — real teams never trade a single pick
-  //      for another single pick regardless of chart value.
-  //   2. Trading UP (giving more picks, receiving fewer) requires the user
-  //      to pay a 10% premium over chart value. Moving up is expensive.
-  //   3. Trading DOWN (giving fewer picks, receiving more) — bot takes up
-  //      to a 5% discount since they're getting quantity for quality.
-  //   4. Equal pick count (2-for-2, 3-for-3) needs at least chart parity.
-  //
-  // Returns: { ok: boolean, reason: string, requiredValue?: number }
-  function evaluateTrade() {
-    if (yourCount === 0 || theirCount === 0) {
-      return { ok: false, reason: 'empty', text: 'Pick at least one from each side' };
-    }
-    if (yourCount === 1 && theirCount === 1) {
-      return {
-        ok: false,
-        reason: 'one_for_one',
-        text: `${partnerTeam} won't do a 1-for-1 swap — add more picks`,
-      };
-    }
-    const minRatio = yourCount > theirCount ? 1.10 : yourCount < theirCount ? 0.95 : 1.00;
-    const required = theirTotal * minRatio;
-    if (yourTotal < required) {
-      const shortBy = Math.ceil(required - yourTotal);
-      return {
-        ok: false,
-        reason: 'undervalued',
-        text: `${partnerTeam} rejects — needs ${shortBy} more value`,
-      };
-    }
-    // User is giving significantly more than required → overpaying
-    if (yourTotal > required * 1.15) {
-      return { ok: true, reason: 'overpaying', text: 'Accepted — you\'re overpaying' };
-    }
-    return { ok: true, reason: 'fair', text: `${partnerTeam} accepts` };
-  }
-
-  const evalResult = evaluateTrade();
-  const canPropose = evalResult.ok;
-
-  function handlePropose() {
-    if (!evalResult.ok) {
-      toast.error(evalResult.text);
-      return;
-    }
-    onAccepted({
-      partnerTeam,
-      yourPicks: [...yourSelected],
-      theirPicks: [...theirSelected],
-    });
-  }
-
-  function togglePick(set, setter, pickNum) {
-    const next = new Set(set);
-    if (next.has(pickNum)) next.delete(pickNum);
-    else next.add(pickNum);
-    setter(next);
-  }
-
-  function pickButton(slot, selected, onClick) {
-    const value = valueMap.get(slot.pick_number) ?? 0;
-    return (
-      <button
-        key={slot.pick_number}
-        onClick={onClick}
-        className={`text-left px-2 py-1.5 rounded-md border text-[11px] transition ${
-          selected
-            ? 'border-accent bg-accent/[0.1] text-text-primary'
-            : 'border-border-subtle bg-bg-surface/40 text-text-secondary hover:border-border-focus'
-        }`}
-      >
-        <div className="font-mono font-semibold">
-          #{slot.pick_number} <span className="text-text-muted">· R{slot.round}</span>
-        </div>
-        <div className="text-[9.5px] text-text-muted">val {value}</div>
-      </button>
-    );
-  }
-
-  // Verdict visuals driven by the actual accept/reject evaluation so the
-  // banner tells the user exactly what will happen on Propose.
-  const verdictColor =
-    !evalResult.ok ? '#ef4444' : evalResult.reason === 'overpaying' ? '#eab308' : '#22c55e';
-  const verdictText = evalResult.text;
-  const verdictSubtext = (() => {
-    if (yourCount === 0 && theirCount === 0) return '';
-    if (yourCount > theirCount) return `You're trading UP (${yourCount} → ${theirCount} picks)`;
-    if (yourCount < theirCount) return `You're trading DOWN (${yourCount} → ${theirCount} picks)`;
-    return `Even pick count (${yourCount}-for-${theirCount})`;
-  })();
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.7)' }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl max-h-[90vh] rounded-2xl border border-border-subtle bg-bg-deep flex flex-col overflow-hidden"
-      >
-        {/* Header */}
-        <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
-          <div>
-            <h2 className="font-display text-[16px] font-bold uppercase tracking-[0.1em] text-text-primary">
-              Propose Trade
-            </h2>
-            <p className="text-[10.5px] text-text-muted">Rich Hill value chart</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="font-display text-[11px] uppercase tracking-wider text-text-muted hover:text-text-primary transition px-2 py-1"
-          >
-            Close
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* Partner team selector */}
-          <div>
-            <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted mb-2">
-              Trade With
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {otherTeams.map((abbr) => (
-                <button
-                  key={abbr}
-                  onClick={() => setPartnerTeam(abbr)}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-display font-semibold uppercase tracking-wider transition ${
-                    partnerTeam === abbr
-                      ? 'border-accent bg-accent/[0.1] text-text-primary'
-                      : 'border-border-subtle text-text-secondary hover:border-border-focus'
-                  }`}
-                >
-                  <TeamLogo abbr={abbr} size="xs" />
-                  {abbr}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Two sides */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* You give */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <TeamLogo abbr={userTeam} size="xs" />
-                <span className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                  You Give
-                </span>
-                <span className="ml-auto font-mono text-[11px] text-text-primary">{yourTotal}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5 max-h-60 overflow-y-auto pr-1">
-                {myFuturePicks.map((s) =>
-                  pickButton(s, yourSelected.has(s.pick_number), () =>
-                    togglePick(yourSelected, setYourSelected, s.pick_number)
-                  )
-                )}
-                {myFuturePicks.length === 0 && (
-                  <div className="col-span-3 text-[11px] text-text-muted py-2">
-                    No remaining picks.
-                  </div>
-                )}
-              </div>
-            </div>
-            {/* You get */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <TeamLogo abbr={partnerTeam} size="xs" />
-                <span className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                  You Get
-                </span>
-                <span className="ml-auto font-mono text-[11px] text-text-primary">{theirTotal}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5 max-h-60 overflow-y-auto pr-1">
-                {partnerFuturePicks.map((s) =>
-                  pickButton(s, theirSelected.has(s.pick_number), () =>
-                    togglePick(theirSelected, setTheirSelected, s.pick_number)
-                  )
-                )}
-                {partnerFuturePicks.length === 0 && (
-                  <div className="col-span-3 text-[11px] text-text-muted py-2">
-                    No picks remaining.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Verdict */}
-          {(yourSelected.size > 0 || theirSelected.size > 0) && (
-            <div className="flex items-center gap-3 p-3 rounded-lg border border-border-subtle bg-bg-surface/40">
-              <div
-                className="w-2 h-10 rounded-full shrink-0"
-                style={{ background: verdictColor }}
-              />
-              <div className="flex-1 min-w-0">
-                <div
-                  className="font-display text-[12px] font-bold uppercase tracking-[0.12em] truncate"
-                  style={{ color: verdictColor }}
-                >
-                  {verdictText}
-                </div>
-                {verdictSubtext && (
-                  <div className="text-[10.5px] text-text-muted truncate">
-                    {verdictSubtext}
-                  </div>
-                )}
-              </div>
-              <div className="text-right text-[10.5px] font-mono text-text-muted shrink-0">
-                {yourTotal} ↔ {theirTotal}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-border-subtle flex gap-2">
-          <button
-            onClick={onClose}
-            className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] text-text-secondary rounded-lg px-4 py-2 border border-border-subtle hover:border-border-focus transition"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handlePropose}
-            disabled={!canPropose}
-            title={!canPropose ? evalResult.text : ''}
-            className="flex-1 font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: 'var(--gradient-accent)' }}
-          >
-            {canPropose ? `Propose to ${partnerTeam || '—'}` : 'Trade Not Allowed'}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
