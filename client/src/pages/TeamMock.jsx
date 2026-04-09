@@ -1214,28 +1214,53 @@ function TradeModal({ userTeam, liveOrder, picksMadeCount, onClockTeam, tradeVal
 
   const yourTotal = [...yourSelected].reduce((n, p) => n + (valueMap.get(p) ?? 0), 0);
   const theirTotal = [...theirSelected].reduce((n, p) => n + (valueMap.get(p) ?? 0), 0);
-  const diff = theirTotal - yourTotal;
-  const max = Math.max(yourTotal, theirTotal, 1);
-  const pctDiff = Math.round((Math.abs(diff) / max) * 1000) / 10;
+  const yourCount = yourSelected.size;
+  const theirCount = theirSelected.size;
 
-  // Verdict (for the user's view): positive diff = favors you
-  let verdict;
-  if (pctDiff <= 5) verdict = 'fair';
-  else if (pctDiff <= 15) verdict = 'slight_lean';
-  else verdict = 'lopsided';
-
-  // Bot accepts if they get >= 92% of outgoing value. More generous with
-  // higher randomness would be nice but keep simple for V1.
-  function handlePropose() {
-    if (yourSelected.size === 0 || theirSelected.size === 0) {
-      toast.error('Select picks from both sides');
-      return;
+  // Realistic NFL trade acceptance rules:
+  //   1. Hard reject 1-for-1 swaps — real teams never trade a single pick
+  //      for another single pick regardless of chart value.
+  //   2. Trading UP (giving more picks, receiving fewer) requires the user
+  //      to pay a 10% premium over chart value. Moving up is expensive.
+  //   3. Trading DOWN (giving fewer picks, receiving more) — bot takes up
+  //      to a 5% discount since they're getting quantity for quality.
+  //   4. Equal pick count (2-for-2, 3-for-3) needs at least chart parity.
+  //
+  // Returns: { ok: boolean, reason: string, requiredValue?: number }
+  function evaluateTrade() {
+    if (yourCount === 0 || theirCount === 0) {
+      return { ok: false, reason: 'empty', text: 'Pick at least one from each side' };
     }
-    // Bot perspective: bot gives up "their" picks, receives "your" picks.
-    // Bot is happy if yourTotal >= theirTotal * 0.92 (≤ 8% loss for bot).
-    const botHappy = yourTotal >= theirTotal * 0.92;
-    if (!botHappy) {
-      toast.error(`${partnerTeam} rejects — you need to add more value`);
+    if (yourCount === 1 && theirCount === 1) {
+      return {
+        ok: false,
+        reason: 'one_for_one',
+        text: `${partnerTeam} won't do a 1-for-1 swap — add more picks`,
+      };
+    }
+    const minRatio = yourCount > theirCount ? 1.10 : yourCount < theirCount ? 0.95 : 1.00;
+    const required = theirTotal * minRatio;
+    if (yourTotal < required) {
+      const shortBy = Math.ceil(required - yourTotal);
+      return {
+        ok: false,
+        reason: 'undervalued',
+        text: `${partnerTeam} rejects — needs ${shortBy} more value`,
+      };
+    }
+    // User is giving significantly more than required → overpaying
+    if (yourTotal > required * 1.15) {
+      return { ok: true, reason: 'overpaying', text: 'Accepted — you\'re overpaying' };
+    }
+    return { ok: true, reason: 'fair', text: `${partnerTeam} accepts` };
+  }
+
+  const evalResult = evaluateTrade();
+  const canPropose = evalResult.ok;
+
+  function handlePropose() {
+    if (!evalResult.ok) {
+      toast.error(evalResult.text);
       return;
     }
     onAccepted({
@@ -1272,18 +1297,17 @@ function TradeModal({ userTeam, liveOrder, picksMadeCount, onClockTeam, tradeVal
     );
   }
 
+  // Verdict visuals driven by the actual accept/reject evaluation so the
+  // banner tells the user exactly what will happen on Propose.
   const verdictColor =
-    verdict === 'fair'
-      ? '#22c55e'
-      : verdict === 'slight_lean'
-      ? '#eab308'
-      : '#ef4444';
-  const verdictText =
-    verdict === 'fair'
-      ? 'Fair Trade'
-      : verdict === 'slight_lean'
-      ? 'Slight Lean'
-      : 'Lopsided';
+    !evalResult.ok ? '#ef4444' : evalResult.reason === 'overpaying' ? '#eab308' : '#22c55e';
+  const verdictText = evalResult.text;
+  const verdictSubtext = (() => {
+    if (yourCount === 0 && theirCount === 0) return '';
+    if (yourCount > theirCount) return `You're trading UP (${yourCount} → ${theirCount} picks)`;
+    if (yourCount < theirCount) return `You're trading DOWN (${yourCount} → ${theirCount} picks)`;
+    return `Even pick count (${yourCount}-for-${theirCount})`;
+  })();
 
   return (
     <div
@@ -1391,22 +1415,20 @@ function TradeModal({ userTeam, liveOrder, picksMadeCount, onClockTeam, tradeVal
                 className="w-2 h-10 rounded-full shrink-0"
                 style={{ background: verdictColor }}
               />
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <div
-                  className="font-display text-[12px] font-bold uppercase tracking-[0.12em]"
+                  className="font-display text-[12px] font-bold uppercase tracking-[0.12em] truncate"
                   style={{ color: verdictColor }}
                 >
                   {verdictText}
                 </div>
-                <div className="text-[10.5px] text-text-muted">
-                  {diff > 0
-                    ? `Favors you by ${pctDiff}%`
-                    : diff < 0
-                    ? `Favors ${partnerTeam} by ${pctDiff}%`
-                    : 'Even value'}
-                </div>
+                {verdictSubtext && (
+                  <div className="text-[10.5px] text-text-muted truncate">
+                    {verdictSubtext}
+                  </div>
+                )}
               </div>
-              <div className="text-right text-[10.5px] font-mono text-text-muted">
+              <div className="text-right text-[10.5px] font-mono text-text-muted shrink-0">
                 {yourTotal} ↔ {theirTotal}
               </div>
             </div>
@@ -1423,11 +1445,12 @@ function TradeModal({ userTeam, liveOrder, picksMadeCount, onClockTeam, tradeVal
           </button>
           <button
             onClick={handlePropose}
-            disabled={yourSelected.size === 0 || theirSelected.size === 0}
+            disabled={!canPropose}
+            title={!canPropose ? evalResult.text : ''}
             className="flex-1 font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: 'var(--gradient-accent)' }}
           >
-            Propose to {partnerTeam || '—'}
+            {canPropose ? `Propose to ${partnerTeam || '—'}` : 'Trade Not Allowed'}
           </button>
         </div>
       </div>
