@@ -61,9 +61,11 @@ export default function Draft() {
   const [view, setView] = useState('bigboard');
   const [showConfirm, setShowConfirm] = useState(false);
   const [showClearAll, setShowClearAll] = useState(false);
-  // Mobile-only: which pick slot the drawer is currently drafting for.
-  // null means the drawer is closed.
+  // Mobile: which pick slot is currently being drafted for. Always non-null
+  // on mobile once data has loaded — initialized from on-the-clock.
   const [draftingForSlot, setDraftingForSlot] = useState(null);
+  // Mobile: board sheet (lists all 32 slots for jumping / reviewing)
+  const [boardOpen, setBoardOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -127,6 +129,15 @@ export default function Draft() {
     return null;
   }, [picks]);
 
+  // On mobile, ensure draftingForSlot is always set so the prospect list
+  // knows what pick it's drafting for. Defaults to on-the-clock when null.
+  useEffect(() => {
+    if (!isMobile) return;
+    if (draftingForSlot == null && onClockSlot != null) {
+      setDraftingForSlot(onClockSlot);
+    }
+  }, [isMobile, draftingForSlot, onClockSlot]);
+
   const filteredProspects = useMemo(() => {
     const list = players || [];
     return list.filter((p) => {
@@ -174,10 +185,11 @@ export default function Draft() {
 
   const handleSlotClick = useCallback((slot) => {
     if (locked) return;
-    // Mobile: tap any slot to open the drawer for that specific slot.
-    // Re-tapping a filled slot lets you replace that pick.
+    // Mobile: tapping a slot in the board sheet sets it as the current pick
+    // and closes the sheet. The user lands back in the drafting view.
     if (isMobile) {
       setDraftingForSlot(slot);
+      setBoardOpen(false);
       return;
     }
     // Desktop: select-then-place flow.
@@ -189,9 +201,9 @@ export default function Draft() {
     }
   }, [isMobile, locked, selectedPlayer, picks, assignPlayerToSlot, clearSlot]);
 
-  // Mobile drawer prospect tap: assign to the slot the drawer was opened for,
-  // then jump to the next empty slot so the user can keep picking without
-  // re-opening the drawer. Closes only when every slot is filled.
+  // Mobile prospect tap: assign to the current pick, then auto-advance to
+  // the next empty slot. Doesn't close anything — the prospect list is the
+  // page itself on mobile, not a modal.
   const pickForDrawerSlot = useCallback((player) => {
     if (draftingForSlot == null || locked) return;
     const justFilled = draftingForSlot;
@@ -199,8 +211,7 @@ export default function Draft() {
     const team = orderByPick.get(justFilled);
     toast.success(`Pick ${justFilled}${team ? ` · ${team.team}` : ''}: ${player.name}`);
     // Find the next empty slot — search forward, then wrap. Treat justFilled
-    // as filled (it isn't yet in `picks` until React commits the state update,
-    // but we know it will be).
+    // as filled (it isn't yet in `picks` until React commits the state update).
     const isEmpty = (i) => i !== justFilled && !picks[i];
     let next = null;
     for (let i = justFilled + 1; i <= 32; i++) {
@@ -211,7 +222,9 @@ export default function Draft() {
         if (isEmpty(i)) { next = i; break; }
       }
     }
-    setDraftingForSlot(next); // null when all 32 are filled, which closes the drawer
+    // When all 32 are filled, stay on the just-filled pick so the user can
+    // see what they did and re-edit if they want — don't strand them on null.
+    setDraftingForSlot(next ?? justFilled);
   }, [draftingForSlot, locked, orderByPick, assignPlayerToSlot, picks]);
 
   const handleProspectClick = useCallback((player) => {
@@ -380,7 +393,108 @@ export default function Draft() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="grid md:grid-cols-2 gap-4">
+        {/* ============= MOBILE LAYOUT ============= */}
+        <div className="md:hidden">
+          {draftingForSlot != null && orderByPick.get(draftingForSlot) && (
+            <Card glass className="p-3 mb-3">
+              <div className="flex items-center gap-3">
+                <TeamLogo abbr={orderByPick.get(draftingForSlot)?.team} size="md" />
+                <div className="min-w-0 flex-1">
+                  <div className="caption text-[9px]">
+                    Drafting Pick {draftingForSlot}
+                  </div>
+                  <div className="font-display font-bold text-text-primary uppercase text-[15px] tracking-wide truncate">
+                    {orderByPick.get(draftingForSlot)?.team_name}
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Previous empty slot (or just previous slot)
+                      let prev = null;
+                      for (let i = draftingForSlot - 1; i >= 1; i--) {
+                        if (!picks[i]) { prev = i; break; }
+                      }
+                      if (prev == null) {
+                        for (let i = 32; i > draftingForSlot; i--) {
+                          if (!picks[i]) { prev = i; break; }
+                        }
+                      }
+                      if (prev != null) setDraftingForSlot(prev);
+                    }}
+                    aria-label="Previous empty pick"
+                    className="w-9 h-9 rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary text-lg"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      let next = null;
+                      for (let i = draftingForSlot + 1; i <= 32; i++) {
+                        if (!picks[i]) { next = i; break; }
+                      }
+                      if (next == null) {
+                        for (let i = 1; i < draftingForSlot; i++) {
+                          if (!picks[i]) { next = i; break; }
+                        }
+                      }
+                      if (next != null) setDraftingForSlot(next);
+                    }}
+                    aria-label="Next empty pick"
+                    className="w-9 h-9 rounded-lg border border-border-subtle text-text-secondary hover:text-text-primary text-lg"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+              <div className="mt-2">
+                <ProgressBar picks={picks} playerById={playerById} />
+              </div>
+              {picks[draftingForSlot] && (
+                <div className="mt-2 text-[11px] text-text-secondary flex items-center justify-between">
+                  <span>
+                    Currently:{' '}
+                    <span className="text-text-primary font-semibold">
+                      {playerById.get(picks[draftingForSlot])?.name}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => clearSlot(draftingForSlot)}
+                    className="text-red-400 hover:text-red-300 text-[11px] underline"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Mobile prospect list — always visible, NOT in a modal */}
+          <Card glass className="p-3 flex flex-col max-h-[65vh] mb-4">
+            <ProspectListInner
+              players={players}
+              filtered={filteredProspects}
+              grouped={grouped}
+              used={usedPlayerIds}
+              selected={null}
+              onClick={pickForDrawerSlot}
+              onDraft={null}
+              onClockSlot={null}
+              search={search}
+              setSearch={setSearch}
+              posFilter={posFilter}
+              setPosFilter={setPosFilter}
+              view={view}
+              setView={setView}
+            />
+          </Card>
+        </div>
+
+        {/* ============= DESKTOP LAYOUT ============= */}
+        <div className="hidden md:grid md:grid-cols-2 gap-4">
           {/* Pick slots */}
           <Card glass className="p-3 overflow-hidden">
             <div className="flex items-center justify-between mb-3 px-1">
@@ -396,7 +510,7 @@ export default function Draft() {
                 </Button>
               </div>
             </div>
-            <ul className="stagger space-y-1.5 md:max-h-[68vh] md:overflow-y-auto md:pr-1">
+            <ul className="stagger space-y-1.5 max-h-[68vh] overflow-y-auto pr-1">
               {!players ? (
                 Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-[58px] w-full rounded-lg" />)
               ) : (
@@ -416,7 +530,7 @@ export default function Draft() {
           </Card>
 
           {/* Prospect list — desktop */}
-          <Card glass className="p-3 flex flex-col max-h-[76vh] hidden md:flex">
+          <Card glass className="p-3 flex flex-col max-h-[76vh]">
             <ProspectListInner
               players={players}
               filtered={filteredProspects}
@@ -475,116 +589,73 @@ export default function Draft() {
       </div>
 
       {/* Mobile — fixed bottom action bar */}
-      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 p-3 bg-bg-deep/90 backdrop-blur-md border-t border-border-subtle">
-        <div className="flex items-center gap-3">
-          <div className="text-left shrink-0">
-            <div className="caption text-[9px] leading-none">Picks</div>
-            <div className="font-mono font-bold text-lg leading-tight">
-              <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
-              <span className="text-text-muted">/32</span>
-            </div>
-          </div>
-          {complete ? (
-            <Button
-              className="flex-1"
-              size="lg"
-              onClick={() => setShowConfirm(true)}
-              disabled={locked || busy}
-            >
-              {submitted ? 'Submitted ✓' : 'Submit Mock'}
-            </Button>
-          ) : (
-            <Button
-              className="flex-1"
-              size="lg"
-              onClick={() => onClockSlot && setDraftingForSlot(onClockSlot)}
-              disabled={locked || !onClockSlot}
-            >
-              {onClockSlot ? `Pick #${onClockSlot}${orderByPick.get(onClockSlot) ? ` · ${orderByPick.get(onClockSlot).team}` : ''} →` : 'Done'}
-            </Button>
-          )}
+      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 p-3 bg-bg-deep/95 backdrop-blur-md border-t border-border-subtle">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="lg"
+            className="flex-1"
+            onClick={() => setBoardOpen(true)}
+          >
+            Board {filledCount}/32
+          </Button>
+          <Button
+            size="lg"
+            className="flex-1"
+            onClick={() => setShowConfirm(true)}
+            disabled={!complete || locked || busy}
+          >
+            {submitted ? 'Submitted ✓' : complete ? 'Submit' : `${32 - filledCount} left`}
+          </Button>
         </div>
       </div>
 
-      {/* Mobile prospect drawer — opens for a specific slot, tap to assign */}
-      {draftingForSlot != null && (
-        <div className="md:hidden fixed inset-0 z-40" onClick={() => setDraftingForSlot(null)}>
+      {/* Mobile board sheet — list of all 32 slots, tap to jump */}
+      {boardOpen && (
+        <div className="md:hidden fixed inset-0 z-50" onClick={() => setBoardOpen(false)}>
           <div className="absolute inset-0 bg-black/60 animate-fade-in" />
           <div
             className="absolute left-0 right-0 bottom-0 max-h-[88vh] glass rounded-t-2xl flex flex-col drawer-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mt-2 mb-2" />
-
-            {/* Drawer header — shows what we're drafting for + progress */}
-            <div className="px-4 pb-3 border-b border-border-subtle">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <TeamLogo abbr={orderByPick.get(draftingForSlot)?.team} size="sm" />
-                  <div className="min-w-0">
-                    <div className="caption text-[9px]">Pick {draftingForSlot} · On the clock</div>
-                    <div className="font-display font-bold text-text-primary text-lg uppercase tracking-wide leading-tight truncate">
-                      {orderByPick.get(draftingForSlot)?.team_name || 'TBD'}
-                    </div>
-                  </div>
+            <div className="px-4 pb-3 border-b border-border-subtle flex items-center justify-between">
+              <div>
+                <div className="caption text-[9px]">Round 1 · 2026</div>
+                <div className="font-display font-bold text-text-primary text-lg uppercase tracking-wide">
+                  Board · {filledCount}/32
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="caption text-[9px]">Progress</div>
-                  <div className="font-mono font-bold tabular leading-none mt-0.5">
-                    <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
-                    <span className="text-text-muted">/32</span>
-                  </div>
-                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button size="xs" variant="outline" onClick={autoFill} disabled={locked || complete}>
+                  Auto-fill
+                </Button>
+                <Button size="xs" variant="outline" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0}>
+                  Clear
+                </Button>
                 <button
                   type="button"
-                  onClick={() => setDraftingForSlot(null)}
+                  onClick={() => setBoardOpen(false)}
                   aria-label="Close"
-                  className="text-text-muted hover:text-text-primary text-2xl px-2 -mr-1 shrink-0"
+                  className="text-text-muted hover:text-text-primary text-2xl px-2 ml-1"
                 >
                   ✕
                 </button>
               </div>
-              {/* Mini segmented progress bar */}
-              <div className="mt-2">
-                <ProgressBar picks={picks} playerById={playerById} />
-              </div>
-              {picks[draftingForSlot] && (
-                <div className="mt-2 text-[11px] text-text-secondary flex items-center justify-between">
-                  <span>
-                    Currently:{' '}
-                    <span className="text-text-primary font-semibold">
-                      {playerById.get(picks[draftingForSlot])?.name}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => clearSlot(draftingForSlot)}
-                    className="text-red-400 hover:text-red-300 text-[11px] underline"
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
             </div>
-
-            <div className="p-3 flex-1 overflow-hidden flex flex-col">
-              <ProspectListInner
-                players={players}
-                filtered={filteredProspects}
-                grouped={grouped}
-                used={usedPlayerIds}
-                selected={null}
-                onClick={pickForDrawerSlot}
-                onDraft={null}
-                onClockSlot={null}
-                search={search}
-                setSearch={setSearch}
-                posFilter={posFilter}
-                setPosFilter={setPosFilter}
-                view={view}
-                setView={setView}
-              />
-            </div>
+            <ul className="flex-1 overflow-y-auto p-3 space-y-1.5">
+              {Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => (
+                <PickSlot
+                  key={slot}
+                  slot={slot}
+                  team={orderByPick.get(slot)}
+                  player={picks[slot] ? playerById.get(picks[slot]) : null}
+                  onClear={() => clearSlot(slot)}
+                  onClick={() => handleSlotClick(slot)}
+                  isActive={slot === draftingForSlot}
+                />
+              ))}
+            </ul>
           </div>
         </div>
       )}
