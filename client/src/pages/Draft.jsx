@@ -132,9 +132,13 @@ export default function Draft() {
     if (!user) { nav('/join'); return; }
     (async () => {
       try {
+        // Fetch all 7 rounds of the draft order even though we only render
+        // 32 R1 slots. The extra ~230 rows give the trade simulator real
+        // chips to work with — users can include R2-R7 picks in hypothetical
+        // trades without the page having to track them for player selection.
         const [p, o, s] = await Promise.all([
           api.getPlayers(),
-          api.getDraftOrder(),
+          api.getDraftOrderAll(),
           api.getSettings(),
         ]);
         setPlayers(p);

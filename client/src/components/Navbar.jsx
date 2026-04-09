@@ -23,11 +23,16 @@ export default function Navbar() {
       }}
     >
       <div className="max-w-6xl mx-auto px-4 flex items-center justify-between flex-wrap">
-        <Link to="/" className="flex items-center gap-2.5 py-3 group">
-          <div className="w-8 h-8 rounded-md flex items-center justify-center font-display font-bold text-bg-deep" style={{ background: 'var(--gradient-accent)' }}>
-            M
-          </div>
-          <div className="font-display font-bold text-[18px] uppercase tracking-[0.08em] leading-none">
+        <Link to="/" className="flex items-center gap-2.5 py-2.5 group">
+          <img
+            src="/mds-logo.png"
+            alt="MockDraft Showdown"
+            width="40"
+            height="40"
+            className="w-10 h-10 rounded-md object-contain shrink-0"
+            draggable={false}
+          />
+          <div className="font-display font-bold text-[18px] uppercase tracking-[0.08em] leading-none hidden sm:block">
             <span className="text-text-primary">Mockdraft</span>{' '}
             <span className="text-accent">Showdown</span>
           </div>
