@@ -115,16 +115,23 @@ function SavedView({ savedMock, players, onRestart }) {
   }, [myPicks]);
   const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
 
-  // Export: renders the hidden ExportCard to a PNG blob. Two entry points:
-  //   handleCopy  → Copy to clipboard (desktop Discord workflow: Ctrl+V into chat)
-  //   handleShare → Native share sheet (mobile) or file download (desktop fallback)
+  // Export: renders the hidden ExportCard to a PNG blob, then either copies
+  // to clipboard (desktop) or opens the native share sheet (mobile). One
+  // button, two behaviors based on platform — Windows share-to-Discord is
+  // broken (Discord pops its own server/channel picker instead of pasting
+  // into the current chat), so clipboard+Ctrl-V is the reliable path.
   const exportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
-  // Pre-rendered blob so handleShare has a File ready to hand to navigator.share
-  // WITHOUT doing any async work inside the click handler. Both the Windows
-  // share sheet and Chrome's clipboard API enforce user-gesture requirements
-  // that break if we await a render mid-click.
   const cachedBlobRef = useRef(null);
+
+  // Mobile detection: touch-primary device with no hover. Desktops with
+  // trackpads report hover:hover; phones/tablets report hover:none. This is
+  // more reliable than user-agent sniffing.
+  const isMobile = useMemo(() => {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    if (!navigator.share) return false;
+    return window.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
+  }, []);
 
   // Theme mirror. The hidden card mounts with the current theme so the
   // captured PNG matches whatever the user is looking at.
@@ -224,11 +231,21 @@ function SavedView({ savedMock, players, onRestart }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  async function handleShare() {
+  // Smart share: on mobile (touch, no hover) use the native share sheet; on
+  // desktop use clipboard copy (Windows' share-to-Discord flow is broken —
+  // Discord pops its own server/channel picker instead of pasting into the
+  // current chat, so Ctrl+V is the only reliable path).
+  function handleShare() {
+    if (isMobile) {
+      handleMobileShare();
+    } else {
+      handleCopy();
+    }
+  }
+
+  async function handleMobileShare() {
     setExporting(true);
     try {
-      // Prefer the pre-rendered blob. If it isn't ready yet (first few
-      // hundred ms on slow devices), render synchronously now.
       let blob = cachedBlobRef.current;
       if (!blob) {
         blob = await generateBlob();
@@ -236,24 +253,20 @@ function SavedView({ savedMock, players, onRestart }) {
       }
       if (!blob) throw new Error('render failed');
 
-      // Mobile / any OS with a share sheet: hand off the File.
-      if (navigator.canShare) {
-        const file = new File([blob], fileName, { type: 'image/png' });
-        if (navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: savedMock.title || `${userTeam} Team Mock`,
-              text: `My ${userTeam} mock draft — MockDraft Showdown`,
-            });
-            return;
-          } catch (e) {
-            if (e.name === 'AbortError') return;
-            console.warn('[share] share failed, downloading instead:', e);
-          }
+      const file = new File([blob], fileName, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: savedMock.title || `${userTeam} Team Mock`,
+            text: `My ${userTeam} mock draft — MockDraft Showdown`,
+          });
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+          console.warn('[share] share failed, downloading instead:', e);
         }
       }
-      // Desktop fallback: download the file.
       triggerDownload(blob);
       toast.success('Downloaded — share it with the squad');
     } catch (e) {
@@ -311,21 +324,13 @@ function SavedView({ savedMock, players, onRestart }) {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={handleCopy}
+            onClick={handleShare}
             disabled={exporting}
-            title="Copy image to clipboard — paste into Discord with Ctrl+V"
+            title={isMobile ? 'Share via your phone\'s share sheet' : 'Copy image — paste into Discord with Ctrl+V'}
             className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg text-bg-deep transition hover:brightness-110 disabled:opacity-50"
             style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
           >
-            {exporting ? 'Rendering…' : 'Copy'}
-          </button>
-          <button
-            onClick={handleShare}
-            disabled={exporting}
-            title="Share via system share sheet or download as PNG"
-            className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
-          >
-            Share
+            {exporting ? 'Rendering…' : 'Share'}
           </button>
           <button
             onClick={onRestart}
@@ -463,37 +468,10 @@ function InitialCircle({ name, color, size = 56 }) {
   );
 }
 
-// Big team badge used in the header instead of trying to proxy/capture the
-// ESPN team logo PNG (which was rendering as a broken image on some users).
-// A plain styled box with the team abbreviation is always reliable.
-function TeamBadge({ abbr, accent }) {
-  return (
-    <div
-      style={{
-        width: 96,
-        height: 96,
-        borderRadius: 18,
-        background: `linear-gradient(135deg, ${accent}22 0%, ${accent}08 100%)`,
-        boxShadow: `inset 0 0 0 2px ${accent}55`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          fontSize: abbr.length >= 4 ? 22 : 28,
-          fontWeight: 900,
-          letterSpacing: 1.5,
-          color: accent,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
-        }}
-      >
-        {abbr}
-      </div>
-    </div>
-  );
+function teamLogoEspnUrl(abbr) {
+  if (!abbr) return null;
+  const key = abbr === 'WAS' ? 'wsh' : abbr.toLowerCase();
+  return `https://a.espncdn.com/i/teamlogos/nfl/500/${key}.png`;
 }
 
 const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, userTeam, theme }, ref) {
@@ -525,7 +503,17 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
     >
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 32 }}>
-        <TeamBadge abbr={userTeam} accent={C.accent} />
+        <img
+          src={proxyImageUrl(teamLogoEspnUrl(userTeam))}
+          alt=""
+          crossOrigin="anonymous"
+          style={{
+            width: 96,
+            height: 96,
+            objectFit: 'contain',
+            flexShrink: 0,
+          }}
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
