@@ -12,6 +12,7 @@ import actuals from './routes/actuals.js';
 import auth from './routes/auth.js';
 import teamMocks from './routes/teamMocks.js';
 import tradeValues from './routes/tradeValues.js';
+import imageProxy from './routes/imageProxy.js';
 import { pool } from './db/pool.js';
 
 dotenv.config();
@@ -82,6 +83,7 @@ app.use('/api/actual-picks', actuals);
 app.use('/api/auth', auth);
 app.use('/api/team-mocks', teamMocks);
 app.use('/api/trade-values', tradeValues);
+app.use('/api/proxy/image', imageProxy);
 
 // Catch-all 404 — log the path so Railway deploy logs show exactly what
 // route missed. Critical for debugging the "POST /api/team-mocks 404"

@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { toPng } from 'html-to-image';
-import { api } from '../lib/api.js';
+import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam } from '../lib/botPicker.js';
 import tradeValuesChart from '../lib/tradeValues2026.json';
@@ -115,45 +115,94 @@ function SavedView({ savedMock, players, onRestart }) {
   }, [myPicks]);
   const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
 
-  // Share export — renders a hidden ExportCard off-screen, captures it as
-  // PNG, then either fires the native share sheet (mobile) or downloads.
+  // Export: renders the hidden ExportCard to a PNG blob. Two entry points:
+  //   handleCopy  → Copy to clipboard (desktop Discord workflow: Ctrl+V into chat)
+  //   handleShare → Native share sheet (mobile) or file download (desktop fallback)
   const exportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
-  async function handleShare() {
-    if (!exportRef.current) return;
+
+  async function generateBlob() {
+    if (!exportRef.current) return null;
+    // Give proxied images a moment to decode before html-to-image captures.
+    // Images load lazily; we wait until all <img> inside the card report
+    // complete, then render. Guards against a flash-of-missing-photos in
+    // the screenshot.
+    const imgs = exportRef.current.querySelectorAll('img');
+    await Promise.all(
+      Array.from(imgs).map((img) =>
+        img.complete && img.naturalHeight > 0
+          ? Promise.resolve()
+          : new Promise((resolve) => {
+              img.addEventListener('load', resolve, { once: true });
+              img.addEventListener('error', resolve, { once: true });
+            })
+      )
+    );
+    const dataUrl = await toPng(exportRef.current, {
+      cacheBust: false,
+      pixelRatio: 2,
+      backgroundColor: '#0a0f1c',
+    });
+    const res = await fetch(dataUrl);
+    return res.blob();
+  }
+
+  const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
+
+  async function handleCopy() {
     setExporting(true);
     try {
-      const dataUrl = await toPng(exportRef.current, {
-        cacheBust: true,
-        pixelRatio: 2,
-        backgroundColor: '#0a0f1c',
-        // Skip headshot images that fail CORS; the fallback initials render
-        // server-free and always succeed.
-        filter: (node) => !(node.tagName === 'IMG' && node.dataset?.skipCapture === 'true'),
-      });
-      const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
-      // Try Web Share API first (mobile) — fall back to download link
+      const blob = await generateBlob();
+      if (!blob) throw new Error('render failed');
+      if (!navigator.clipboard || !window.ClipboardItem) {
+        // Older browsers: no clipboard API, fall back to download
+        triggerDownload(blob);
+        toast.success('Downloaded (clipboard unsupported)');
+        return;
+      }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      toast.success('Copied — paste into Discord with Ctrl+V');
+    } catch (e) {
+      console.error('[copy]', e);
+      toast.error(e.message?.includes('Document is not focused') ? 'Click the page first, then Copy' : 'Copy failed — try Share instead');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function triggerDownload(blob) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function handleShare() {
+    setExporting(true);
+    try {
+      const blob = await generateBlob();
+      if (!blob) throw new Error('render failed');
+      // Prefer native share sheet (mobile) — falls back to download.
       if (navigator.canShare) {
-        try {
-          const blob = await (await fetch(dataUrl)).blob();
-          const file = new File([blob], fileName, { type: 'image/png' });
-          if (navigator.canShare({ files: [file] })) {
+        const file = new File([blob], fileName, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          try {
             await navigator.share({
               files: [file],
               title: savedMock.title || `${userTeam} Team Mock`,
-              text: `My ${userTeam} mock draft — made on MockDraft Showdown`,
+              text: `My ${userTeam} mock draft — MockDraft Showdown`,
             });
-            setExporting(false);
             return;
+          } catch (e) {
+            // User cancelled share sheet — don't treat as error
+            if (e.name === 'AbortError') return;
+            console.warn('[share] share failed, downloading instead:', e);
           }
-        } catch {
-          // fall through to download
         }
       }
-      const link = document.createElement('a');
-      link.download = fileName;
-      link.href = dataUrl;
-      link.click();
+      triggerDownload(blob);
       toast.success('Downloaded — share it with the squad');
     } catch (e) {
       console.error('[share]', e);
@@ -207,14 +256,23 @@ function SavedView({ savedMock, players, onRestart }) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={handleShare}
+            onClick={handleCopy}
             disabled={exporting}
+            title="Copy image to clipboard — paste into Discord with Ctrl+V"
             className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg text-bg-deep transition hover:brightness-110 disabled:opacity-50"
             style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
           >
-            {exporting ? 'Rendering…' : 'Share'}
+            {exporting ? 'Rendering…' : 'Copy'}
+          </button>
+          <button
+            onClick={handleShare}
+            disabled={exporting}
+            title="Share via system share sheet or download as PNG"
+            className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
+          >
+            Share
           </button>
           <button
             onClick={onRestart}
@@ -291,8 +349,8 @@ function SavedView({ savedMock, players, onRestart }) {
 // Self-contained card optimized for PNG capture via html-to-image. Uses inline
 // styles (not Tailwind utilities) so the captured image doesn't depend on the
 // full stylesheet being inlined. Fixed 900px width gives a clean aspect ratio
-// for Twitter/Discord shares. Skips real headshots (CORS-fragile) in favor of
-// initials-in-circle placeholders that always render reliably.
+// for Twitter/Discord shares. All images routed through the server proxy so
+// html-to-image can read them into a canvas (ESPN CDN lacks CORS headers).
 
 const TEAM_MOCK_COLORS = {
   bg: '#0a0f1c',
@@ -302,6 +360,38 @@ const TEAM_MOCK_COLORS = {
   muted: '#8896b5',
   accent: '#00e5ff',
 };
+
+function teamLogoEspnUrl(abbr) {
+  if (!abbr) return null;
+  const key = abbr === 'WAS' ? 'wsh' : abbr.toLowerCase();
+  return `https://a.espncdn.com/i/teamlogos/nfl/500/${key}.png`;
+}
+
+// Initials-in-circle fallback used whenever a headshot is missing or
+// still loading. Kept identical to the fallback style elsewhere in the app.
+function InitialCircle({ name, color, size = 56 }) {
+  const initial = (name || '?').trim()[0]?.toUpperCase() || '?';
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: `${color}22`,
+        boxShadow: `inset 0 0 0 2px ${color}66`,
+        color,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: size * 0.42,
+        fontWeight: 900,
+        flexShrink: 0,
+      }}
+    >
+      {initial}
+    </div>
+  );
+}
 
 const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, userTeam }, ref) {
   const title = savedMock.title || `${userTeam} Team Mock`;
@@ -317,7 +407,7 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
   const rounds = Object.keys(picksByRound).map(Number).sort((a, b) => a - b);
 
   const C = TEAM_MOCK_COLORS;
-  const teamLogoUrl = `https://a.espncdn.com/i/teamlogos/nfl/500/${userTeam === 'WAS' ? 'wsh' : userTeam.toLowerCase()}.png`;
+  const teamLogoSrc = proxyImageUrl(teamLogoEspnUrl(userTeam));
 
   return (
     <div
@@ -333,13 +423,14 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
     >
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 32 }}>
-        <img
-          src={teamLogoUrl}
-          alt=""
-          crossOrigin="anonymous"
-          style={{ width: 96, height: 96, objectFit: 'contain' }}
-          data-skip-capture="false"
-        />
+        {teamLogoSrc && (
+          <img
+            src={teamLogoSrc}
+            alt=""
+            crossOrigin="anonymous"
+            style={{ width: 96, height: 96, objectFit: 'contain' }}
+          />
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
@@ -405,7 +496,7 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
             {picksByRound[r].map((pick) => {
               const player = byId.get(pick.player_id) || pick;
               const color = posHex(player.position);
-              const initial = (player.name || '?').trim()[0]?.toUpperCase() || '?';
+              const headshotSrc = player.headshot_url ? proxyImageUrl(player.headshot_url) : null;
               return (
                 <div
                   key={pick.pick_number}
@@ -420,25 +511,26 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
                     border: `1px solid ${C.subtle}`,
                   }}
                 >
-                  {/* Initial circle — avoids CORS issues from headshot URLs */}
-                  <div
-                    style={{
-                      width: 56,
-                      height: 56,
-                      borderRadius: '50%',
-                      background: `${color}22`,
-                      boxShadow: `inset 0 0 0 2px ${color}66`,
-                      color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 24,
-                      fontWeight: 900,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {initial}
-                  </div>
+                  {/* Real headshot via proxy, falling back to the initials
+                      circle if the player has no photo on file. */}
+                  {headshotSrc ? (
+                    <img
+                      src={headshotSrc}
+                      alt=""
+                      crossOrigin="anonymous"
+                      style={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        background: `${color}22`,
+                        boxShadow: `inset 0 0 0 2px ${color}66`,
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : (
+                    <InitialCircle name={player.name} color={color} size={56} />
+                  )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
