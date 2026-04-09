@@ -355,8 +355,8 @@ export default function Draft() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 route-fade">
-      {/* Header */}
-      <div className="mb-5">
+      {/* Header — desktop only; mobile uses the locked viewport layout below */}
+      <div className="mb-5 hidden md:block">
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>
             <div className="caption text-accent">War Room · 2026</div>
@@ -406,14 +406,27 @@ export default function Draft() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        {/* ============= MOBILE LAYOUT — two-panel ============= */}
-        <div className="md:hidden space-y-3">
+        {/* ============= MOBILE LAYOUT — viewport-locked two-panel ============= */}
+        {/* Fixed between navbar (top-14 = 56px) and bottom action bar
+            (bottom-20 = 80px). No page scroll possible — only the two
+            panels scroll internally. */}
+        <div
+          className="md:hidden fixed inset-x-0 z-10 flex flex-col gap-2 p-2"
+          style={{ top: '56px', bottom: '76px' }}
+        >
           {/* TOP PANEL — Your Board (collapsible) */}
-          <Card glass className="p-0 overflow-hidden">
+          <Card
+            glass
+            className="p-0 overflow-hidden flex flex-col transition-[flex-basis] duration-300 ease-out"
+            style={{
+              flex: `0 0 ${boardExpanded ? '55%' : '200px'}`,
+              minHeight: 0,
+            }}
+          >
             <button
               type="button"
               onClick={() => setBoardExpanded((x) => !x)}
-              className="w-full flex items-center justify-between px-4 py-2.5 border-b border-border-subtle"
+              className="w-full flex items-center justify-between px-4 py-2.5 border-b border-border-subtle shrink-0"
               aria-expanded={boardExpanded}
               aria-label={boardExpanded ? 'Collapse board' : 'Expand board'}
             >
@@ -436,10 +449,8 @@ export default function Draft() {
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
-            <ul
-              className="overflow-y-auto px-3 py-2 space-y-1.5 transition-[max-height] duration-300 ease-out"
-              style={{ maxHeight: boardExpanded ? '50vh' : '140px' }}
-            >
+            <ul className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 min-h-0">
+
               {Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => {
                 const team = orderByPick.get(slot);
                 const player = picks[slot] ? playerById.get(picks[slot]) : null;
@@ -509,10 +520,8 @@ export default function Draft() {
             </ul>
           </Card>
 
-          {/* BOTTOM PANEL — Available Players (persistent) */}
-          <Card glass className="p-3 flex flex-col mb-4 transition-[max-height] duration-300 ease-out"
-            style={{ maxHeight: boardExpanded ? '35vh' : '60vh', minHeight: '30vh' }}
-          >
+          {/* BOTTOM PANEL — Available Players (persistent, fills remaining) */}
+          <Card glass className="p-3 flex flex-col flex-1 min-h-0 overflow-hidden">
             <ProspectListInner
               players={players}
               filtered={filteredProspects}
