@@ -65,12 +65,54 @@ export default function Draft() {
   // Mobile: which pick slot is currently being drafted for. Always non-null
   // on mobile once data has loaded — initialized from on-the-clock.
   const [draftingForSlot, setDraftingForSlot] = useState(null);
-  // Mobile: top "Your Board" panel collapse state. Default collapsed so the
-  // bottom prospect list owns most of the viewport.
-  const [boardExpanded, setBoardExpanded] = useState(false);
+  // Mobile: top "Your Board" panel height in px (resizable via drag handle).
+  // Persisted across sessions. Each panel can also be independently collapsed
+  // to a header-only strip.
+  const [topHeight, setTopHeight] = useState(() => {
+    if (typeof window === 'undefined') return 220;
+    const v = parseInt(localStorage.getItem('mds_mobile_top_h') || '', 10);
+    return Number.isFinite(v) && v >= 60 && v <= 1500 ? v : 220;
+  });
+  const [topCollapsed, setTopCollapsed] = useState(false);
+  const [bottomCollapsed, setBottomCollapsed] = useState(false);
+  const mobileContainerRef = useRef(null);
   const boardRowRefs = useRef({}); // pick_number → li element, for scroll-into-view
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+
+  // Persist resize across reloads
+  useEffect(() => {
+    try { localStorage.setItem('mds_mobile_top_h', String(topHeight)); } catch {}
+  }, [topHeight]);
+
+  // Drag handle: starts a pointer capture session, clamps the new top height
+  // between min and (container - bottomMin - gap). Window-level listeners are
+  // attached/detached per drag so we don't leak handlers.
+  function onResizeStart(e) {
+    if (topCollapsed || bottomCollapsed) return;
+    e.preventDefault();
+    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+    const startH = topHeight;
+    const containerH = mobileContainerRef.current?.clientHeight || 600;
+    const min = 80;
+    const max = containerH - 100; // 80 for bottom + 16 gap + 4 fudge
+    document.body.classList.add('dragging');
+
+    function onMove(ev) {
+      const y = ev.clientY ?? ev.touches?.[0]?.clientY ?? startY;
+      const next = Math.max(min, Math.min(max, startH + (y - startY)));
+      setTopHeight(next);
+    }
+    function onUp() {
+      document.body.classList.remove('dragging');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    }
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
 
   // Reactive isMobile flag — branches the slot click behavior.
   const [isMobile, setIsMobile] = useState(() =>
@@ -141,15 +183,15 @@ export default function Draft() {
     }
   }, [isMobile, draftingForSlot, onClockSlot]);
 
-  // Mobile: when the active pick changes, scroll its row into view inside the
-  // top board panel. Centers it whether the panel is collapsed or expanded.
+  // Mobile: when the active pick changes (or top panel uncollapses), scroll
+  // its row into view inside the top board panel.
   useEffect(() => {
-    if (!isMobile || draftingForSlot == null) return;
+    if (!isMobile || draftingForSlot == null || topCollapsed) return;
     const el = boardRowRefs.current[draftingForSlot];
     if (el && typeof el.scrollIntoView === 'function') {
       el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     }
-  }, [isMobile, draftingForSlot, boardExpanded]);
+  }, [isMobile, draftingForSlot, topCollapsed, topHeight]);
 
   const filteredProspects = useMemo(() => {
     const list = players || [];
@@ -411,24 +453,29 @@ export default function Draft() {
             (bottom-20 = 80px). No page scroll possible — only the two
             panels scroll internally. */}
         <div
-          className="md:hidden fixed inset-x-0 z-10 flex flex-col gap-2 p-2"
+          ref={mobileContainerRef}
+          className="md:hidden fixed inset-x-0 z-10 flex flex-col p-2"
           style={{ top: '56px', bottom: '76px' }}
         >
-          {/* TOP PANEL — Your Board (collapsible) */}
+          {/* TOP PANEL — Your Board */}
           <Card
             glass
-            className="p-0 overflow-hidden flex flex-col transition-[flex-basis] duration-300 ease-out"
+            className="p-0 overflow-hidden flex flex-col"
             style={{
-              flex: `0 0 ${boardExpanded ? '55%' : '200px'}`,
+              flex: topCollapsed
+                ? '0 0 auto'
+                : bottomCollapsed
+                ? '1 1 0'
+                : `0 0 ${topHeight}px`,
               minHeight: 0,
             }}
           >
             <button
               type="button"
-              onClick={() => setBoardExpanded((x) => !x)}
+              onClick={() => setTopCollapsed((x) => !x)}
               className="w-full flex items-center justify-between px-4 py-2.5 border-b border-border-subtle shrink-0"
-              aria-expanded={boardExpanded}
-              aria-label={boardExpanded ? 'Collapse board' : 'Expand board'}
+              aria-expanded={!topCollapsed}
+              aria-label={topCollapsed ? 'Expand board' : 'Collapse board'}
             >
               <div className="flex items-center gap-2">
                 <span className="caption text-[10px]">Your Board</span>
@@ -439,7 +486,7 @@ export default function Draft() {
               </div>
               <svg
                 viewBox="0 0 24 24"
-                className={`w-4 h-4 text-text-secondary transition-transform duration-300 ${boardExpanded ? 'rotate-180' : ''}`}
+                className={`w-4 h-4 text-text-secondary transition-transform duration-300 ${topCollapsed ? '-rotate-90' : ''}`}
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
@@ -449,8 +496,8 @@ export default function Draft() {
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
+            {!topCollapsed && (
             <ul className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 min-h-0">
-
               {Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => {
                 const team = orderByPick.get(slot);
                 const player = picks[slot] ? playerById.get(picks[slot]) : null;
@@ -518,10 +565,63 @@ export default function Draft() {
                 );
               })}
             </ul>
+            )}
           </Card>
 
-          {/* BOTTOM PANEL — Available Players (persistent, fills remaining) */}
-          <Card glass className="p-3 flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* DRAG HANDLE — only shown when both panels are expanded */}
+          {!topCollapsed && !bottomCollapsed && (
+            <div
+              onPointerDown={onResizeStart}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize panels"
+              className="h-3 my-1 flex items-center justify-center cursor-row-resize touch-none select-none"
+              style={{ touchAction: 'none' }}
+            >
+              <div className="w-12 h-1 rounded-full bg-text-muted/40 hover:bg-accent/60 transition-colors" />
+            </div>
+          )}
+
+          {/* BOTTOM PANEL — Available Players */}
+          <Card
+            glass
+            className="p-0 overflow-hidden flex flex-col"
+            style={{
+              flex: bottomCollapsed
+                ? '0 0 auto'
+                : topCollapsed
+                ? '1 1 0'
+                : '1 1 0',
+              minHeight: 0,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setBottomCollapsed((x) => !x)}
+              className="w-full flex items-center justify-between px-4 py-2.5 border-b border-border-subtle shrink-0"
+              aria-expanded={!bottomCollapsed}
+              aria-label={bottomCollapsed ? 'Expand prospects' : 'Collapse prospects'}
+            >
+              <div className="flex items-center gap-2">
+                <span className="caption text-[10px]">Available Players</span>
+                <span className="font-mono text-[11px] text-text-muted tabular">
+                  {filteredProspects.length}
+                </span>
+              </div>
+              <svg
+                viewBox="0 0 24 24"
+                className={`w-4 h-4 text-text-secondary transition-transform duration-300 ${bottomCollapsed ? '-rotate-90' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            {!bottomCollapsed && (
+            <div className="flex-1 min-h-0 flex flex-col p-3">
             <ProspectListInner
               players={players}
               filtered={filteredProspects}
@@ -538,6 +638,8 @@ export default function Draft() {
               view={view}
               setView={setView}
             />
+            </div>
+            )}
           </Card>
         </div>
 
