@@ -260,10 +260,13 @@ async function resolveRefs(items, cap = 10) {
 }
 
 async function fetchProspectsFromEspnAttempts(year, limit) {
-  // Strategy A: core API reference-following. The core API returns items with
-  // $ref pointers — we follow them to get the actual athlete data. This is
-  // how ESPN's own apps consume the endpoint.
+  // Strategy A: core API reference-following. These are patterns documented
+  // in nntrn's ESPN hidden API gist. College-football athletes is the most
+  // reliable of the bunch — returns all CFB players which we then filter
+  // heuristically to likely draft prospects (active, ranked, etc.).
   const corePaths = [
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/athletes?limit=${limit}&active=true`,
+    `https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/seasons/${year}/athletes?limit=${limit}`,
     `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${year}/draft/athletes?limit=${limit}`,
     `https://sports.core.api.espn.com/v3/sports/football/leagues/nfl/seasons/${year}/draft/athletes?limit=${limit}`,
     `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/draft/athletes?limit=${limit}`,
@@ -428,8 +431,59 @@ async function fetchProspectsFromEspnAttempts(year, limit) {
   return [];
 }
 
+// Sleeper has a fully-documented public API. `/v1/players/nfl` returns every
+// player in their DB keyed by player_id. We filter down to likely draft-
+// eligible college players (no NFL team assigned, rookie years_exp, in an
+// Active status) and return the top N.
+async function fetchProspectsFromSleeper(limit) {
+  try {
+    const r = await fetch('https://api.sleeper.app/v1/players/nfl', {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (!data || typeof data !== 'object') return [];
+
+    const candidates = Object.values(data).filter(
+      (p) =>
+        p &&
+        typeof p === 'object' &&
+        p.full_name &&
+        p.position &&
+        p.college &&
+        // No NFL team yet (draft-eligible or undrafted rookie)
+        !p.team &&
+        (p.years_exp === 0 || p.years_exp == null) &&
+        p.status !== 'Inactive'
+    );
+
+    logRawOnce('prospects sleeper', { count: candidates.length, sample: candidates.slice(0, 3) });
+
+    const prospects = candidates
+      .map((p) => ({
+        name: p.full_name,
+        position: Array.isArray(p.fantasy_positions) ? p.fantasy_positions[0] : p.position,
+        school: p.college,
+        headshot_url: null,
+        rank: p.search_rank || null,
+      }))
+      .filter((p) => p.name && p.position)
+      .sort((a, b) => (a.rank || 99999) - (b.rank || 99999))
+      .slice(0, limit);
+
+    console.log(`[sleeper prospects] returned ${prospects.length} candidates`);
+    return prospects;
+  } catch (e) {
+    console.warn('[sleeper prospects] failed:', e.message);
+    return [];
+  }
+}
+
 export async function fetchProspects(year, limit = 400) {
-  return fetchProspectsFromEspnAttempts(year, limit);
+  const fromEspn = await fetchProspectsFromEspnAttempts(year, limit);
+  if (fromEspn.length > 0) return fromEspn;
+  console.log('[prospects] ESPN strategies returned 0; falling back to Sleeper');
+  return fetchProspectsFromSleeper(limit);
 }
 
 export function resetLogFlag() {
