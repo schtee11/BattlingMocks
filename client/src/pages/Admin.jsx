@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -889,6 +889,7 @@ export default function Admin() {
             </div>
           </div>
         </Card>
+        <TeamNeedsCard adminKey={key} />
         </div>
       )}
 
@@ -1415,5 +1416,135 @@ function DraftOrderRow({ row, onTeamChange, onTeamNameChange, onNeedsChange }) {
         />
       </div>
     </li>
+  );
+}
+
+// Per-team needs editor. Loads all draft_order rows (all rounds), groups by
+// team (keeping the first non-empty needs we see since needs are logically
+// per-team, not per-pick), and posts a bulk update via /admin/team-needs.
+function TeamNeedsCard({ adminKey }) {
+  const [rows, setRows] = useState(null);
+  const [needsMap, setNeedsMap] = useState({}); // team → comma-separated string
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!adminKey) return;
+    try {
+      const data = await api.adminGetDraftOrder(adminKey, { round: 'all' });
+      setRows(data);
+      // Build initial needsMap from the first row seen per team with non-empty needs
+      const map = {};
+      const seen = new Set();
+      for (const r of data) {
+        if (seen.has(r.team)) continue;
+        seen.add(r.team);
+        const needs = Array.isArray(r.team_needs) ? r.team_needs.join(', ') : '';
+        map[r.team] = needs;
+      }
+      // Also include teams that have only empty needs (ensure every team has an entry)
+      for (const r of data) if (!(r.team in map)) map[r.team] = '';
+      setNeedsMap(map);
+      setDirty(false);
+    } catch (e) {
+      console.error('[team-needs load]', e);
+      toast.error('Failed to load draft order');
+    }
+  }, [adminKey]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Unique team list sorted by their earliest pick number — matches the order
+  // teams will actually pick in, so the editor reads like a draft order.
+  const teamsInOrder = useMemo(() => {
+    if (!rows) return [];
+    const firstPick = new Map();
+    for (const r of rows) {
+      if (!firstPick.has(r.team) || r.pick_number < firstPick.get(r.team)) {
+        firstPick.set(r.team, r.pick_number);
+      }
+    }
+    return [...firstPick.entries()]
+      .sort((a, b) => a[1] - b[1])
+      .map(([team, pick]) => ({ team, firstPick: pick }));
+  }, [rows]);
+
+  function updateNeeds(team, value) {
+    setNeedsMap((prev) => ({ ...prev, [team]: value }));
+    setDirty(true);
+  }
+
+  async function saveAll() {
+    if (!adminKey) return;
+    setBusy(true);
+    try {
+      const payload = {};
+      for (const [team, str] of Object.entries(needsMap)) {
+        payload[team] = str
+          .split(',')
+          .map((s) => s.trim().toUpperCase())
+          .filter(Boolean);
+      }
+      const res = await api.adminSetTeamNeeds(adminKey, payload);
+      toast.success(`Updated ${res.rows_updated} draft_order rows`);
+      setDirty(false);
+      // Also bust any cached draft order so the team-mock page picks up the
+      // new needs on next visit.
+      invalidateCache('draft-order');
+    } catch (e) {
+      console.error('[team-needs save]', e);
+      toast.error(e.message || 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!rows) {
+    return (
+      <Card className="p-5">
+        <div className="text-text-muted text-sm">Loading draft order…</div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div>
+          <h3 className="font-semibold text-text-primary">Team Needs</h3>
+          <p className="text-text-muted text-xs mt-0.5">
+            Propagates to every draft_order row for that team across all 7 rounds.
+            The team-mock bot uses these to weight BPA picks toward positions of need.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={load} disabled={busy}>
+            Reload
+          </Button>
+          <Button size="sm" onClick={saveAll} disabled={busy || !dirty}>
+            {busy ? 'Saving…' : dirty ? 'Save Needs' : 'Saved'}
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {teamsInOrder.map(({ team, firstPick }) => (
+          <div key={team} className="flex items-center gap-2 p-2 rounded-md border border-border-subtle bg-bg-surface/40">
+            <span className="font-mono text-[10px] text-text-muted w-6 text-right shrink-0">
+              #{firstPick}
+            </span>
+            <TeamLogo abbr={team} size="xs" />
+            <span className="font-display font-bold text-[11px] uppercase tracking-wide text-text-primary w-10 shrink-0">
+              {team}
+            </span>
+            <input
+              value={needsMap[team] || ''}
+              onChange={(e) => updateNeeds(team, e.target.value)}
+              placeholder="QB, WR, OT, EDGE"
+              className="flex-1 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-xs uppercase min-w-0"
+            />
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

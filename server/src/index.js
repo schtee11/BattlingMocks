@@ -48,6 +48,21 @@ app.get('/health', async (_req, res) => {
   }
 });
 
+// Build stamp — lets us verify which revision is live by hitting /version
+const BUILD_STAMP = {
+  started_at: new Date().toISOString(),
+  git_sha: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || 'unknown',
+};
+app.get('/version', (_req, res) => res.json(BUILD_STAMP));
+
+// Request-level log for production diagnostics. Writes to stdout which
+// Railway tails into the deployment logs, so every hit (including the
+// failing POST /api/team-mocks) should surface here.
+app.use((req, _res, next) => {
+  console.log(`[req] ${req.method} ${req.originalUrl}`);
+  next();
+});
+
 app.get('/api/settings', async (_req, res) => {
   const { rows } = await pool.query('SELECT * FROM draft_settings WHERE id = 1');
   const { rows: countRows } = await pool.query(
@@ -68,6 +83,14 @@ app.use('/api/auth', auth);
 app.use('/api/team-mocks', teamMocks);
 app.use('/api/trade-values', tradeValues);
 
+// Catch-all 404 — log the path so Railway deploy logs show exactly what
+// route missed. Critical for debugging the "POST /api/team-mocks 404"
+// deployment issue.
+app.use((req, res) => {
+  console.warn(`[404] ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ error: 'not found', path: req.originalUrl });
+});
+
 // Consistent error fallback
 app.use((err, _req, res, _next) => {
   console.error('[error]', err);
@@ -76,24 +99,32 @@ app.use((err, _req, res, _next) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
+  console.log(`[server] ══════════════════════════════════════════`);
   console.log(`[server] listening on :${PORT}`);
-  // Dump registered routes for debugging Railway deploys. Helps confirm which
-  // version of the code is actually running when endpoints return 404.
-  const registered = [];
-  for (const layer of app._router?.stack || []) {
-    if (layer.name === 'router' && layer.regexp) {
-      const base = layer.regexp.toString()
-        .replace('/^\\', '')
-        .replace('\\/?(?=\\/|$)/i', '')
-        .replace(/\\\//g, '/');
-      for (const r of layer.handle.stack || []) {
-        if (r.route) {
-          const method = Object.keys(r.route.methods)[0]?.toUpperCase();
-          registered.push(`${method} ${base}${r.route.path}`);
+  console.log(`[server] started at ${BUILD_STAMP.started_at}`);
+  console.log(`[server] git sha    ${BUILD_STAMP.git_sha}`);
+  // Dump registered routes. Wrapped in try/catch so a route-dump bug can
+  // never crash the listen callback.
+  try {
+    const registered = [];
+    for (const layer of app._router?.stack || []) {
+      if (layer.name === 'router' && layer.regexp) {
+        const base = layer.regexp.toString()
+          .replace('/^\\', '')
+          .replace('\\/?(?=\\/|$)/i', '')
+          .replace(/\\\//g, '/');
+        for (const r of layer.handle.stack || []) {
+          if (r.route) {
+            const method = Object.keys(r.route.methods)[0]?.toUpperCase();
+            registered.push(`${method} ${base}${r.route.path}`);
+          }
         }
       }
     }
+    console.log(`[server] ${registered.length} routes registered`);
+    for (const r of registered.sort()) console.log(`  ${r}`);
+  } catch (e) {
+    console.warn('[server] route dump failed:', e.message);
   }
-  console.log(`[server] ${registered.length} routes registered`);
-  for (const r of registered.sort()) console.log(`  ${r}`);
+  console.log(`[server] ══════════════════════════════════════════`);
 });

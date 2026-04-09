@@ -152,9 +152,12 @@ export const api = {
     request('/api/admin/trades/calculate', { method: 'POST', body, adminKey: key }),
   tradeApply: (key, body) =>
     request('/api/admin/trades/apply', { method: 'POST', body, adminKey: key }),
-  adminGetDraftOrder: (key) => request('/api/admin/draft-order', { adminKey: key }),
+  adminGetDraftOrder: (key, { round = 'all' } = {}) =>
+    request(`/api/admin/draft-order?round=${round}`, { adminKey: key }),
   adminSetDraftOrder: (key, order) =>
     request('/api/admin/draft-order', { method: 'POST', body: { order }, adminKey: key }),
+  adminSetTeamNeeds: (key, needs) =>
+    request('/api/admin/team-needs', { method: 'POST', body: { needs }, adminKey: key }),
   adminGetActualPicks: (key) => request('/api/admin/actual-picks', { adminKey: key }),
   setActualPick: (key, body) =>
     request('/api/admin/actual-picks', { method: 'POST', body, adminKey: key }),

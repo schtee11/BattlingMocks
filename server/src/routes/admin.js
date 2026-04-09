@@ -563,6 +563,44 @@ router.post('/draft-order', async (req, res) => {
   }
 });
 
+// ---------- Team needs (bulk per-team) ----------
+// Needs are stored per draft_order row, but the UI treats them as per-team
+// since a team's needs don't meaningfully change between their round 1 pick
+// and their round 7 pick. This endpoint takes a { TEAM: [...needs] } map and
+// propagates each team's needs to every draft_order row owned by that team
+// across all 7 rounds. The team-mock bot picker reads team_needs off the
+// row, so setting them here directly feeds the BPA + needs algorithm.
+router.post('/team-needs', async (req, res) => {
+  const { needs } = req.body || {};
+  if (!needs || typeof needs !== 'object' || Array.isArray(needs)) {
+    return res.status(400).json({ error: 'needs object required' });
+  }
+
+  const client = await pool.connect();
+  let updated = 0;
+  try {
+    await client.query('BEGIN');
+    for (const [team, arr] of Object.entries(needs)) {
+      if (!team || !Array.isArray(arr)) continue;
+      // Normalize: uppercase, trim, dedupe, filter blanks, clamp to 10 entries.
+      const cleaned = [...new Set(arr.map((s) => String(s).trim().toUpperCase()).filter(Boolean))].slice(0, 10);
+      const { rowCount } = await client.query(
+        'UPDATE draft_order SET team_needs = $1, updated_at = NOW() WHERE team = $2',
+        [cleaned, team]
+      );
+      updated += rowCount;
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, rows_updated: updated });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('[team-needs]', e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ---------- Actual picks ----------
 router.get('/actual-picks', async (_req, res) => {
   const { rows } = await pool.query(
