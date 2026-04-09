@@ -36,6 +36,7 @@ import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { Modal } from '../components/ui/Modal.jsx';
 import { ProgressBar } from '../components/ui/ProgressBar.jsx';
+import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 
@@ -189,14 +190,29 @@ export default function Draft() {
   }, [isMobile, locked, selectedPlayer, picks, assignPlayerToSlot, clearSlot]);
 
   // Mobile drawer prospect tap: assign to the slot the drawer was opened for,
-  // then close. No "select first" step needed.
+  // then jump to the next empty slot so the user can keep picking without
+  // re-opening the drawer. Closes only when every slot is filled.
   const pickForDrawerSlot = useCallback((player) => {
     if (draftingForSlot == null || locked) return;
-    assignPlayerToSlot(player.id, draftingForSlot);
-    const team = orderByPick.get(draftingForSlot);
-    toast.success(`Pick ${draftingForSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`);
-    setDraftingForSlot(null);
-  }, [draftingForSlot, locked, orderByPick, assignPlayerToSlot]);
+    const justFilled = draftingForSlot;
+    assignPlayerToSlot(player.id, justFilled);
+    const team = orderByPick.get(justFilled);
+    toast.success(`Pick ${justFilled}${team ? ` · ${team.team}` : ''}: ${player.name}`);
+    // Find the next empty slot — search forward, then wrap. Treat justFilled
+    // as filled (it isn't yet in `picks` until React commits the state update,
+    // but we know it will be).
+    const isEmpty = (i) => i !== justFilled && !picks[i];
+    let next = null;
+    for (let i = justFilled + 1; i <= 32; i++) {
+      if (isEmpty(i)) { next = i; break; }
+    }
+    if (next == null) {
+      for (let i = 1; i < justFilled; i++) {
+        if (isEmpty(i)) { next = i; break; }
+      }
+    }
+    setDraftingForSlot(next); // null when all 32 are filled, which closes the drawer
+  }, [draftingForSlot, locked, orderByPick, assignPlayerToSlot, picks]);
 
   const handleProspectClick = useCallback((player) => {
     setSelectedPlayer((prev) => {
@@ -500,42 +516,50 @@ export default function Draft() {
           >
             <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mt-2 mb-2" />
 
-            {/* Drawer header — shows what we're drafting for */}
+            {/* Drawer header — shows what we're drafting for + progress */}
             <div className="px-4 pb-3 border-b border-border-subtle">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="caption text-[9px]">Drafting</div>
-                  <div className="font-display font-bold text-text-primary text-lg uppercase tracking-wide leading-tight">
-                    Pick {draftingForSlot}
-                    {orderByPick.get(draftingForSlot) && (
-                      <span className="text-accent ml-2">{orderByPick.get(draftingForSlot).team}</span>
-                    )}
-                  </div>
-                  {orderByPick.get(draftingForSlot)?.team_name && (
-                    <div className="text-text-muted text-[11px] truncate">
-                      {orderByPick.get(draftingForSlot).team_name}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  <TeamLogo abbr={orderByPick.get(draftingForSlot)?.team} size="sm" />
+                  <div className="min-w-0">
+                    <div className="caption text-[9px]">Pick {draftingForSlot} · On the clock</div>
+                    <div className="font-display font-bold text-text-primary text-lg uppercase tracking-wide leading-tight truncate">
+                      {orderByPick.get(draftingForSlot)?.team_name || 'TBD'}
                     </div>
-                  )}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="caption text-[9px]">Progress</div>
+                  <div className="font-mono font-bold tabular leading-none mt-0.5">
+                    <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
+                    <span className="text-text-muted">/32</span>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setDraftingForSlot(null)}
                   aria-label="Close"
-                  className="text-text-muted hover:text-text-primary text-2xl px-3 -mr-1"
+                  className="text-text-muted hover:text-text-primary text-2xl px-2 -mr-1 shrink-0"
                 >
                   ✕
                 </button>
               </div>
+              {/* Mini segmented progress bar */}
+              <div className="mt-2">
+                <ProgressBar picks={picks} playerById={playerById} />
+              </div>
               {picks[draftingForSlot] && (
-                <div className="mt-2 text-[11px] text-text-secondary">
-                  Currently:{' '}
-                  <span className="text-text-primary font-semibold">
-                    {playerById.get(picks[draftingForSlot])?.name}
+                <div className="mt-2 text-[11px] text-text-secondary flex items-center justify-between">
+                  <span>
+                    Currently:{' '}
+                    <span className="text-text-primary font-semibold">
+                      {playerById.get(picks[draftingForSlot])?.name}
+                    </span>
                   </span>
                   <button
                     type="button"
-                    onClick={() => { clearSlot(draftingForSlot); setDraftingForSlot(null); }}
-                    className="ml-2 text-red-400 hover:text-red-300 text-[11px] underline"
+                    onClick={() => clearSlot(draftingForSlot)}
+                    className="text-red-400 hover:text-red-300 text-[11px] underline"
                   >
                     Clear
                   </button>

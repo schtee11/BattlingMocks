@@ -12,7 +12,7 @@ function ProspectCardInner({ player, used, selected, onClick, onDraft, onClockSl
 
   const color = posHex(player.position);
 
-  const base = 'relative p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 touch-none border will-anim';
+  const base = 'relative p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 touch-pan-y md:touch-none border will-anim';
   const state = selected
     ? 'border-accent bg-accent/[0.07] shadow-glow'
     : used
