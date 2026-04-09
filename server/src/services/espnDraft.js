@@ -212,49 +212,138 @@ function normalizeProspect(raw, fallbackRank) {
   return { name, position, school, headshot_url, rank };
 }
 
+// Deep-walk any object/array looking for collections of prospect-like records.
+function findProspectArrays(node, depth = 0, out = []) {
+  if (depth > 8 || !node) return out;
+  if (Array.isArray(node)) {
+    // Consider this array if most entries look like prospect objects
+    const sample = node.slice(0, 5);
+    const looksLikeProspects =
+      sample.length > 0 &&
+      sample.every(
+        (x) =>
+          x &&
+          typeof x === 'object' &&
+          !x.$ref &&
+          (x.displayName || x.fullName || x.name || x.athlete) &&
+          (x.position || x.pos || x.athlete?.position)
+      );
+    if (looksLikeProspects && node.length >= 10) out.push(node);
+    // Also recurse so we don't miss nested arrays
+    for (const item of node) findProspectArrays(item, depth + 1, out);
+  } else if (typeof node === 'object') {
+    for (const key of Object.keys(node)) findProspectArrays(node[key], depth + 1, out);
+  }
+  return out;
+}
+
 async function fetchProspectsFromEspnAttempts(year, limit) {
-  const urls = [
+  // Strategy A: direct JSON API attempts (speculative — ESPN may or may not expose these)
+  const apiUrls = [
     `https://site.api.espn.com/apis/site/v2/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
     `https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
     `https://site.web.api.espn.com/apis/v3/sports/football/nfl/draft/prospects?year=${year}&limit=${limit}`,
     `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${year}/draft/prospects?limit=${limit}`,
     `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/draft/prospects?limit=${limit}`,
+    // Also try the scoreboard/header endpoint which works for draft order —
+    // it might have a bestAvailable or prospects section we didn't look at.
+    `https://site.web.api.espn.com/apis/v2/scoreboard/header?sport=football&league=nfl&draft_year=${year}&draft_round=1`,
   ];
 
-  for (const url of urls) {
+  for (const url of apiUrls) {
     try {
       const data = await fetchJson(url);
       logRawOnce(`prospects ${year} @ ${url.replace(/^.*espn\.com/, '')}`, data);
 
-      // Find an array of prospects anywhere in the response
-      const candidates = [
+      // Check well-known top-level keys first
+      const knownKeys = [
         data?.prospects,
         data?.items,
         data?.athletes,
         data?.results,
         data?.rankings,
         data?.data,
+        data?.bestAvailable,
+        data?.sports?.[0]?.leagues?.[0]?.draft?.prospects,
+        data?.sports?.[0]?.leagues?.[0]?.draft?.bestAvailable,
       ].filter(Array.isArray);
 
-      for (const arr of candidates) {
-        // If items are $refs, we'd need to follow them, but core API is slow
-        // so we only use direct data and skip ref-only responses.
+      for (const arr of knownKeys) {
         const flat = arr.filter((x) => x && typeof x === 'object' && !x.$ref);
-        if (flat.length === 0) continue;
+        if (flat.length >= 10) {
+          const prospects = flat.map((raw, i) => normalizeProspect(raw, i + 1)).filter(Boolean);
+          if (prospects.length > 0) {
+            console.log(`[espn prospects] found ${prospects.length} in known key at ${url.replace(/^.*espn\.com/, '')}`);
+            return prospects;
+          }
+        }
+      }
 
-        const prospects = flat
-          .map((raw, i) => normalizeProspect(raw, i + 1))
-          .filter(Boolean);
-
-        if (prospects.length > 0) {
-          console.log(`[espn prospects] got ${prospects.length} from ${url.replace(/^.*espn\.com/, '')}`);
+      // Deep-walk fallback
+      const found = findProspectArrays(data);
+      for (const arr of found) {
+        const prospects = arr.map((raw, i) => normalizeProspect(raw, i + 1)).filter(Boolean);
+        if (prospects.length >= 10) {
+          console.log(`[espn prospects] deep-walk found ${prospects.length} at ${url.replace(/^.*espn\.com/, '')}`);
           return prospects;
         }
       }
     } catch (e) {
-      console.warn('[espn prospects] strategy failed:', e.message);
+      console.warn('[espn prospects] api strategy failed:', e.message);
     }
   }
+
+  // Strategy B: scrape ESPN's public draft prospects HTML page.
+  // ESPN's Next.js pages ship full data in <script id="__NEXT_DATA__"> —
+  // pulling that and walking it usually works even when no JSON API is public.
+  const htmlUrls = [
+    `https://www.espn.com/nfl/draft/prospects`,
+    `https://www.espn.com/nfl/draft/rankings`,
+    `https://www.espn.com/nfl/draft/bestavailable`,
+  ];
+
+  for (const url of htmlUrls) {
+    try {
+      const r = await fetch(url, {
+        headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      });
+      if (!r.ok) continue;
+      const html = await r.text();
+
+      // Common embedded JSON patterns on ESPN pages:
+      //   <script id="__NEXT_DATA__" type="application/json">{...}</script>
+      //   window.espn.data = {...};
+      //   <script>window.__ESPN_DATA__ = {...}</script>
+      const patterns = [
+        /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/,
+        /window\.espn\.data\s*=\s*(\{[\s\S]*?\});/,
+        /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/,
+        /window\.__ESPN_DATA__\s*=\s*(\{[\s\S]*?\});/,
+      ];
+
+      for (const re of patterns) {
+        const m = html.match(re);
+        if (!m) continue;
+        try {
+          const data = JSON.parse(m[1]);
+          logRawOnce(`prospects html ${url.replace(/^.*espn\.com/, '')}`, data);
+          const found = findProspectArrays(data);
+          for (const arr of found) {
+            const prospects = arr.map((raw, i) => normalizeProspect(raw, i + 1)).filter(Boolean);
+            if (prospects.length >= 10) {
+              console.log(`[espn prospects] html scrape got ${prospects.length} from ${url}`);
+              return prospects;
+            }
+          }
+        } catch (e) {
+          console.warn('[espn prospects] html parse error:', e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('[espn prospects] html strategy failed:', e.message);
+    }
+  }
+
   return [];
 }
 
