@@ -44,7 +44,17 @@ export function invalidateCache(prefix) {
 
 export const api = {
   // public — cached where safe
-  getPlayers: () => cached('players', 5 * 60_000, () => request('/api/players')),
+  getPlayers: ({ fresh = false } = {}) => {
+    if (fresh) invalidateCache('players');
+    // When fresh, add a cache-bust query param so the browser HTTP cache
+    // (Cache-Control max-age=300) gets bypassed too — invalidating the
+    // in-memory cache alone isn't enough.
+    return cached(
+      'players',
+      5 * 60_000,
+      () => request(fresh ? `/api/players?_=${Date.now()}` : '/api/players')
+    );
+  },
   getDraftOrder: () => cached('draft-order', 60 * 60_000, () => request('/api/draft-order')),
   getSettings: () => cached('settings', 30_000, () => request('/api/settings')),
   getStats: () => cached('stats', 30_000, () => request('/api/stats')),

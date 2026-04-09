@@ -106,10 +106,10 @@ export default function Admin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userIsAdmin]);
 
-  async function loadAll() {
+  async function loadAll(opts = {}) {
     try {
       const [p, a, o, s] = await Promise.all([
-        api.getPlayers(),
+        api.getPlayers({ fresh: !!opts.fresh }),
         api.adminGetActualPicks(key),
         api.adminGetDraftOrder(key),
         api.getSettings(),
@@ -339,7 +339,7 @@ export default function Admin() {
       invalidateCache('players');
       setNewP({ name: '', position: '', school: '' });
       toast.success('Added');
-      loadAll();
+      loadAll({ fresh: true });
     } catch (e) { toast.error(e.message); }
   }
 
@@ -349,7 +349,7 @@ export default function Admin() {
       invalidateCache('players');
       toast.success('Deleted');
       setConfirmDelete(null);
-      loadAll();
+      loadAll({ fresh: true });
     } catch (e) { toast.error(e.message); }
   }
 
@@ -358,7 +358,7 @@ export default function Admin() {
       await api.updatePlayer(key, id, { headshot_url: url || null });
       invalidateCache('players');
       toast.success('Headshot saved');
-      loadAll();
+      loadAll({ fresh: true });
     } catch (e) { toast.error(e.message); }
   }
 
@@ -450,6 +450,8 @@ export default function Admin() {
       const r = await api.fetchHeadshots(key, { overwrite });
       toast.dismiss(id);
       toast.success(`Scanned ${r.scanned} · updated ${r.updated} · missed ${r.failed}`, { duration: 5000 });
+      // Force fresh fetch so the new headshots actually appear in the UI
+      loadAll({ fresh: true });
       if (r.samples?.length) {
         // Log sample URLs so you can click them in the devtools console to verify
         // eslint-disable-next-line no-console
@@ -471,7 +473,7 @@ export default function Admin() {
       const r = await api.importProspects(key);
       invalidateCache('players');
       toast.success(`Added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}`);
-      loadAll();
+      loadAll({ fresh: true });
     } catch (e) { toast.error(e.message); }
   }
 
@@ -489,7 +491,7 @@ export default function Admin() {
       } else {
         toast.success(`Added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}`);
         invalidateCache('players');
-        loadAll();
+        loadAll({ fresh: true });
       }
     } catch (e) {
       toast.dismiss(id);
@@ -517,7 +519,7 @@ export default function Admin() {
       invalidateCache('players');
       setBulkImportText('');
       setBulkImportOpen(false);
-      loadAll();
+      loadAll({ fresh: true });
     } catch (e) {
       toast.error(e.message);
     } finally {
