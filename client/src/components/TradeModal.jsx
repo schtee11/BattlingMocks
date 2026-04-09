@@ -119,6 +119,33 @@ export function TradeModal({
   // realistic trades between any two teams — all wording stays neutral and
   // references the teams by name. When false (Team Mock mode), the user IS
   // the "from" team so "you" wording is appropriate.
+  //
+  // Context-aware acceptance:
+  //
+  //   1. Hard-reject 1-for-1 swaps — real teams never trade a single pick
+  //      for a single pick regardless of chart value.
+  //
+  //   2. Direction premium — NFL teams demand compensation for moving picks:
+  //        - Trading UP (giving more picks, getting fewer): +8% per extra
+  //          pick given up. 2-for-1 = 8%, 3-for-1 = 16%, 4-for-1 = 24%.
+  //        - Trading DOWN (giving fewer, getting more): up to -12% discount
+  //          because quantity-for-quality deals close more easily.
+  //
+  //   3. Top-pick resistance — teams don't love giving up elite picks even
+  //      at chart value. The partner demands a premium scaled to the best
+  //      pick they're giving up:
+  //        - Top 3 overall: +20%
+  //        - Top 10:        +12%
+  //        - Top 20:        +6%
+  //        - R1 (21-32):    +3%
+  //
+  //   4. Package dilution — giving 4+ picks for 1 adds another 5% premium
+  //      because consolidating value into one slot is inherently risky.
+  //
+  // All of the above produce a single required value. The difference
+  // between actual and required drives the verdict (close/fair/overpaying/
+  // rejected). Deterministic — same trade inputs always give the same
+  // verdict so the preview doesn't flicker on re-render.
   function evaluateTrade() {
     if (yourCount === 0 || theirCount === 0) {
       return { ok: false, reason: 'empty', text: 'Pick at least one from each side' };
@@ -132,25 +159,77 @@ export function TradeModal({
           : `${partnerTeam} won't do a 1-for-1 swap — add more picks`,
       };
     }
-    const minRatio = yourCount > theirCount ? 1.10 : yourCount < theirCount ? 0.95 : 1.00;
-    const required = theirTotal * minRatio;
-    if (yourTotal < required) {
-      const shortBy = Math.ceil(required - yourTotal);
+
+    // Symmetric check: figure out who's "moving up" (the team that ends up
+    // with the single best pick in the deal) and require THAT team to pay a
+    // premium. This handles both directions naturally — whether the FROM side
+    // is moving up or down, the mover-up is always the one who must overpay.
+    const fromBest = Math.min(...yourSelected);
+    const partnerBest = Math.min(...theirSelected);
+    const topPickInDeal = Math.min(fromBest, partnerBest);
+
+    // Who receives that top pick? The OPPOSITE side of whoever gives it.
+    const fromIsMovingUp = partnerBest < fromBest;
+    const moverUpTotal = fromIsMovingUp ? yourTotal : theirTotal;
+    const moverDownTotal = fromIsMovingUp ? theirTotal : yourTotal;
+    const moverUpCount = fromIsMovingUp ? yourCount : theirCount;
+    const moverDownCount = fromIsMovingUp ? theirCount : yourCount;
+    const moverUpTeam = fromIsMovingUp ? effectiveFromTeam : partnerTeam;
+
+    // Direction premium: giving multiple picks for fewer costs more.
+    let premium = 0;
+    if (moverUpCount > moverDownCount) {
+      premium += 0.06 * (moverUpCount - moverDownCount);
+    }
+
+    // Package dilution — 4+ picks for 1 adds risk.
+    if (moverUpCount >= 4 && moverDownCount === 1) premium += 0.04;
+
+    // Top-pick resistance: the best pick in the deal is hard to pry loose.
+    if (topPickInDeal <= 3) premium += 0.10;
+    else if (topPickInDeal <= 10) premium += 0.06;
+    else if (topPickInDeal <= 20) premium += 0.03;
+
+    const required = moverDownTotal * (1 + premium);
+
+    if (moverUpTotal < required) {
+      const shortBy = Math.ceil(required - moverUpTotal);
+      const percentShort = (shortBy / required) * 100;
+      if (percentShort < 6) {
+        return {
+          ok: false,
+          reason: 'close',
+          text: fromTeamEditable
+            ? `Very close — ${moverUpTeam} needs ${shortBy} more value`
+            : `Very close — add ${shortBy} more value`,
+        };
+      }
       return {
         ok: false,
         reason: 'undervalued',
         text: fromTeamEditable
-          ? `${partnerTeam} rejects — ${effectiveFromTeam} needs to add ${shortBy} value`
-          : `${partnerTeam} rejects — needs ${shortBy} more value`,
+          ? `${moverUpTeam} needs to add ${shortBy} more value`
+          : `Rejected — needs ${shortBy} more value`,
       };
     }
-    if (yourTotal > required * 1.15) {
+
+    // Accepted — grade the quality of the offer.
+    if (moverUpTotal > required * 1.20) {
       return {
         ok: true,
         reason: 'overpaying',
         text: fromTeamEditable
-          ? `Accepted — ${effectiveFromTeam} overpays`
+          ? `Accepted — ${moverUpTeam} overpays`
           : "Accepted — you're overpaying",
+      };
+    }
+    if (moverUpTotal > required * 1.05) {
+      return {
+        ok: true,
+        reason: 'good',
+        text: fromTeamEditable
+          ? `Good deal — both sides accept`
+          : `Good offer — ${partnerTeam} accepts`,
       };
     }
     return {
@@ -174,6 +253,29 @@ export function TradeModal({
       yourPicks: [...yourSelected],
       theirPicks: [...theirSelected],
     });
+  }
+
+  // Force Trade — bypass the bot's evaluation entirely and apply the trade
+  // as-is. Still enforces the minimum sanity checks (both sides have picks
+  // selected, no hard 1-for-1). Useful when the user wants to simulate a
+  // specific historical or hypothetical trade the bot wouldn't accept on
+  // pure chart math.
+  function handleForce() {
+    if (yourCount === 0 || theirCount === 0) {
+      toast.error('Pick at least one from each side');
+      return;
+    }
+    if (yourCount === 1 && theirCount === 1) {
+      toast.error('1-for-1 swaps are still off the table');
+      return;
+    }
+    onAccepted({
+      fromTeam: effectiveFromTeam,
+      partnerTeam,
+      yourPicks: [...yourSelected],
+      theirPicks: [...theirSelected],
+    });
+    toast('Trade forced through', { icon: '⚡' });
   }
 
   function togglePick(set, setter, pickNum) {
@@ -203,8 +305,17 @@ export function TradeModal({
     );
   }
 
-  const verdictColor =
-    !evalResult.ok ? '#ef4444' : evalResult.reason === 'overpaying' ? '#eab308' : '#22c55e';
+  // Verdict palette:
+  //   fair / good          → green (accepted normally)
+  //   overpaying           → yellow (accepted but you gave up too much)
+  //   close                → orange (reject but within striking distance)
+  //   undervalued / others → red (clear reject)
+  const verdictColor = (() => {
+    if (evalResult.reason === 'overpaying') return '#eab308';
+    if (evalResult.reason === 'close') return '#f97316';
+    if (evalResult.ok) return '#22c55e';
+    return '#ef4444';
+  })();
   const verdictText = evalResult.text;
   const verdictSubtext = (() => {
     if (yourCount === 0 && theirCount === 0) return '';
@@ -368,12 +479,22 @@ export function TradeModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-border-subtle flex gap-2">
+        <div className="px-5 py-4 border-t border-border-subtle flex gap-2 items-center">
           <button
             onClick={onClose}
             className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] text-text-secondary rounded-lg px-4 py-2 border border-border-subtle hover:border-border-focus transition"
           >
             Cancel
+          </button>
+          {/* Force Trade — always visible, styled as a subdued override.
+              Skips the bot's evaluation but still blocks empty/1-for-1. */}
+          <button
+            onClick={handleForce}
+            disabled={yourCount === 0 || theirCount === 0 || (yourCount === 1 && theirCount === 1)}
+            title="Override the bot and accept this trade anyway"
+            className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-gold rounded-lg px-3 py-2 border border-gold/40 hover:bg-gold/[0.08] transition disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            Force
           </button>
           <button
             onClick={handlePropose}
