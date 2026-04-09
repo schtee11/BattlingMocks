@@ -78,6 +78,19 @@ export const api = {
       method: 'POST',
       adminKey: key,
     }),
+  // ESPN draft sync — all Round 1 for Phase 1
+  previewEspnDraft: (key, year = 2026) =>
+    request(`/api/admin/sync/preview?year=${year}`, { adminKey: key }),
+  syncDraftOrderFromEspn: (key, { year = 2026, dry = false } = {}) =>
+    request(`/api/admin/sync/draft-order?year=${year}${dry ? '&dry=1' : ''}`, {
+      method: 'POST',
+      adminKey: key,
+    }),
+  syncPicksFromEspn: (key, { year = 2026, dry = false } = {}) =>
+    request(`/api/admin/sync/picks?year=${year}${dry ? '&dry=1' : ''}`, {
+      method: 'POST',
+      adminKey: key,
+    }),
   adminGetDraftOrder: (key) => request('/api/admin/draft-order', { adminKey: key }),
   adminSetDraftOrder: (key, order) =>
     request('/api/admin/draft-order', { method: 'POST', body: { order }, adminKey: key }),

@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { pool } from '../db/pool.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { importProspects, seedDraftOrder, PROSPECTS_PATH } from '../db/seed.js';
+import { fetchRoundOne, resetLogFlag } from '../services/espnDraft.js';
 
 const router = Router();
 router.use(adminAuth);
@@ -35,6 +36,172 @@ async function runScoringOnClient(client) {
   await client.query('UPDATE draft_settings SET scoring_run_at = NOW() WHERE id = 1');
   return mocks.length;
 }
+
+// ---------- ESPN draft sync (Phase 1, Round 1 only, manual trigger) ----------
+// Both endpoints support ?dry=1 which returns what WOULD be written without
+// touching the DB. Use the dry run first to verify the data looks sane.
+
+function normalizeName(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// GET /api/admin/sync/preview?year=2026 — returns the raw parsed ESPN round-1
+// data without writing anything. Useful for verifying the parser.
+router.get('/sync/preview', async (req, res) => {
+  const year = parseInt(req.query.year, 10) || 2026;
+  resetLogFlag();
+  try {
+    const picks = await fetchRoundOne(year);
+    res.json({ year, count: picks.length, picks });
+  } catch (e) {
+    console.error('[espn preview]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/sync/draft-order?year=2026[&dry=1]
+// Pulls the Round 1 team-per-pick order from ESPN and upserts draft_order.
+// Only overwrites team + team_name. team_needs stays untouched.
+router.post('/sync/draft-order', async (req, res) => {
+  const year = parseInt(req.query.year, 10) || 2026;
+  const dry = req.query.dry === '1';
+  resetLogFlag();
+
+  try {
+    const picks = await fetchRoundOne(year);
+    if (picks.length === 0) {
+      return res.status(502).json({ error: 'ESPN returned no picks; check logs' });
+    }
+
+    const r1 = picks.filter((p) => p.round === 1 && p.pick >= 1 && p.pick <= 32 && p.team_abbr);
+    const summary = {
+      year,
+      dry,
+      fetched: picks.length,
+      round1: r1.length,
+      would_update: r1.length,
+      samples: r1.slice(0, 5),
+    };
+
+    if (dry) return res.json(summary);
+
+    let updated = 0;
+    for (const p of r1) {
+      try {
+        await pool.query(
+          `UPDATE draft_order
+             SET team = $1, team_name = $2, updated_at = NOW()
+           WHERE pick_number = $3`,
+          [p.team_abbr, p.team_name || p.team_abbr, p.pick]
+        );
+        updated++;
+      } catch (e) {
+        console.warn('[sync draft-order] pick', p.pick, e.message);
+      }
+    }
+
+    res.json({ ...summary, updated });
+  } catch (e) {
+    console.error('[sync draft-order]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/sync/picks?year=2026[&dry=1]
+// Pulls Round 1 actual picks from ESPN, matches each by player name against
+// the local players table, upserts actual_picks, then re-scores all mocks.
+router.post('/sync/picks', async (req, res) => {
+  const year = parseInt(req.query.year, 10) || 2026;
+  const dry = req.query.dry === '1';
+  resetLogFlag();
+
+  try {
+    const picks = await fetchRoundOne(year);
+    const withPlayer = picks.filter(
+      (p) => p.round === 1 && p.pick >= 1 && p.pick <= 32 && p.player_name
+    );
+
+    // Load local players once for matching
+    const { rows: localPlayers } = await pool.query(
+      'SELECT id, name, school FROM players'
+    );
+    const byName = new Map();
+    for (const lp of localPlayers) byName.set(normalizeName(lp.name), lp);
+
+    const matched = [];
+    const unmatched = [];
+    for (const p of withPlayer) {
+      const key = normalizeName(p.player_name);
+      let local = byName.get(key);
+      if (!local) {
+        // Last-name + first-initial fuzzy fallback
+        const [first = '', ...rest] = key.split(' ');
+        const last = rest[rest.length - 1] || '';
+        if (last) {
+          local = localPlayers.find((lp) => {
+            const lk = normalizeName(lp.name);
+            return lk.endsWith(' ' + last) && lk.startsWith(first[0] || '');
+          });
+        }
+      }
+      if (local) {
+        matched.push({ ...p, player_id: local.id, matched_name: local.name });
+      } else {
+        unmatched.push(p);
+      }
+    }
+
+    const summary = {
+      year,
+      dry,
+      fetched: picks.length,
+      round1_with_player: withPlayer.length,
+      matched: matched.length,
+      unmatched: unmatched.length,
+      unmatched_samples: unmatched.slice(0, 10),
+      matched_samples: matched.slice(0, 5),
+    };
+
+    if (dry) return res.json(summary);
+
+    // Upsert each matched pick and re-score inside one transaction
+    const client = await pool.connect();
+    let saved = 0;
+    try {
+      await client.query('BEGIN');
+      for (const m of matched) {
+        await client.query(
+          `INSERT INTO actual_picks (pick_number, player_id, team)
+             VALUES ($1, $2, $3)
+           ON CONFLICT (pick_number) DO UPDATE
+             SET player_id = EXCLUDED.player_id,
+                 team = EXCLUDED.team,
+                 entered_at = NOW()`,
+          [m.pick, m.player_id, m.team_abbr || null]
+        );
+        saved++;
+      }
+      const scoredMocks = await runScoringOnClient(client);
+      await client.query('COMMIT');
+      res.json({ ...summary, saved, scored_mocks: scoredMocks });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      console.error('[sync picks]', e);
+      res.status(500).json({ error: e.message });
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    console.error('[sync picks]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ---------- Users (admin view) ----------
 router.get('/users', async (_req, res) => {

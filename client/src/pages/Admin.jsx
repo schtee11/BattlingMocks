@@ -63,6 +63,8 @@ export default function Admin() {
   const [newP, setNewP] = useState({ name: '', position: '', school: '' });
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [fetchingHeadshots, setFetchingHeadshots] = useState(false);
+  const [syncYear, setSyncYear] = useState(2026);
+  const [syncing, setSyncing] = useState(false);
 
   const userIsAdmin = isAdmin(user);
 
@@ -249,6 +251,61 @@ export default function Admin() {
     } catch (e) { toast.error(e.message); }
   }
 
+  async function syncDraftOrderFromEspn(dry) {
+    if (syncing) return;
+    setSyncing(true);
+    const id = toast.loading(dry ? 'Previewing from ESPN…' : 'Syncing draft order from ESPN…');
+    try {
+      const r = await api.syncDraftOrderFromEspn(key, { year: syncYear, dry });
+      toast.dismiss(id);
+      // eslint-disable-next-line no-console
+      console.log('[sync draft-order] result', r);
+      if (dry) {
+        toast(`Preview: ${r.round1} R1 picks fetched (${r.fetched} total)`, { duration: 8000 });
+        if (r.samples?.[0]) {
+          toast(`Sample: Pick ${r.samples[0].pick} → ${r.samples[0].team_abbr}`, { duration: 8000 });
+        }
+      } else {
+        toast.success(`Updated ${r.updated}/${r.round1} picks`);
+        invalidateCache('draft-order');
+        loadAll();
+      }
+    } catch (e) {
+      toast.dismiss(id);
+      toast.error(e.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function syncPicksFromEspn(dry) {
+    if (syncing) return;
+    setSyncing(true);
+    const id = toast.loading(dry ? 'Previewing picks from ESPN…' : 'Syncing picks from ESPN…');
+    try {
+      const r = await api.syncPicksFromEspn(key, { year: syncYear, dry });
+      toast.dismiss(id);
+      // eslint-disable-next-line no-console
+      console.log('[sync picks] result', r);
+      const head = `Fetched ${r.round1_with_player} · matched ${r.matched}${r.unmatched ? ` · ${r.unmatched} unmatched` : ''}`;
+      if (dry) {
+        toast(head, { duration: 8000 });
+        if (r.unmatched_samples?.length) {
+          toast(`Unmatched: ${r.unmatched_samples.map((x) => x.player_name).join(', ')}`, { duration: 10000 });
+        }
+      } else {
+        toast.success(`Saved ${r.saved} picks · scored ${r.scored_mocks} mocks`);
+        invalidateCache('actual-picks');
+        loadAll();
+      }
+    } catch (e) {
+      toast.dismiss(id);
+      toast.error(e.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function fetchHeadshots(overwrite = false) {
     if (fetchingHeadshots) return;
     setFetchingHeadshots(true);
@@ -343,7 +400,33 @@ export default function Admin() {
 
       {/* Results */}
       {tab === 'results' && (
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h3 className="font-semibold text-text-primary">Auto-sync picks from ESPN</h3>
+                <p className="text-text-muted text-xs mt-0.5">
+                  Phase 1 · Round 1 only · manual trigger. Preview first, then sync to save + re-score.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-[11px] text-text-muted font-display uppercase tracking-wide">Year</label>
+                <input
+                  type="number"
+                  value={syncYear}
+                  onChange={(e) => setSyncYear(parseInt(e.target.value, 10) || 2026)}
+                  className="w-20 bg-bg-deep border border-border-focus rounded px-2 py-1.5 text-text-primary text-sm font-mono"
+                />
+                <Button size="sm" variant="secondary" onClick={() => syncPicksFromEspn(true)} disabled={syncing}>
+                  {syncing ? '…' : 'Preview'}
+                </Button>
+                <Button size="sm" onClick={() => syncPicksFromEspn(false)} disabled={syncing}>
+                  {syncing ? 'Syncing…' : 'Sync Picks'}
+                </Button>
+              </div>
+            </div>
+          </Card>
+          <div className="grid md:grid-cols-2 gap-4">
           <Card className="p-5">
             <h3 className="font-semibold text-text-primary mb-3">Enter a pick</h3>
             <form onSubmit={saveActual} className="space-y-3">
@@ -513,11 +596,38 @@ export default function Admin() {
               {actuals.length === 0 && <li className="text-text-muted text-sm">No picks entered yet.</li>}
             </ul>
           </Card>
+          </div>
         </div>
       )}
 
       {/* Draft order */}
       {tab === 'order' && (
+        <div className="space-y-4">
+        <Card className="p-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 className="font-semibold text-text-primary">Sync draft order from ESPN</h3>
+              <p className="text-text-muted text-xs mt-0.5">
+                Phase 1 · Round 1 only · overwrites team abbr + name. Team needs are left untouched.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-[11px] text-text-muted font-display uppercase tracking-wide">Year</label>
+              <input
+                type="number"
+                value={syncYear}
+                onChange={(e) => setSyncYear(parseInt(e.target.value, 10) || 2026)}
+                className="w-20 bg-bg-deep border border-border-focus rounded px-2 py-1.5 text-text-primary text-sm font-mono"
+              />
+              <Button size="sm" variant="secondary" onClick={() => syncDraftOrderFromEspn(true)} disabled={syncing}>
+                {syncing ? '…' : 'Preview'}
+              </Button>
+              <Button size="sm" onClick={() => syncDraftOrderFromEspn(false)} disabled={syncing}>
+                {syncing ? 'Syncing…' : 'Sync Order'}
+              </Button>
+            </div>
+          </div>
+        </Card>
         <Card className="p-5">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -569,6 +679,7 @@ export default function Admin() {
             </DragOverlay>
           </DndContext>
         </Card>
+        </div>
       )}
 
       {/* Players */}
