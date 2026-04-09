@@ -385,6 +385,31 @@ export default function Admin() {
     }
   }
 
+  async function syncAllRoundsFromEspn(dry) {
+    if (syncing) return;
+    setSyncing(true);
+    const id = toast.loading(dry ? 'Previewing all 7 rounds…' : 'Syncing all 7 rounds from ESPN…');
+    try {
+      const r = await api.syncAllRoundsFromEspn(key, { year: syncYear, dry, includeR1: false });
+      toast.dismiss(id);
+      // eslint-disable-next-line no-console
+      console.log('[sync all-rounds] result', r);
+      const byRound = r.by_round ? Object.entries(r.by_round).map(([k, v]) => `R${k}:${v}`).join(' ') : '';
+      if (dry) {
+        toast(`Preview: ${r.would_update} picks across rounds · ${byRound}`, { duration: 10000 });
+      } else {
+        toast.success(`Inserted ${r.inserted}, updated ${r.updated} · ${byRound}`);
+        invalidateCache('draft-order');
+        loadAll();
+      }
+    } catch (e) {
+      toast.dismiss(id);
+      toast.error(e.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function syncPicksFromEspn(dry) {
     if (syncing) return;
     setSyncing(true);
@@ -769,11 +794,11 @@ export default function Admin() {
       {tab === 'order' && (
         <div className="space-y-4">
         <Card className="p-4">
-          <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
             <div>
               <h3 className="font-semibold text-text-primary">Sync draft order from ESPN</h3>
               <p className="text-text-muted text-xs mt-0.5">
-                Phase 1 · Round 1 only · overwrites team abbr + name. Team needs are left untouched.
+                Round 1 only · overwrites team abbr + name. Team needs are left untouched.
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -785,10 +810,26 @@ export default function Admin() {
                 className="w-20 bg-bg-deep border border-border-focus rounded px-2 py-1.5 text-text-primary text-sm font-mono"
               />
               <Button size="sm" variant="secondary" onClick={() => syncDraftOrderFromEspn(true)} disabled={syncing}>
-                {syncing ? '…' : 'Preview'}
+                {syncing ? '…' : 'Preview R1'}
               </Button>
               <Button size="sm" onClick={() => syncDraftOrderFromEspn(false)} disabled={syncing}>
-                {syncing ? 'Syncing…' : 'Sync Order'}
+                {syncing ? 'Syncing…' : 'Sync R1'}
+              </Button>
+            </div>
+          </div>
+          <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t border-border-subtle">
+            <div>
+              <h4 className="text-text-primary text-[13px] font-semibold">All 7 rounds (team-mock prep)</h4>
+              <p className="text-text-muted text-xs mt-0.5">
+                Pulls rounds 2-7 from ESPN and seeds the DB. R1 is preserved (hand-curated + team needs intact).
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" variant="secondary" onClick={() => syncAllRoundsFromEspn(true)} disabled={syncing}>
+                {syncing ? '…' : 'Preview R2-R7'}
+              </Button>
+              <Button size="sm" onClick={() => syncAllRoundsFromEspn(false)} disabled={syncing}>
+                {syncing ? 'Syncing…' : 'Sync R2-R7'}
               </Button>
             </div>
           </div>

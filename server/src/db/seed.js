@@ -64,18 +64,24 @@ export async function importProspects(prospects) {
 export async function seedDraftOrder(order) {
   for (const row of order) {
     const needs = Array.isArray(row.team_needs) ? row.team_needs : [];
+    const round = row.round || 1;
     await pool.query(
-      `INSERT INTO draft_order (pick_number, team, team_name, team_needs)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (pick_number) DO UPDATE
          SET team = EXCLUDED.team,
              team_name = EXCLUDED.team_name,
              team_needs = EXCLUDED.team_needs,
+             round = EXCLUDED.round,
              updated_at = NOW()`,
-      [row.pick_number, row.team, row.team_name, needs]
+      [row.pick_number, row.team, row.team_name, needs, round]
     );
   }
 }
+
+// (Previously seeded R2-R7 from the Rich Hill value chart — that chart is now
+// value-only. Draft order rounds 2-7 are populated from ESPN via the
+// /api/admin/sync/draft-order-all admin endpoint.)
 
 async function run() {
   const prospects = JSON.parse(readFileSync(PROSPECTS_PATH, 'utf8'));
@@ -83,7 +89,8 @@ async function run() {
   const r = await importProspects(prospects);
   console.log(`[seed] prospects: added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}`);
   await seedDraftOrder(order);
-  console.log(`[seed] draft_order: ${order.length} rows upserted`);
+  console.log(`[seed] draft_order R1: ${order.length} rows upserted`);
+  console.log('[seed] R2-R7 sync via /api/admin/sync/draft-order-all (pulls from ESPN)');
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

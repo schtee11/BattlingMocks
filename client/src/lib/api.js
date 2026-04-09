@@ -86,6 +86,12 @@ export const api = {
       method: 'POST',
       adminKey: key,
     }),
+  // Full 7-round draft order sync from ESPN. Preserves R1 by default.
+  syncAllRoundsFromEspn: (key, { year = 2026, dry = false, includeR1 = false } = {}) =>
+    request(
+      `/api/admin/sync/draft-order-all?year=${year}${dry ? '&dry=1' : ''}${includeR1 ? '&include_r1=1' : ''}`,
+      { method: 'POST', adminKey: key }
+    ),
   syncPicksFromEspn: (key, { year = 2026, dry = false } = {}) =>
     request(`/api/admin/sync/picks?year=${year}${dry ? '&dry=1' : ''}`, {
       method: 'POST',

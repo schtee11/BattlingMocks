@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { pool } from '../db/pool.js';
 import { adminAuth } from '../middleware/adminAuth.js';
 import { importProspects, seedDraftOrder, PROSPECTS_PATH } from '../db/seed.js';
-import { fetchRoundOne, resetLogFlag } from '../services/espnDraft.js';
+import { fetchRoundOne, fetchAllRounds, resetLogFlag } from '../services/espnDraft.js';
 import { runScoringOnClient } from '../services/scoring.js';
 import { syncPicksOnce } from '../services/draftSync.js';
 import { startPoller, stopPoller, getStatus as getPollerStatus } from '../services/draftPoller.js';
@@ -80,6 +80,78 @@ router.post('/sync/draft-order', async (req, res) => {
     res.json({ ...summary, updated });
   } catch (e) {
     console.error('[sync draft-order]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/sync/draft-order-all?year=2026[&dry=1][&include_r1=1]
+// Pulls ALL rounds from ESPN and upserts them into draft_order. By default
+// leaves R1 alone (so hand-curated team names + annotations stay). Pass
+// include_r1=1 to overwrite round 1 too.
+router.post('/sync/draft-order-all', async (req, res) => {
+  const year = parseInt(req.query.year, 10) || 2026;
+  const dry = req.query.dry === '1';
+  const includeR1 = req.query.include_r1 === '1';
+  resetLogFlag();
+
+  try {
+    const picks = await fetchAllRounds(year);
+    if (picks.length === 0) {
+      return res.status(502).json({ error: 'ESPN returned no picks across any round; check logs' });
+    }
+
+    const filtered = picks.filter((p) => {
+      if (!p.team_abbr) return false;
+      if (!includeR1 && p.round === 1) return false;
+      return p.pick >= 1 && p.pick <= 262;
+    });
+
+    // Group by round for the summary
+    const byRound = {};
+    for (const p of filtered) {
+      byRound[p.round] = (byRound[p.round] || 0) + 1;
+    }
+
+    const summary = {
+      year,
+      dry,
+      include_r1: includeR1,
+      fetched: picks.length,
+      would_update: filtered.length,
+      by_round: byRound,
+      samples: filtered.slice(0, 5),
+    };
+
+    if (dry) return res.json(summary);
+
+    let inserted = 0;
+    let updated = 0;
+    for (const p of filtered) {
+      try {
+        const { rowCount: existed } = await pool.query(
+          'SELECT 1 FROM draft_order WHERE pick_number = $1',
+          [p.pick]
+        );
+        await pool.query(
+          `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round)
+           VALUES ($1, $2, $3, ARRAY[]::TEXT[], $4)
+           ON CONFLICT (pick_number) DO UPDATE
+             SET team = EXCLUDED.team,
+                 team_name = EXCLUDED.team_name,
+                 round = EXCLUDED.round,
+                 updated_at = NOW()`,
+          [p.pick, p.team_abbr, p.team_name || p.team_abbr, p.round]
+        );
+        if (existed) updated++;
+        else inserted++;
+      } catch (e) {
+        console.warn('[sync draft-order-all] pick', p.pick, e.message);
+      }
+    }
+
+    res.json({ ...summary, inserted, updated });
+  } catch (e) {
+    console.error('[sync draft-order-all]', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -373,10 +445,22 @@ router.post('/fetch-headshots', async (req, res) => {
 });
 
 // ---------- Draft order ----------
-router.get('/draft-order', async (_req, res) => {
-  const { rows } = await pool.query(
-    'SELECT pick_number, team, team_name, team_needs FROM draft_order ORDER BY pick_number'
-  );
+router.get('/draft-order', async (req, res) => {
+  // Same round filter as the public endpoint — admin UI stays R1 unless
+  // explicitly asking for more via ?round=all.
+  const roundParam = (req.query.round || '1').toString().toLowerCase();
+  let rows;
+  if (roundParam === 'all') {
+    ({ rows } = await pool.query(
+      'SELECT pick_number, team, team_name, team_needs, round FROM draft_order ORDER BY pick_number'
+    ));
+  } else {
+    const round = parseInt(roundParam, 10) || 1;
+    ({ rows } = await pool.query(
+      'SELECT pick_number, team, team_name, team_needs, round FROM draft_order WHERE round = $1 ORDER BY pick_number',
+      [round]
+    ));
+  }
   res.json(rows);
 });
 

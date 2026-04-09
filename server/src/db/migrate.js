@@ -65,6 +65,25 @@ CREATE TABLE IF NOT EXISTS draft_order (
 
 ALTER TABLE draft_order ADD COLUMN IF NOT EXISTS team_needs TEXT[] DEFAULT ARRAY[]::TEXT[];
 
+-- Phase 3: loosen pick_number checks + add round column so the schema can
+-- hold all 7 rounds. Existing R1 data stays intact (default round = 1).
+ALTER TABLE draft_order ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE actual_picks ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE mock_picks ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE draft_order DROP CONSTRAINT IF EXISTS draft_order_pick_number_check;
+ALTER TABLE draft_order ADD CONSTRAINT draft_order_pick_number_check CHECK (pick_number BETWEEN 1 AND 262);
+
+ALTER TABLE actual_picks DROP CONSTRAINT IF EXISTS actual_picks_pick_number_check;
+ALTER TABLE actual_picks ADD CONSTRAINT actual_picks_pick_number_check CHECK (pick_number BETWEEN 1 AND 262);
+
+ALTER TABLE mock_picks DROP CONSTRAINT IF EXISTS mock_picks_pick_number_check;
+ALTER TABLE mock_picks ADD CONSTRAINT mock_picks_pick_number_check CHECK (pick_number BETWEEN 1 AND 262);
+
+CREATE INDEX IF NOT EXISTS idx_draft_order_round ON draft_order(round);
+CREATE INDEX IF NOT EXISTS idx_actual_picks_round ON actual_picks(round);
+CREATE INDEX IF NOT EXISTS idx_mock_picks_round ON mock_picks(round);
+
 INSERT INTO draft_settings (id, draft_year, is_locked)
 VALUES (1, 2026, FALSE)
 ON CONFLICT (id) DO NOTHING;

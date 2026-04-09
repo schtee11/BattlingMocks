@@ -132,10 +132,38 @@ async function fetchFromSiteWeb(year, round) {
 }
 
 // Public: fetch round N (default 1), deduped and sorted by pick number.
-export async function fetchRoundOne(year) {
-  const picks = await fetchFromSiteWeb(year, 1);
+export async function fetchRound(year, round = 1) {
+  const picks = await fetchFromSiteWeb(year, round);
   const byPick = new Map();
   for (const p of picks) if (p && p.pick) byPick.set(p.pick, p);
+  return Array.from(byPick.values()).sort((a, b) => a.pick - b.pick);
+}
+
+// Back-compat alias used by Phase 1/2 callers
+export async function fetchRoundOne(year) {
+  return fetchRound(year, 1);
+}
+
+// Fetch all 7 rounds sequentially. Rounds that return 0 picks are skipped
+// (happens for unannounced comp picks in future drafts). Result is a flat,
+// sorted list of picks across all rounds.
+export async function fetchAllRounds(year) {
+  const all = [];
+  for (let r = 1; r <= 7; r++) {
+    try {
+      const picks = await fetchRound(year, r);
+      for (const p of picks) {
+        // Ensure round field is set — the parser defaults to the requested round
+        if (!p.round) p.round = r;
+        all.push(p);
+      }
+    } catch (e) {
+      console.warn(`[espn fetchAllRounds] round ${r} failed:`, e.message);
+    }
+  }
+  // Dedupe in case a pick shows up in multiple rounds' responses
+  const byPick = new Map();
+  for (const p of all) if (p && p.pick) byPick.set(p.pick, p);
   return Array.from(byPick.values()).sort((a, b) => a.pick - b.pick);
 }
 
