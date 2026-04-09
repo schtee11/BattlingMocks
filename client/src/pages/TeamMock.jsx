@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { toPng } from 'html-to-image';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam } from '../lib/botPicker.js';
@@ -114,8 +115,77 @@ function SavedView({ savedMock, players, onRestart }) {
   }, [myPicks]);
   const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
 
+  // Share export — renders a hidden ExportCard off-screen, captures it as
+  // PNG, then either fires the native share sheet (mobile) or downloads.
+  const exportRef = useRef(null);
+  const [exporting, setExporting] = useState(false);
+  async function handleShare() {
+    if (!exportRef.current) return;
+    setExporting(true);
+    try {
+      const dataUrl = await toPng(exportRef.current, {
+        cacheBust: true,
+        pixelRatio: 2,
+        backgroundColor: '#0a0f1c',
+        // Skip headshot images that fail CORS; the fallback initials render
+        // server-free and always succeed.
+        filter: (node) => !(node.tagName === 'IMG' && node.dataset?.skipCapture === 'true'),
+      });
+      const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
+      // Try Web Share API first (mobile) — fall back to download link
+      if (navigator.canShare) {
+        try {
+          const blob = await (await fetch(dataUrl)).blob();
+          const file = new File([blob], fileName, { type: 'image/png' });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: savedMock.title || `${userTeam} Team Mock`,
+              text: `My ${userTeam} mock draft — made on MockDraft Showdown`,
+            });
+            setExporting(false);
+            return;
+          }
+        } catch {
+          // fall through to download
+        }
+      }
+      const link = document.createElement('a');
+      link.download = fileName;
+      link.href = dataUrl;
+      link.click();
+      toast.success('Downloaded — share it with the squad');
+    } catch (e) {
+      console.error('[share]', e);
+      toast.error('Could not generate image');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+      {/* Off-screen export card — positioned far offscreen so it renders but
+          stays invisible; html-to-image captures it into a PNG on demand. */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: -10000,
+          zIndex: -1,
+          pointerEvents: 'none',
+        }}
+        aria-hidden
+      >
+        <ExportCard
+          ref={exportRef}
+          savedMock={savedMock}
+          myPicks={myPicks}
+          byId={byId}
+          userTeam={userTeam}
+        />
+      </div>
+
       {/* ── Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-4 mb-8 sm:mb-10">
         <div className="flex items-center gap-4 sm:gap-5">
@@ -137,12 +207,22 @@ function SavedView({ savedMock, players, onRestart }) {
             </p>
           </div>
         </div>
-        <button
-          onClick={onRestart}
-          className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition"
-        >
-          ← Back
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleShare}
+            disabled={exporting}
+            className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg text-bg-deep transition hover:brightness-110 disabled:opacity-50"
+            style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+          >
+            {exporting ? 'Rendering…' : 'Share'}
+          </button>
+          <button
+            onClick={onRestart}
+            className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition"
+          >
+            ← Back
+          </button>
+        </div>
       </div>
 
       {/* ── Picks by round ── */}
@@ -207,6 +287,252 @@ function SavedView({ savedMock, players, onRestart }) {
   );
 }
 
+// ─── Shareable Export Card ────────────────────────────────────────────────────
+// Self-contained card optimized for PNG capture via html-to-image. Uses inline
+// styles (not Tailwind utilities) so the captured image doesn't depend on the
+// full stylesheet being inlined. Fixed 900px width gives a clean aspect ratio
+// for Twitter/Discord shares. Skips real headshots (CORS-fragile) in favor of
+// initials-in-circle placeholders that always render reliably.
+
+const TEAM_MOCK_COLORS = {
+  bg: '#0a0f1c',
+  surface: '#131a2b',
+  subtle: '#1f2a44',
+  text: '#e6f1ff',
+  muted: '#8896b5',
+  accent: '#00e5ff',
+};
+
+const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, userTeam }, ref) {
+  const title = savedMock.title || `${userTeam} Team Mock`;
+  const dateStr = new Date(savedMock.submitted_at).toLocaleDateString(undefined, {
+    month: 'long', day: 'numeric', year: 'numeric',
+  });
+
+  const picksByRound = {};
+  for (const p of myPicks) {
+    if (!picksByRound[p.round]) picksByRound[p.round] = [];
+    picksByRound[p.round].push(p);
+  }
+  const rounds = Object.keys(picksByRound).map(Number).sort((a, b) => a - b);
+
+  const C = TEAM_MOCK_COLORS;
+  const teamLogoUrl = `https://a.espncdn.com/i/teamlogos/nfl/500/${userTeam === 'WAS' ? 'wsh' : userTeam.toLowerCase()}.png`;
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        width: 900,
+        padding: 48,
+        background: `linear-gradient(180deg, ${C.bg} 0%, #070b14 100%)`,
+        color: C.text,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 32 }}>
+        <img
+          src={teamLogoUrl}
+          alt=""
+          crossOrigin="anonymous"
+          style={{ width: 96, height: 96, objectFit: 'contain' }}
+          data-skip-capture="false"
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: 3,
+              color: C.accent,
+              marginBottom: 4,
+            }}
+          >
+            Team Mock · {userTeam}
+          </div>
+          <div
+            style={{
+              fontSize: 40,
+              fontWeight: 900,
+              textTransform: 'uppercase',
+              letterSpacing: 1.5,
+              lineHeight: 1.05,
+              color: C.text,
+            }}
+          >
+            {title}
+          </div>
+          <div style={{ fontSize: 15, color: C.muted, marginTop: 6 }}>
+            {myPicks.length} picks · {dateStr}
+          </div>
+        </div>
+      </div>
+
+      {/* Accent divider */}
+      <div
+        style={{
+          height: 2,
+          background: `linear-gradient(90deg, ${C.accent} 0%, transparent 100%)`,
+          marginBottom: 28,
+        }}
+      />
+
+      {/* ── Picks by round ── */}
+      {rounds.map((r) => (
+        <div key={r} style={{ marginBottom: 28 }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: 3,
+              color: C.muted,
+              marginBottom: 10,
+            }}
+          >
+            {(ROUND_LABELS[r] || `Round ${r}`) + ' Round'}
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 12,
+            }}
+          >
+            {picksByRound[r].map((pick) => {
+              const player = byId.get(pick.player_id) || pick;
+              const color = posHex(player.position);
+              const initial = (player.name || '?').trim()[0]?.toUpperCase() || '?';
+              return (
+                <div
+                  key={pick.pick_number}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    padding: 14,
+                    borderRadius: 12,
+                    background: C.surface,
+                    borderLeft: `4px solid ${color}`,
+                    border: `1px solid ${C.subtle}`,
+                  }}
+                >
+                  {/* Initial circle — avoids CORS issues from headshot URLs */}
+                  <div
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: '50%',
+                      background: `${color}22`,
+                      boxShadow: `inset 0 0 0 2px ${color}66`,
+                      color,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 24,
+                      fontWeight: 900,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {initial}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 17,
+                        fontWeight: 800,
+                        color: C.text,
+                        lineHeight: 1.2,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {player.name}
+                    </div>
+                    {player.school && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: C.muted,
+                          marginTop: 2,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {player.school}
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        display: 'inline-block',
+                        marginTop: 6,
+                        padding: '3px 10px',
+                        borderRadius: 999,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: 1.2,
+                        textTransform: 'uppercase',
+                        background: `${color}22`,
+                        color,
+                        border: `1px solid ${color}55`,
+                      }}
+                    >
+                      {player.position}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color,
+                      flexShrink: 0,
+                    }}
+                  >
+                    #{pick.pick_number}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* ── Branding footer ── */}
+      <div
+        style={{
+          marginTop: 36,
+          paddingTop: 20,
+          borderTop: `1px solid ${C.subtle}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 900,
+            letterSpacing: 2,
+            textTransform: 'uppercase',
+          }}
+        >
+          <span style={{ color: C.text }}>MOCKDRAFT</span>{' '}
+          <span style={{ color: C.accent }}>SHOWDOWN</span>
+        </div>
+        <div style={{ fontSize: 12, color: C.muted }}>
+          mockdraftshowdown.netlify.app
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // ─── Post-draft Results View ──────────────────────────────────────────────────
 // Shown right after the draft finishes but before the user saves. Mirrors the
 // SavedView layout so users get a consistent "here's your picks" read, with a
@@ -239,10 +565,7 @@ function ResultsView({
   const myPicksOnly = useMemo(() => picks.filter((p) => p.is_user), [picks]);
 
   return (
-    <div
-      className="flex flex-col"
-      style={{ height: 'calc(100vh - 56px)', overflowY: 'auto' }}
-    >
+    <div className="flex flex-col min-h-[calc(100dvh-56px)]">
       <div className="max-w-3xl mx-auto w-full px-4 py-6">
         {/* ── Header ── */}
         <div className="flex items-center gap-3 mb-1">
@@ -1642,10 +1965,13 @@ export default function TeamMock() {
     );
   }
 
-  // 1) Actively drafting
+  // 1) Actively drafting — needs the viewport-locked two-panel layout.
+  // Use dvh (dynamic viewport height) so mobile browser chrome doesn't
+  // throw off the math. The draft simulator is the only view that needs
+  // to be clamped to the viewport.
   if (team) {
     return (
-      <div className="flex flex-col" style={{ height: 'calc(100vh - 56px)', overflow: 'hidden' }}>
+      <div className="flex flex-col" style={{ height: 'calc(100dvh - 56px)', overflow: 'hidden' }}>
         <DraftSimulator
           team={team}
           players={players}
@@ -1657,23 +1983,24 @@ export default function TeamMock() {
     );
   }
 
-  // 2) Viewing a saved mock
+  // 2) Viewing a saved mock — let the body scroll naturally. The previous
+  // fixed-height wrapper (calc(100vh - 56px) + overflow-y:auto) created
+  // double-scroll on mobile because the navbar wraps past 56px and both
+  // the wrapper AND the body tried to scroll.
   if (activeMock) {
     return (
-      <div className="flex flex-col" style={{ height: 'calc(100vh - 56px)', overflowY: 'auto' }}>
-        <SavedView
-          savedMock={activeMock}
-          players={players}
-          onRestart={() => setActiveMock(null)}
-        />
-      </div>
+      <SavedView
+        savedMock={activeMock}
+        players={players}
+        onRestart={() => setActiveMock(null)}
+      />
     );
   }
 
   // 3) Explicit "new mock" picker
   if (showPickerExplicit || savedMocks.length === 0) {
     return (
-      <div style={{ minHeight: 'calc(100vh - 56px)', overflowY: 'auto' }}>
+      <div>
         {savedMocks.length > 0 && (
           <div className="max-w-3xl mx-auto px-4 pt-4">
             <button
@@ -1691,13 +2018,11 @@ export default function TeamMock() {
 
   // 4) Default: saved-mocks list
   return (
-    <div style={{ minHeight: 'calc(100vh - 56px)', overflowY: 'auto' }}>
-      <SavedMocksList
-        mocks={savedMocks}
-        onOpen={handleOpen}
-        onDelete={handleDelete}
-        onNew={startNew}
-      />
-    </div>
+    <SavedMocksList
+      mocks={savedMocks}
+      onOpen={handleOpen}
+      onDelete={handleDelete}
+      onNew={startNew}
+    />
   );
 }
