@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam } from '../lib/botPicker.js';
+import tradeValuesChart from '../lib/tradeValues2026.json';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -231,11 +232,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [posFilter, setPosFilter] = useState('ALL');
   const [saving, setSaving] = useState(false);
 
-  // Fetch trade values once on mount (static Rich Hill chart)
-  const [tradeValues, setTradeValues] = useState(null);
-  useEffect(() => {
-    api.getTradeValues().then(setTradeValues).catch(() => setTradeValues([]));
-  }, []);
+  // Rich Hill trade value chart — imported directly from the client bundle
+  // so the modal is always ready without a fetch round-trip.
+  const tradeValues = tradeValuesChart;
 
   const currentIdx = picks.length; // next slot to fill
   const currentSlot = currentIdx < liveOrder.length ? liveOrder[currentIdx] : null;
@@ -822,7 +821,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       </div>
 
       {/* ── Trade modal ── */}
-      {tradeOpen && tradeValues && (
+      {tradeOpen && tradeValues?.length > 0 && (
         <TradeModal
           userTeam={team}
           liveOrder={liveOrder}

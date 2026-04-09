@@ -83,9 +83,6 @@ export const api = {
   getLeaderboard: (limit = 100, offset = 0) =>
     request(`/api/leaderboard?limit=${limit}&offset=${offset}`),
 
-  // Public trade value chart — team mocks need this to propose trades.
-  getTradeValues: () => cached('trade-values', 24 * 60 * 60_000, () => request('/api/trade-values')),
-
   // team-specific mock (Phase 4)
   getTeamMock: (userId) => request(`/api/team-mocks/${userId}`),
   submitTeamMock: (user_id, team_abbr, picks) =>
