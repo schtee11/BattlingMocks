@@ -120,13 +120,28 @@ function SavedView({ savedMock, players, onRestart }) {
   //   handleShare → Native share sheet (mobile) or file download (desktop fallback)
   const exportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
+  // Pre-rendered blob so handleShare has a File ready to hand to navigator.share
+  // WITHOUT doing any async work inside the click handler. Both the Windows
+  // share sheet and Chrome's clipboard API enforce user-gesture requirements
+  // that break if we await a render mid-click.
+  const cachedBlobRef = useRef(null);
+
+  // Theme mirror. The hidden card mounts with the current theme so the
+  // captured PNG matches whatever the user is looking at.
+  const [theme, setTheme] = useState(getCurrentTheme);
+  useEffect(() => {
+    // React to live theme changes (user toggles mid-view)
+    const observer = new MutationObserver(() => setTheme(getCurrentTheme()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
+  const themeBg = theme === 'light' ? '#f0f2f7' : '#04080f';
 
   async function generateBlob() {
     if (!exportRef.current) return null;
-    // Give proxied images a moment to decode before html-to-image captures.
-    // Images load lazily; we wait until all <img> inside the card report
-    // complete, then render. Guards against a flash-of-missing-photos in
-    // the screenshot.
+    // Wait for all <img> inside the card to finish loading before capture,
+    // so the first click doesn't grab a half-loaded screenshot.
     const imgs = exportRef.current.querySelectorAll('img');
     await Promise.all(
       Array.from(imgs).map((img) =>
@@ -141,37 +156,49 @@ function SavedView({ savedMock, players, onRestart }) {
     const dataUrl = await toPng(exportRef.current, {
       cacheBust: false,
       pixelRatio: 2,
-      backgroundColor: '#0a0f1c',
+      backgroundColor: themeBg,
     });
     const res = await fetch(dataUrl);
     return res.blob();
   }
 
+  // Pre-render the blob as soon as the card has data + the DOM is ready so
+  // Share has something to hand off instantly. Re-render if the theme or the
+  // underlying picks change.
+  useEffect(() => {
+    let cancelled = false;
+    cachedBlobRef.current = null;
+    // Give the DOM a tick to mount the ExportCard, then render.
+    const t = setTimeout(() => {
+      generateBlob()
+        .then((blob) => { if (!cancelled) cachedBlobRef.current = blob; })
+        .catch((e) => { console.warn('[pre-render]', e); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedMock.id, theme]);
+
   const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
 
   function handleCopy() {
     // CRITICAL: navigator.clipboard.write MUST be called synchronously from
-    // within the user gesture (click event). If we `await generateBlob()`
-    // first, Chrome/Edge lose the gesture and the write silently "succeeds"
-    // without actually placing anything in the system clipboard — which is
-    // exactly what was happening on Windows: Copy → paste → nothing.
-    //
-    // Workaround: pass a Promise<Blob> directly to ClipboardItem. The
-    // ClipboardItem spec explicitly supports this for async sources, and
-    // browsers keep the gesture alive until the promise resolves.
+    // within the user gesture. Pass a Promise<Blob> so the gesture stays
+    // alive while html-to-image finishes rendering.
     if (!navigator.clipboard || !window.ClipboardItem) {
-      // Older browsers: no clipboard API, fall back to Share handler.
       toast.error('Clipboard unsupported — use Share instead');
       return;
     }
     setExporting(true);
-    // Build the Promise<Blob> without awaiting it, so clipboard.write is
-    // invoked inside the click callstack.
-    const blobPromise = (async () => {
-      const blob = await generateBlob();
-      if (!blob) throw new Error('render failed');
-      return blob;
-    })();
+    // If we already have a cached blob, reuse it; otherwise kick off a fresh
+    // render. Either way, clipboard.write sees a Promise immediately.
+    const blobPromise = cachedBlobRef.current
+      ? Promise.resolve(cachedBlobRef.current)
+      : (async () => {
+          const blob = await generateBlob();
+          if (!blob) throw new Error('render failed');
+          cachedBlobRef.current = blob;
+          return blob;
+        })();
     navigator.clipboard
       .write([new ClipboardItem({ 'image/png': blobPromise })])
       .then(() => {
@@ -200,9 +227,16 @@ function SavedView({ savedMock, players, onRestart }) {
   async function handleShare() {
     setExporting(true);
     try {
-      const blob = await generateBlob();
+      // Prefer the pre-rendered blob. If it isn't ready yet (first few
+      // hundred ms on slow devices), render synchronously now.
+      let blob = cachedBlobRef.current;
+      if (!blob) {
+        blob = await generateBlob();
+        if (blob) cachedBlobRef.current = blob;
+      }
       if (!blob) throw new Error('render failed');
-      // Prefer native share sheet (mobile) — falls back to download.
+
+      // Mobile / any OS with a share sheet: hand off the File.
       if (navigator.canShare) {
         const file = new File([blob], fileName, { type: 'image/png' });
         if (navigator.canShare({ files: [file] })) {
@@ -214,12 +248,12 @@ function SavedView({ savedMock, players, onRestart }) {
             });
             return;
           } catch (e) {
-            // User cancelled share sheet — don't treat as error
             if (e.name === 'AbortError') return;
             console.warn('[share] share failed, downloading instead:', e);
           }
         }
       }
+      // Desktop fallback: download the file.
       triggerDownload(blob);
       toast.success('Downloaded — share it with the squad');
     } catch (e) {
@@ -250,6 +284,7 @@ function SavedView({ savedMock, players, onRestart }) {
           myPicks={myPicks}
           byId={byId}
           userTeam={userTeam}
+          theme={theme}
         />
       </div>
 
@@ -367,26 +402,43 @@ function SavedView({ savedMock, players, onRestart }) {
 // Self-contained card optimized for PNG capture via html-to-image. Uses inline
 // styles (not Tailwind utilities) so the captured image doesn't depend on the
 // full stylesheet being inlined. Fixed 900px width gives a clean aspect ratio
-// for Twitter/Discord shares. All images routed through the server proxy so
+// for Twitter/Discord shares. Headshots are routed through the server proxy so
 // html-to-image can read them into a canvas (ESPN CDN lacks CORS headers).
 
-const TEAM_MOCK_COLORS = {
-  bg: '#0a0f1c',
-  surface: '#131a2b',
-  subtle: '#1f2a44',
-  text: '#e6f1ff',
-  muted: '#8896b5',
-  accent: '#00e5ff',
+// Theme-aware color sets. The ExportCard mirrors whichever theme the user is
+// currently using so the shared screenshot feels consistent with what they see.
+const EXPORT_THEMES = {
+  dark: {
+    bg: '#04080f',
+    bgGradientEnd: '#020408',
+    surface: '#0b1120',
+    subtle: '#1a2336',
+    text: '#f0f4fc',
+    muted: '#7a8ba8',
+    accent: '#00e5ff',
+    accentSoft: 'rgba(0,229,255,0.15)',
+    footerTitle: '#f0f4fc',
+  },
+  light: {
+    bg: '#f0f2f7',
+    bgGradientEnd: '#e3e8f1',
+    surface: '#ffffff',
+    subtle: 'rgba(15,23,42,0.12)',
+    text: '#0f172a',
+    muted: '#64748b',
+    accent: '#0891b2',
+    accentSoft: 'rgba(8,145,178,0.12)',
+    footerTitle: '#0f172a',
+  },
 };
 
-function teamLogoEspnUrl(abbr) {
-  if (!abbr) return null;
-  const key = abbr === 'WAS' ? 'wsh' : abbr.toLowerCase();
-  return `https://a.espncdn.com/i/teamlogos/nfl/500/${key}.png`;
+function getCurrentTheme() {
+  if (typeof document === 'undefined') return 'dark';
+  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
 
-// Initials-in-circle fallback used whenever a headshot is missing or
-// still loading. Kept identical to the fallback style elsewhere in the app.
+// Initials-in-circle fallback used whenever a headshot is missing or fails
+// to load. Matches the fallback style elsewhere in the app.
 function InitialCircle({ name, color, size = 56 }) {
   const initial = (name || '?').trim()[0]?.toUpperCase() || '?';
   return (
@@ -411,7 +463,40 @@ function InitialCircle({ name, color, size = 56 }) {
   );
 }
 
-const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, userTeam }, ref) {
+// Big team badge used in the header instead of trying to proxy/capture the
+// ESPN team logo PNG (which was rendering as a broken image on some users).
+// A plain styled box with the team abbreviation is always reliable.
+function TeamBadge({ abbr, accent }) {
+  return (
+    <div
+      style={{
+        width: 96,
+        height: 96,
+        borderRadius: 18,
+        background: `linear-gradient(135deg, ${accent}22 0%, ${accent}08 100%)`,
+        boxShadow: `inset 0 0 0 2px ${accent}55`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          fontSize: abbr.length >= 4 ? 22 : 28,
+          fontWeight: 900,
+          letterSpacing: 1.5,
+          color: accent,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
+        }}
+      >
+        {abbr}
+      </div>
+    </div>
+  );
+}
+
+const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, userTeam, theme }, ref) {
   const title = savedMock.title || `${userTeam} Team Mock`;
   const dateStr = new Date(savedMock.submitted_at).toLocaleDateString(undefined, {
     month: 'long', day: 'numeric', year: 'numeric',
@@ -424,8 +509,7 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
   }
   const rounds = Object.keys(picksByRound).map(Number).sort((a, b) => a - b);
 
-  const C = TEAM_MOCK_COLORS;
-  const teamLogoSrc = proxyImageUrl(teamLogoEspnUrl(userTeam));
+  const C = EXPORT_THEMES[theme] || EXPORT_THEMES.dark;
 
   return (
     <div
@@ -433,7 +517,7 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
       style={{
         width: 900,
         padding: 48,
-        background: `linear-gradient(180deg, ${C.bg} 0%, #070b14 100%)`,
+        background: `linear-gradient(180deg, ${C.bg} 0%, ${C.bgGradientEnd} 100%)`,
         color: C.text,
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
         boxSizing: 'border-box',
@@ -441,14 +525,7 @@ const ExportCard = forwardRef(function ExportCard({ savedMock, myPicks, byId, us
     >
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 32 }}>
-        {teamLogoSrc && (
-          <img
-            src={teamLogoSrc}
-            alt=""
-            crossOrigin="anonymous"
-            style={{ width: 96, height: 96, objectFit: 'contain' }}
-          />
-        )}
+        <TeamBadge abbr={userTeam} accent={C.accent} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
