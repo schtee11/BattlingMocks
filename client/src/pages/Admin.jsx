@@ -25,7 +25,6 @@ import { prettyName } from '../lib/displayName.js';
 const TABS = [
   ['results', 'Enter Results'],
   ['order', 'Draft Order'],
-  ['trades', 'Trades'],
   ['players', 'Prospects'],
   ['users', 'Users'],
   ['scoring', 'Scoring & Lock'],
@@ -890,78 +889,7 @@ export default function Admin() {
             </div>
           </div>
         </Card>
-        <Card className="p-5">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="font-semibold text-text-primary">2026 Round 1 Draft Order</h3>
-              <p className="text-text-muted text-xs mt-0.5">
-                Drag a row onto another to swap teams (use after a trade). Or edit team fields inline.
-              </p>
-            </div>
-            <Button size="sm" onClick={saveDraftOrder}>Save</Button>
-          </div>
-          <DndContext
-            sensors={orderSensors}
-            onDragStart={onOrderDragStart}
-            onDragEnd={onOrderDragEnd}
-            onDragCancel={() => setActiveDragId(null)}
-          >
-            <ul className="grid md:grid-cols-2 gap-2">
-              {order.map((o, idx) => (
-                <DraftOrderRow
-                  key={o.pick_number}
-                  row={o}
-                  onTeamChange={(val) =>
-                    setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team: val.toUpperCase().slice(0, 5) } : x))
-                  }
-                  onTeamNameChange={(val) =>
-                    setOrder((prev) => prev.map((x, i) => i === idx ? { ...x, team_name: val } : x))
-                  }
-                  onNeedsChange={(val) =>
-                    setOrder((prev) => prev.map((x, i) => i === idx ? {
-                      ...x,
-                      team_needs: val
-                        .split(',')
-                        .map((s) => s.trim().toUpperCase())
-                        .filter(Boolean),
-                    } : x))
-                  }
-                />
-              ))}
-            </ul>
-            <DragOverlay>
-              {draggingRow ? (
-                <div className="flex items-center gap-2 p-2 bg-bg-elevated rounded border border-accent shadow-glow text-sm">
-                  <div className="w-8 font-mono text-accent">{draggingRow.pick_number}</div>
-                  <TeamLogo abbr={draggingRow.team} size="xs" />
-                  <div className="font-display font-semibold text-text-primary">{draggingRow.team}</div>
-                  <div className="text-text-secondary">{draggingRow.team_name}</div>
-                </div>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-        </Card>
         </div>
-      )}
-
-      {/* Trades */}
-      {tab === 'trades' && (
-        <TradesPanel
-          values={tradeValues}
-          sideAPicks={sideAPicks}
-          sideBPicks={sideBPicks}
-          sideATeam={sideATeam}
-          sideBTeam={sideBTeam}
-          setSideATeam={setSideATeam}
-          setSideBTeam={setSideBTeam}
-          addPickToSide={addPickToSide}
-          removePickFromSide={removePickFromSide}
-          tradeResult={tradeResult}
-          clearTrade={clearTrade}
-          applyTradeAction={applyTradeAction}
-          tradePickSearch={tradePickSearch}
-          setTradePickSearch={setTradePickSearch}
-        />
       )}
 
       {/* Players */}

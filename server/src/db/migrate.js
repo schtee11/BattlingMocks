@@ -111,16 +111,51 @@ CREATE INDEX IF NOT EXISTS idx_actual_picks_player ON actual_picks(player_id);
 CREATE INDEX IF NOT EXISTS idx_users_display_name_lower ON users (LOWER(display_name));
 `;
 
+// Split the migration SQL into individual statements and run them one at a
+// time so a single failing DDL (due to legacy constraints, weird data, etc.)
+// doesn't nuke the entire schema deploy. Failures are logged loudly but the
+// rest of the migration continues.
+function splitStatements(sql) {
+  // Strip line comments. The SQL here has no string literals containing
+  // semicolons, so a naive split is safe.
+  const stripped = sql
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+  return stripped
+    .split(';')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 export async function migrate() {
-  await pool.query(SQL);
-  console.log('[migrate] schema ready');
+  const statements = splitStatements(SQL);
+  console.log(`[migrate] running ${statements.length} statements`);
+  let ok = 0;
+  let failed = 0;
+  for (const stmt of statements) {
+    try {
+      await pool.query(stmt);
+      ok++;
+    } catch (e) {
+      failed++;
+      const preview = stmt.replace(/\s+/g, ' ').slice(0, 80);
+      console.error(`[migrate] FAILED: ${preview}…`);
+      console.error(`[migrate]   → ${e.message}`);
+    }
+  }
+  console.log(`[migrate] schema ready (${ok} ok, ${failed} failed)`);
+  return { ok, failed };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // Always exit 0 so `npm start` proceeds to the server even if individual
+  // statements failed — the server can still serve routes that don't depend
+  // on the newest columns, and we'll see exactly what failed in the logs.
   migrate()
     .then(() => pool.end())
     .catch((e) => {
-      console.error(e);
-      process.exit(1);
+      console.error('[migrate] fatal:', e);
+      pool.end().catch(() => {});
     });
 }

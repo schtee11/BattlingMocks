@@ -184,6 +184,194 @@ function SavedView({ savedMock, players, onRestart }) {
   );
 }
 
+// ─── Post-draft Results View ──────────────────────────────────────────────────
+// Shown right after the draft finishes but before the user saves. Mirrors the
+// SavedView layout so users get a consistent "here's your picks" read, with a
+// prominent Save CTA + optional title rename.
+function ResultsView({
+  team,
+  picks,
+  byId,
+  userPicksMade,
+  userSlotCount,
+  saving,
+  onSave,
+  onRestart,
+  onChangeTeam,
+}) {
+  const [title, setTitle] = useState(
+    `${team} · ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+  );
+
+  const byRound = useMemo(() => {
+    const map = {};
+    for (const p of picks) {
+      if (!map[p.round]) map[p.round] = [];
+      map[p.round].push(p);
+    }
+    return map;
+  }, [picks]);
+  const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+
+  const myPicksOnly = useMemo(() => picks.filter((p) => p.is_user), [picks]);
+
+  return (
+    <div
+      className="flex flex-col"
+      style={{ height: 'calc(100vh - 56px)', overflowY: 'auto' }}
+    >
+      <div className="max-w-3xl mx-auto w-full px-4 py-6">
+        {/* ── Header ── */}
+        <div className="flex items-center gap-3 mb-1">
+          <TeamLogo abbr={team} size="lg" />
+          <div className="flex-1 min-w-0">
+            <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-accent">
+              Mock Complete
+            </div>
+            <h2 className="font-display text-xl sm:text-2xl font-bold uppercase tracking-[0.1em] text-text-primary">
+              {team} Team Mock
+            </h2>
+            <p className="text-text-secondary text-[11px]">
+              {userPicksMade} picks made · {picks.length} total in draft
+            </p>
+          </div>
+        </div>
+
+        {/* ── Save card ── */}
+        <div className="mt-4 p-3 rounded-xl border border-accent/40 bg-accent/[0.05]">
+          <label className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted block mb-1">
+            Mock Title
+          </label>
+          <div className="flex gap-2 items-center">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value.slice(0, 80))}
+              placeholder="Name this mock…"
+              className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2 text-[13px] text-text-primary placeholder-text-muted focus:border-accent/60 outline-none transition"
+            />
+            <button
+              onClick={() => onSave(title.trim() || `${team} · ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`)}
+              disabled={saving}
+              className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 disabled:opacity-50"
+              style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+            >
+              {saving ? 'Saving…' : 'Save Mock'}
+            </button>
+          </div>
+          <div className="flex gap-3 mt-3">
+            <button
+              onClick={onRestart}
+              className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+            >
+              ← Redraft
+            </button>
+            <button
+              onClick={onChangeTeam}
+              className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+            >
+              Change Team
+            </button>
+          </div>
+        </div>
+
+        {/* ── My Picks (highlighted block) ── */}
+        {myPicksOnly.length > 0 && (
+          <div className="mt-6">
+            <div className="flex items-center gap-2 mb-2">
+              <TeamLogo abbr={team} size="xs" />
+              <span className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary">
+                Your {team} Picks
+              </span>
+              <span className="font-mono text-[10px] text-text-muted ml-auto">
+                {userPicksMade} / {userSlotCount}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {myPicksOnly.map((pick) => {
+                const player = byId.get(pick.player_id);
+                if (!player) return null;
+                const color = posHex(player.position);
+                return (
+                  <div
+                    key={pick.pick_number}
+                    className="flex items-center gap-2.5 p-2.5 rounded-lg border border-accent/30 bg-accent/[0.06]"
+                    style={{ borderLeft: `3px solid ${color}` }}
+                  >
+                    <span className="font-mono text-[10px] text-text-muted w-10 text-right shrink-0">
+                      {ROUND_LABELS[pick.round] || `R${pick.round}`} · {pick.pick_number}
+                    </span>
+                    <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-semibold truncate text-text-primary">
+                        {player.name}
+                      </div>
+                      <div className="text-[10px] text-text-muted truncate">{player.school}</div>
+                    </div>
+                    <PositionBadge position={player.position} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Full draft board, grouped by round ── */}
+        <div className="mt-8 space-y-5">
+          <div className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary">
+            Full Draft Board
+          </div>
+          {rounds.map((r) => (
+            <div key={r}>
+              <div className="text-[10px] font-display font-semibold uppercase tracking-[0.16em] text-text-muted mb-2">
+                {ROUND_LABELS[r] || `Round ${r}`} Round
+              </div>
+              <div className="space-y-1.5">
+                {byRound[r].map((pick) => {
+                  const player = byId.get(pick.player_id);
+                  if (!player) return null;
+                  const isUserPick = pick.is_user;
+                  return (
+                    <div
+                      key={pick.pick_number}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${
+                        isUserPick
+                          ? 'border-accent/30 bg-accent/[0.05]'
+                          : 'border-border-subtle bg-bg-surface/30'
+                      }`}
+                      style={isUserPick ? { borderLeft: `3px solid ${posHex(player.position)}` } : undefined}
+                    >
+                      <span className="font-mono text-[9.5px] text-text-muted w-6 text-right shrink-0">
+                        {pick.pick_number}
+                      </span>
+                      {isUserPick ? (
+                        <TeamLogo abbr={pick.team} size="xs" />
+                      ) : (
+                        <span className="font-display text-[9px] font-semibold uppercase tracking-wide text-text-muted w-7 shrink-0">
+                          {pick.team}
+                        </span>
+                      )}
+                      <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="xs" />
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-[12.5px] font-semibold truncate ${isUserPick ? 'text-text-primary' : 'text-text-secondary'}`}>
+                          {player.name}
+                        </div>
+                        {player.school && (
+                          <div className="text-[10px] text-text-muted truncate">{player.school}</div>
+                        )}
+                      </div>
+                      <PositionBadge position={player.position} muted={!isUserPick} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Draft Simulator (sequential on-the-clock) ───────────────────────────────
 // Flow: user clicks Start. Bot picks forward pick-by-pick, pausing whenever the
 // slot on the clock belongs to the user's team. User selects from the remaining
@@ -319,18 +507,13 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     );
   }
 
-  async function handleSave() {
+  async function handleSave(customTitle) {
     if (!user) { toast.error('Sign in to save'); return; }
     if (phase !== PHASE_DONE) return;
-    // Prompt for an optional title — defaults to team + short timestamp.
-    // Using window.prompt keeps the UX ultra-lightweight; a modal input
-    // can come later if it's worth the weight.
     const defaultTitle = `${team} · ${new Date().toLocaleDateString(undefined, {
       month: 'short', day: 'numeric',
     })}`;
-    const rawTitle = window.prompt('Name this mock (optional):', defaultTitle);
-    if (rawTitle === null) return; // user cancelled
-    const title = rawTitle.trim() || defaultTitle;
+    const title = (typeof customTitle === 'string' && customTitle.trim()) || defaultTitle;
     setSaving(true);
     try {
       const payload = picks.map((p) => ({
@@ -591,6 +774,24 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }
 
   // ── Layout ─────────────────────────────────────────────────────────────────
+  // Dedicated results screen once the draft is complete — swaps the in-draft
+  // two-panel layout for a "Mock complete" summary with save controls.
+  if (phase === PHASE_DONE) {
+    return (
+      <ResultsView
+        team={team}
+        picks={picks}
+        byId={byId}
+        userPicksMade={userPicksMade}
+        userSlotCount={userSlotCount}
+        saving={saving}
+        onSave={handleSave}
+        onRestart={restart}
+        onChangeTeam={onChangeTeam}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* ── Desktop ── */}
@@ -763,38 +964,64 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         <div className="border-b border-border-subtle shrink-0">
           <StatusBanner compact />
           {phase !== PHASE_READY && phase !== PHASE_DONE && (
-            <div className="flex items-center gap-1 px-2 pb-2">
-              <div className="flex-1 flex items-center gap-1.5">
-                <span className="font-display text-[9px] font-semibold uppercase tracking-wider text-text-muted shrink-0">
-                  Speed
-                </span>
-                <input
-                  type="range" min="0" max={SPEED_STEPS.length - 1} step="1"
-                  value={speedIdx}
-                  onChange={(e) => setSpeedIdx(Number(e.target.value))}
-                  className="flex-1 h-1 accent-accent cursor-pointer"
-                />
-                <span className="font-mono text-[9px] text-text-muted w-12 text-right shrink-0">
-                  {SPEED_LABELS[speedIdx]}
-                </span>
+            <div className="px-2 pb-2 space-y-1.5">
+              {/* Row 1: Speed + Pause/Resume + Trade */}
+              <div className="flex items-center gap-1.5">
+                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                  <span className="font-display text-[9px] font-semibold uppercase tracking-wider text-text-muted shrink-0 w-9">
+                    Speed
+                  </span>
+                  <input
+                    type="range" min="0" max={SPEED_STEPS.length - 1} step="1"
+                    value={speedIdx}
+                    onChange={(e) => setSpeedIdx(Number(e.target.value))}
+                    className="flex-1 h-1 accent-accent cursor-pointer min-w-0"
+                  />
+                  <span className="font-mono text-[9px] text-text-muted w-11 text-right shrink-0">
+                    {SPEED_LABELS[speedIdx]}
+                  </span>
+                </div>
+                {phase === PHASE_RUNNING && (
+                  <button onClick={pause} className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-border-subtle text-text-primary">
+                    Pause
+                  </button>
+                )}
+                {phase === PHASE_PAUSED && (
+                  <button onClick={resume} className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md text-bg-deep" style={{ background: 'var(--gradient-accent)' }}>
+                    Resume
+                  </button>
+                )}
+                <button
+                  onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
+                  disabled={!tradeValues?.length}
+                  className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-accent/40 text-text-primary disabled:opacity-40"
+                >
+                  Trade
+                </button>
               </div>
-              {phase === PHASE_RUNNING && (
-                <button onClick={pause} className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-border-subtle text-text-primary">
-                  Pause
+              {/* Row 2: Bot Chaos + Restart */}
+              <div className="flex items-center gap-1.5">
+                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                  <span className="font-display text-[9px] font-semibold uppercase tracking-wider text-text-muted shrink-0 w-9">
+                    Chaos
+                  </span>
+                  <input
+                    type="range" min="0" max="1" step="0.05"
+                    value={randomness}
+                    onChange={(e) => setRandomness(Number(e.target.value))}
+                    className="flex-1 h-1 accent-accent cursor-pointer min-w-0"
+                  />
+                  <span className="font-mono text-[9px] text-text-muted w-11 text-right shrink-0">
+                    {Math.round(randomness * 100)}%
+                  </span>
+                </div>
+                <button
+                  onClick={restart}
+                  className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-border-subtle text-text-muted hover:text-text-primary"
+                >
+                  Restart
                 </button>
-              )}
-              {phase === PHASE_PAUSED && (
-                <button onClick={resume} className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md text-bg-deep" style={{ background: 'var(--gradient-accent)' }}>
-                  Resume
-                </button>
-              )}
-              <button
-                onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
-                disabled={!tradeValues}
-                className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-accent/40 text-text-primary disabled:opacity-40"
-              >
-                Trade
-              </button>
+              </div>
             </div>
           )}
         </div>

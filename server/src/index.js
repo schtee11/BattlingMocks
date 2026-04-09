@@ -77,4 +77,23 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`[server] listening on :${PORT}`);
+  // Dump registered routes for debugging Railway deploys. Helps confirm which
+  // version of the code is actually running when endpoints return 404.
+  const registered = [];
+  for (const layer of app._router?.stack || []) {
+    if (layer.name === 'router' && layer.regexp) {
+      const base = layer.regexp.toString()
+        .replace('/^\\', '')
+        .replace('\\/?(?=\\/|$)/i', '')
+        .replace(/\\\//g, '/');
+      for (const r of layer.handle.stack || []) {
+        if (r.route) {
+          const method = Object.keys(r.route.methods)[0]?.toUpperCase();
+          registered.push(`${method} ${base}${r.route.path}`);
+        }
+      }
+    }
+  }
+  console.log(`[server] ${registered.length} routes registered`);
+  for (const r of registered.sort()) console.log(`  ${r}`);
 });
