@@ -2415,7 +2415,7 @@ export default function TeamMock() {
   // to be clamped to the viewport.
   if (team) {
     return (
-      <div className="flex flex-col h-[calc(100dvh-40px)] sm:h-[calc(100dvh-56px)]" style={{ overflow: 'hidden' }}>
+      <div className="h-full flex flex-col" style={{ overflow: 'hidden' }}>
         <DraftSimulator
           team={team}
           players={players}
