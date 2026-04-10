@@ -1940,7 +1940,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         </div>
 
         {/* Bottom tab bar */}
-        <div className="shrink-0 border-t border-border-subtle bg-bg-deep/95 flex" style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
+        <div className="shrink-0 border-t border-border-subtle bg-bg-deep/95 flex" style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           {[
             { key: 'board', label: 'Board', badge: `${picks.length}` },
             { key: 'picks', label: 'My Picks', badge: `${myPicks.length}` },
@@ -2166,7 +2166,7 @@ export default function TeamMock() {
   // to be clamped to the viewport.
   if (team) {
     return (
-      <div className="flex flex-col" style={{ height: 'calc(100dvh - 56px)', overflow: 'hidden' }}>
+      <div className="flex flex-col h-[calc(100dvh-40px)] sm:h-[calc(100dvh-56px)]" style={{ overflow: 'hidden' }}>
         <DraftSimulator
           team={team}
           players={players}

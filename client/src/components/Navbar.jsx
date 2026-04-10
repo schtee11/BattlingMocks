@@ -9,11 +9,11 @@ export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const linkCls = ({ isActive }) =>
-    `relative px-3 py-4 text-[12px] font-display font-semibold uppercase tracking-[0.16em] transition-colors ${
+    `relative px-2 sm:px-3 py-2.5 sm:py-4 text-[10px] sm:text-[12px] font-display font-semibold uppercase tracking-[0.16em] transition-colors ${
       isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'
     }`;
   const activeBar = (
-    <span className="absolute left-2 right-2 bottom-[10px] h-[2px] rounded-full bg-gradient-accent" />
+    <span className="absolute left-2 right-2 bottom-[6px] sm:bottom-[10px] h-[2px] rounded-full bg-gradient-accent" />
   );
   return (
     <nav
@@ -25,13 +25,13 @@ export default function Navbar() {
       }}
     >
       <div className="max-w-6xl mx-auto px-4 flex items-center justify-between flex-wrap">
-        <Link to="/" className="flex items-center gap-2.5 py-2.5 group">
+        <Link to="/" className="flex items-center gap-2 sm:gap-2.5 py-1.5 sm:py-2.5 group">
           <img
             src="/mds-logo.png"
             alt="MockDraft Showdown"
             width="40"
             height="40"
-            className="w-10 h-10 rounded-md object-contain shrink-0"
+            className="w-7 h-7 sm:w-10 sm:h-10 rounded-md object-contain shrink-0"
             draggable={false}
           />
           <div className="font-display font-bold text-[18px] uppercase tracking-[0.08em] leading-none hidden sm:block">
@@ -65,14 +65,14 @@ export default function Navbar() {
           )}
           <div className="ml-1 mr-1"><ThemeToggle /></div>
           {user ? (
-            <div className="flex items-center gap-2.5 pl-3 ml-2 border-l border-border-subtle">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 pl-2 sm:pl-3 ml-1 sm:ml-2 border-l border-border-subtle">
               <Avatar url={user.avatar_url} name={user.display_name} size="xs" />
               <span className="font-display uppercase tracking-[0.14em] text-[11px] text-text-secondary hidden sm:inline">
                 {prettyName(user.display_name)}
               </span>
               <button
                 onClick={signOut}
-                className="font-display uppercase tracking-[0.14em] text-[10px] text-text-muted hover:text-text-primary transition"
+                className="font-display uppercase tracking-[0.14em] text-[10px] text-text-muted hover:text-text-primary transition hidden sm:block"
               >
                 Sign out
               </button>
