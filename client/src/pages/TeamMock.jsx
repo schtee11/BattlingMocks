@@ -1416,6 +1416,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         available,
         teamNeeds: currentSlot.team_needs || [],
         randomness,
+        pickNumber: currentSlot.pick_number,
       });
       if (!picked) { setPhase(PHASE_DONE); return; }
       setPicks((prev) => [

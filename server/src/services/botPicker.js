@@ -19,15 +19,20 @@ function normalizePos(pos) {
  *
  * baseScore       exponential decay off rank so top picks dominate but mid-
  *                 round picks can still edge out BPA when needs intervene.
- *                 rank 1 = 1.00, rank 10 = 0.80, rank 50 = 0.29.
+ *                 rank 1 = 1.00, rank 10 = 0.70, rank 20 = 0.45 (decay -0.04).
+ *                 Steeper than the old -0.025 so rank-8 with top-need boost
+ *                 (×1.20) scores 0.91 — below rank-1's 1.0, preventing routine
+ *                 falls of consensus top talents.
  * needsMultiplier +20% for the team's top need, +13% for second, +7% for
  *                 third, 1.0 otherwise.
  * jitter          multiplicative 1 ± randomness/2.
+ * Hard fall cap   Top-ranked players who have fallen too far get a large score
+ *                 multiplier applied before pool selection. Requires pickNumber.
  *
  * Selection uses weighted random from a top-N candidate pool (not
  * deterministic max) so re-running the same board produces different picks.
  */
-export function pickForTeam({ available, teamNeeds = [], randomness = 0.25 }) {
+export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pickNumber = 999 }) {
   if (!available || available.length === 0) return null;
 
   const needs = (teamNeeds || []).map(normalizePos).filter(Boolean);
@@ -39,7 +44,9 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25 }) {
   const scored = [];
   for (const p of available) {
     const rank = Number.isFinite(p.rank) ? p.rank : 500;
-    const baseScore = Math.exp(-0.025 * (rank - 1));
+    // Decay rate -0.04 (was -0.025): rank-8 with top-need boost now scores
+    // 0.756 × 1.20 = 0.907, safely below rank-1's 1.0 baseline.
+    const baseScore = Math.exp(-0.04 * (rank - 1));
 
     const pos = normalizePos(p.position);
     let needsMultiplier = 1;
@@ -50,8 +57,25 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25 }) {
 
     const jitter = 1 + (Math.random() - 0.5) * randomness;
 
-    const score = baseScore * needsMultiplier * jitter;
-    scored.push({ player: p, score });
+    let score = baseScore * needsMultiplier * jitter;
+    scored.push({ player: p, rank, score });
+  }
+
+  // Hard fall cap: boost top-ranked players who have fallen too far so they
+  // are virtually guaranteed to be selected before drifting further.
+  //   rank 1–5:  max 5-pick fall  → ×15 boost
+  //   rank 6–10: max 9-pick fall  → ×8  boost
+  //   rank 11–20: max 13-pick fall → ×4  boost
+  for (const entry of scored) {
+    const { rank } = entry;
+    const fall = pickNumber - rank;
+    if (rank <= 5 && fall > 5) {
+      entry.score *= 15;
+    } else if (rank <= 10 && fall > 9) {
+      entry.score *= 8;
+    } else if (rank <= 20 && fall > 13) {
+      entry.score *= 4;
+    }
   }
 
   // Weighted random selection from a top-N candidate pool.
@@ -99,6 +123,7 @@ export function simulateDraft({ draftOrder, players, userTeam, userPicks = {}, r
       available,
       teamNeeds: slot.team_needs || [],
       randomness,
+      pickNumber: slot.pick_number,
     });
     if (picked) {
       used.add(picked.id);
