@@ -1001,6 +1001,22 @@ function ResultsView({
     return res.blob();
   }
 
+  // Pre-render the blob once images have loaded so Share has something
+  // ready immediately instead of generating on-click (which can miss images
+  // that haven't inlined yet on slow mobile networks).
+  const headshotsLoadedCount = Object.keys(headshotDataUrls).length;
+  useEffect(() => {
+    let cancelled = false;
+    cachedBlobRef.current = null;
+    const t = setTimeout(() => {
+      generateBlob()
+        .then((blob) => { if (!cancelled) cachedBlobRef.current = blob; })
+        .catch(() => {});
+    }, 500);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme, teamLogoDataUrl, headshotsLoadedCount]);
+
   const fileName = `${team.toLowerCase()}-mock-${new Date().toISOString().slice(0, 10)}.png`;
 
   function handleCopy() {
@@ -1077,7 +1093,7 @@ function ResultsView({
   }
 
   return (
-    <div className="flex flex-col min-h-[calc(100dvh-56px)]">
+    <div className="flex flex-col min-h-[calc(100dvh-56px)] overscroll-contain">
       {/* Off-screen export card for PNG generation */}
       <div
         style={{ position: 'fixed', top: 0, left: -10000, zIndex: -1, pointerEvents: 'none' }}
@@ -1275,13 +1291,19 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
 
-  // Lock body scroll while the draft simulator is mounted so the
-  // viewport-locked layout doesn't let the page scroll behind it.
+  // Lock body scroll while the in-draft layout is active so the
+  // viewport-locked panels don't let the page scroll behind them.
+  // Release the lock when the draft finishes (PHASE_DONE) so the
+  // ResultsView can scroll normally.
   useEffect(() => {
+    if (phase === PHASE_DONE) {
+      document.body.style.overflow = '';
+      return;
+    }
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
-  }, []);
+  }, [phase]);
 
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
   const userSlotCount = useMemo(
