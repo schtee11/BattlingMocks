@@ -9,7 +9,17 @@ import tradeValuesChart from '../lib/tradeValues2026.json';
 // trade always gives the same verdict via a deterministic seed (no flickering
 // on re-render), but tweaking the package rerolls.
 
+// Hard guardrails — no probabilistic luck can push past these thresholds.
+// Real front offices don't propose or accept laughably lopsided deals.
+//   OVERPAY:  mover-up giving 35%+ MORE than required → unrealistic overpay
+//   UNDERPAY: mover-up giving 20%+ LESS than required → explicit hard floor
+//             (the logistic curve already kills probability here, but this
+//              makes the rejection deterministic rather than 0.x% lucky)
+const HARD_OVERPAY_LIMIT = 0.35;
+const HARD_UNDERPAY_LIMIT = -0.20;
+
 // Logistic curve: midpoint at -3% surplus, steepness 0.3.
+// Only applied within the realistic negotiation zone (UNDERPAY..OVERPAY).
 //   +10% surplus → 98% accept
 //   +5%          → 92%
 //    0% (fair)   → 71%
@@ -222,6 +232,27 @@ export function TradeModal({
     const surplus = moverUpTotal - required;
     const surplusPct = required > 0 ? surplus / required : 0;
 
+    // Hard guardrails — deterministic reject outside the realistic zone.
+    if (surplusPct > HARD_OVERPAY_LIMIT) {
+      return {
+        ok: false,
+        reason: 'absurd_overpay',
+        text: fromTeamEditable
+          ? `Too lopsided — ${moverUpTeam} would be massively overpaying`
+          : `Way too much — you'd be massively overpaying`,
+      };
+    }
+    if (surplusPct < HARD_UNDERPAY_LIMIT) {
+      const shortBy = Math.ceil(-surplus);
+      return {
+        ok: false,
+        reason: 'undervalued',
+        text: fromTeamEditable
+          ? `${moverUpTeam} needs ~${shortBy} more value — too far off`
+          : `Rejected — needs ~${shortBy} more value`,
+      };
+    }
+
     // Acceptance probability from the logistic curve.
     const prob = acceptanceProbability(surplusPct);
     const probPct = Math.round(prob * 100);
@@ -347,6 +378,7 @@ export function TradeModal({
   //   undervalued / others→ red (clear reject)
   const verdictColor = (() => {
     if (evalResult.reason === 'overpaying') return '#eab308';
+    if (evalResult.reason === 'absurd_overpay') return '#ef4444'; // hard-rejected overpay
     if (evalResult.reason === 'close') return '#f97316';
     if (evalResult.reason === 'lucky') return '#34d399'; // mint — got lucky
     if (evalResult.ok) return '#22c55e';
