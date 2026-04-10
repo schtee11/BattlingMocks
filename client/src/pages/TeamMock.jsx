@@ -1916,7 +1916,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               {picks.length}/{liveOrder.length}
             </span>
           </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
             {recentPicks.length === 0 ? (
               <div className="text-center text-text-muted text-xs py-8">
                 Click Start Mock Draft to begin

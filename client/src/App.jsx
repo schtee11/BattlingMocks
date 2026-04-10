@@ -33,10 +33,11 @@ function RouteLoader() {
 export default function App() {
   const location = useLocation();
   return (
-    <div className="min-h-screen text-text-primary">
+    <div className="h-full flex flex-col text-text-primary">
       <Navbar />
+      <div className="flex-1 min-h-0">
       <ErrorBoundary>
-        <div key={location.pathname} className="route-fade">
+        <div key={location.pathname} className="route-fade h-full">
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<Home />} />
@@ -52,6 +53,7 @@ export default function App() {
           </Suspense>
         </div>
       </ErrorBoundary>
+      </div>
       <Toaster
         position="top-right"
         toastOptions={{
