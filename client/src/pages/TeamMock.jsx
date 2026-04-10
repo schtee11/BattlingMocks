@@ -1094,7 +1094,7 @@ function ResultsView({
 
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col pb-24">
       {/* Off-screen export card for PNG generation */}
       <div
         style={{ position: 'fixed', top: 0, left: -10000, zIndex: -1, pointerEvents: 'none' }}
@@ -1681,7 +1681,16 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // viewport-locked overflow:hidden wrapper with fixed positioning.
   if (phase === PHASE_DONE) {
     return (
-      <div className="fixed inset-0 top-[40px] sm:top-[56px] z-20 bg-bg-deep overflow-y-auto overscroll-contain">
+      <div
+        className="fixed inset-0 top-[40px] sm:top-[56px] z-20 bg-bg-deep overscroll-contain"
+        style={{
+          // Use scroll (not auto) so Chrome doesn't toggle scrollability on
+          // re-renders and snap back to the top. Also force smooth scrolling
+          // via WebKit for momentum.
+          overflowY: 'scroll',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
       <ResultsView
         team={team}
         picks={picks}
@@ -1694,6 +1703,11 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         onRestart={restart}
         onChangeTeam={onChangeTeam}
       />
+      {/* Generous bottom padding so Chrome keeps the scroll container tall
+          even during re-renders when data URLs load and content height
+          briefly changes. Without this, Chrome occasionally recalculates
+          the scrollable area as shorter and snaps to top. */}
+      <div className="h-32" aria-hidden />
       </div>
     );
   }
