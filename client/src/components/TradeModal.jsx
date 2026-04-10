@@ -235,6 +235,12 @@ export function TradeModal({
     const surplus = moverUpTotal - required;
     const surplusPct = required > 0 ? surplus / required : 0;
 
+    // Acceptance probability must always be evaluated from the PARTNER's perspective.
+    // When FROM is mover-up (fromIsMovingUp=true): positive surplus = BUF overpays = partner happy → accept.
+    // When PARTNER is mover-up (fromIsMovingUp=false): positive surplus = partner overpays = partner unhappy → decline.
+    // Flip the sign in the second case so the sigmoid always reads correctly.
+    const partnerSurplusPct = fromIsMovingUp ? surplusPct : -surplusPct;
+
     // Hard reject: extreme lowballs only.
     if (surplusPct < hardUnderpayLimit()) {
       const shortBy = Math.ceil(-surplus);
@@ -251,13 +257,18 @@ export function TradeModal({
 
     // Acceptance probability — fair deals ~94%, overpays higher,
     // underpays drop steeply, extreme overpays dampened.
-    const prob = acceptanceProbability(surplusPct);
+    const prob = acceptanceProbability(partnerSurplusPct);
     const probPct = Math.round(prob * 100);
 
     // Preview shows only the probability — NOT accepted/rejected yet.
     // The actual roll happens in handlePropose so the live preview is
     // always monotonic: more value → higher %, no hash-driven surprises.
-    const shortBy = surplus < 0 ? Math.ceil(-surplus) : 0;
+    // shortBy: how much more value BUF needs to add to reach the fair threshold.
+    // Mover-up=FROM: need to close the gap between offer and required.
+    // Mover-up=PARTNER: BUF needs to add picks until theirTotal / (1+premium) ≈ yourTotal.
+    const shortBy = fromIsMovingUp
+      ? (surplus < 0 ? Math.ceil(-surplus) : 0)
+      : (surplus > 0 ? Math.ceil(theirTotal / (1 + premium) - yourTotal) : 0);
     let previewText;
     if (probPct >= 80) {
       previewText = fromTeamEditable
