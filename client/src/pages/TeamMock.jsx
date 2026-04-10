@@ -1275,6 +1275,14 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
 
+  // Lock body scroll while the draft simulator is mounted so the
+  // viewport-locked layout doesn't let the page scroll behind it.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
   const userSlotCount = useMemo(
     () => liveOrder.filter((s) => s.team === team).length,
