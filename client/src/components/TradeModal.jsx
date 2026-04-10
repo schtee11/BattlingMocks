@@ -3,6 +3,32 @@ import toast from 'react-hot-toast';
 import { TeamLogo } from './ui/TeamLogo.jsx';
 import tradeValuesChart from '../lib/tradeValues2026.json';
 
+// ── Probability helpers ─────────────────────────────────────────────────────
+// Instead of hard accept/reject, trades have a % chance of acceptance based
+// on how far the mover-up's value is from the required threshold. The same
+// trade always gives the same verdict via a deterministic seed (no flickering
+// on re-render), but tweaking the package rerolls.
+
+// Logistic curve: midpoint at -3% surplus, steepness 0.3.
+//   +10% surplus → 98% accept
+//   +5%          → 92%
+//    0% (fair)   → 71%
+//   -3%          → 50%
+//   -8%          → 18%
+//   -15%         → 3%
+function acceptanceProbability(surplusPct) {
+  return 1 / (1 + Math.exp(-0.3 * ((surplusPct * 100) + 3)));
+}
+
+// Deterministic random from trade contents — same picks = same roll.
+function tradeHash(from, partner, aPicks, bPicks) {
+  const key = [from, partner, ...aPicks.sort((a, b) => a - b), '|', ...bPicks.sort((a, b) => a - b)].join(',');
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
+  const x = Math.sin(Math.abs(h) + 1) * 10000;
+  return x - Math.floor(x); // 0..1
+}
+
 // Pure client-side trade proposal using the Rich Hill value chart. Shared by
 // the Team Mock simulator and the Round 1 Draft page.
 //
@@ -192,50 +218,59 @@ export function TradeModal({
 
     const required = moverDownTotal * (1 + premium);
 
-    if (moverUpTotal < required) {
-      const shortBy = Math.ceil(required - moverUpTotal);
-      const percentShort = (shortBy / required) * 100;
-      if (percentShort < 6) {
-        return {
-          ok: false,
-          reason: 'close',
-          text: fromTeamEditable
-            ? `Very close — ${moverUpTeam} needs ${shortBy} more value`
-            : `Very close — add ${shortBy} more value`,
-        };
-      }
-      return {
-        ok: false,
-        reason: 'undervalued',
-        text: fromTeamEditable
-          ? `${moverUpTeam} needs to add ${shortBy} more value`
-          : `Rejected — needs ${shortBy} more value`,
-      };
-    }
+    // Surplus: positive = mover-up is overpaying, negative = underpaying.
+    const surplus = moverUpTotal - required;
+    const surplusPct = required > 0 ? surplus / required : 0;
 
-    // Accepted — grade the quality of the offer.
-    if (moverUpTotal > required * 1.20) {
+    // Acceptance probability from the logistic curve.
+    const prob = acceptanceProbability(surplusPct);
+    const probPct = Math.round(prob * 100);
+
+    // Deterministic roll seeded from the trade contents. Same trade = same
+    // outcome. Modify a single pick and it rerolls.
+    const roll = tradeHash(
+      effectiveFromTeam,
+      partnerTeam,
+      [...yourSelected],
+      [...theirSelected]
+    );
+    const accepted = roll < prob;
+
+    // Grade the verdict based on probability and acceptance.
+    if (probPct >= 95) {
+      // Near-certain: always goes through, might be overpaying.
       return {
         ok: true,
-        reason: 'overpaying',
+        probability: probPct,
+        reason: surplusPct > 0.15 ? 'overpaying' : 'good',
         text: fromTeamEditable
-          ? `Accepted — ${moverUpTeam} overpays`
-          : "Accepted — you're overpaying",
+          ? surplusPct > 0.15 ? `Accepted — ${moverUpTeam} overpays (${probPct}%)` : `Accepted (${probPct}%)`
+          : surplusPct > 0.15 ? `Accepted — you're overpaying (${probPct}%)` : `${partnerTeam} accepts (${probPct}%)`,
       };
     }
-    if (moverUpTotal > required * 1.05) {
+    if (accepted) {
       return {
         ok: true,
-        reason: 'good',
+        probability: probPct,
+        reason: probPct >= 70 ? 'fair' : 'lucky',
         text: fromTeamEditable
-          ? `Good deal — both sides accept`
-          : `Good offer — ${partnerTeam} accepts`,
+          ? `Accepted (${probPct}% chance)`
+          : `${partnerTeam} accepts (${probPct}% chance)`,
       };
     }
+    // Rejected — show probability so user knows how close they are.
+    const shortBy = surplus < 0 ? Math.ceil(-surplus) : 0;
     return {
-      ok: true,
-      reason: 'fair',
-      text: fromTeamEditable ? 'Fair trade — both sides accept' : `${partnerTeam} accepts`,
+      ok: false,
+      probability: probPct,
+      reason: probPct >= 35 ? 'close' : 'undervalued',
+      text: fromTeamEditable
+        ? probPct >= 35
+          ? `Rejected this time (${probPct}%) — tweak the deal`
+          : `${moverUpTeam} needs to add ~${shortBy} more value (${probPct}%)`
+        : probPct >= 35
+          ? `Rejected (${probPct}%) — tweak the deal`
+          : `Rejected — needs ~${shortBy} more value (${probPct}%)`,
     };
   }
 
@@ -305,14 +340,15 @@ export function TradeModal({
     );
   }
 
-  // Verdict palette:
-  //   fair / good          → green (accepted normally)
-  //   overpaying           → yellow (accepted but you gave up too much)
-  //   close                → orange (reject but within striking distance)
-  //   undervalued / others → red (clear reject)
+  // Verdict palette — richer feedback for the probabilistic model:
+  //   fair / good / lucky → green (accepted)
+  //   overpaying          → yellow (accepted but gave up too much)
+  //   close               → orange (rejected but within striking distance)
+  //   undervalued / others→ red (clear reject)
   const verdictColor = (() => {
     if (evalResult.reason === 'overpaying') return '#eab308';
     if (evalResult.reason === 'close') return '#f97316';
+    if (evalResult.reason === 'lucky') return '#34d399'; // mint — got lucky
     if (evalResult.ok) return '#22c55e';
     return '#ef4444';
   })();
