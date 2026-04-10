@@ -1093,7 +1093,7 @@ function ResultsView({
   }
 
   return (
-    <div className="flex flex-col min-h-[calc(100dvh-56px)] overscroll-contain">
+    <div className="flex flex-col">
       {/* Off-screen export card for PNG generation */}
       <div
         style={{ position: 'fixed', top: 0, left: -10000, zIndex: -1, pointerEvents: 'none' }}
@@ -1313,18 +1313,36 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [saving, setSaving] = useState(false);
   const [trades, setTrades] = useState([]); // record trades for the results view
 
-  // Lock body scroll while the in-draft layout is active so the
-  // viewport-locked panels don't let the page scroll behind them.
-  // Release the lock when the draft finishes (PHASE_DONE) so the
-  // ResultsView can scroll normally.
+  // Lock page scroll while the in-draft layout is active. On iOS/Chrome
+  // mobile, overflow:hidden on body alone isn't enough — momentum scroll
+  // bleeds through inner containers and snaps the page. Setting both html
+  // and body to fixed+overflow:hidden is the only reliable cross-browser
+  // scroll lock. We save/restore scrollY so the page doesn't jump when
+  // returning to the team mock list.
   useEffect(() => {
     if (phase === PHASE_DONE) {
+      // Release lock — ResultsView uses a fixed overlay with its own scroll
+      document.documentElement.style.overflow = '';
       document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
       return;
     }
-    const prev = document.body.style.overflow;
+    const scrollY = window.scrollY;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    return () => {
+      document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      document.body.style.overflow = '';
+      window.scrollTo(0, scrollY);
+    };
   }, [phase]);
 
   // Mobile: tab-based layout replaces the old resizable panels
