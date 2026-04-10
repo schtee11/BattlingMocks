@@ -854,6 +854,7 @@ const ExportCard = forwardRef(function ExportCard(
 // ─── Post-draft Results View ──────────────────────────────────────────────────
 // Shown right after the draft finishes. Shows only the user's picks (not the
 // full 262-pick board), any trades made during the mock, and save/share CTAs.
+// Share produces the same PNG image as SavedView via ExportCard.
 function ResultsView({
   team,
   picks,
@@ -882,32 +883,218 @@ function ResultsView({
   }, [myPicksOnly]);
   const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
 
-  // Generate a shareable text summary and copy to clipboard
-  function handleShareText() {
-    const lines = [`${team} 7-Round Mock Draft`];
-    for (const r of rounds) {
-      for (const pick of myPicksByRound[r]) {
-        const player = byId.get(pick.player_id);
-        if (!player) continue;
-        lines.push(`R${pick.round} #${pick.pick_number} — ${player.name}, ${player.position}${player.school ? `, ${player.school}` : ''}`);
-      }
+  // ── PNG Export infrastructure (mirrors SavedView) ──────────────────────────
+  const exportRef = useRef(null);
+  const [exporting, setExporting] = useState(false);
+  const cachedBlobRef = useRef(null);
+
+  const isMobile = useMemo(() => {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    if (!navigator.share) return false;
+    return window.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
+  }, []);
+
+  const [theme, setTheme] = useState(getCurrentTheme);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTheme(getCurrentTheme()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+  const themeBg = theme === 'light' ? '#f0f2f7' : '#04080f';
+
+  // Construct a mock-like object for ExportCard
+  const mockForExport = useMemo(() => ({
+    title: title || `${team} Team Mock`,
+    submitted_at: new Date().toISOString(),
+    team_abbr: team,
+  }), [title, team]);
+
+  // Pre-fetch team logo + headshots as data URLs for ExportCard
+  const expectedHeadshotCount = useMemo(
+    () => myPicksOnly.filter((p) => byId.get(p.player_id)?.headshot_url).length,
+    [myPicksOnly, byId]
+  );
+
+  const [teamLogoDataUrl, setTeamLogoDataUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const url = proxyImageUrl(teamLogoEspnUrl(team));
+    fetch(url)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((blob) => {
+        if (!blob || cancelled) return;
+        const reader = new FileReader();
+        reader.onloadend = () => { if (!cancelled) setTeamLogoDataUrl(reader.result); };
+        reader.readAsDataURL(blob);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [team]);
+
+  const [headshotDataUrls, setHeadshotDataUrls] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const toFetch = myPicksOnly
+      .map((p) => {
+        const player = byId.get(p.player_id);
+        return player?.headshot_url ? { id: p.player_id, url: player.headshot_url } : null;
+      })
+      .filter(Boolean);
+    Promise.all(
+      toFetch.map(({ id, url }) =>
+        fetch(proxyImageUrl(url))
+          .then((r) => (r.ok ? r.blob() : null))
+          .then(
+            (blob) =>
+              new Promise((resolve) => {
+                if (!blob) return resolve([id, null]);
+                const reader = new FileReader();
+                reader.onloadend = () => resolve([id, reader.result]);
+                reader.readAsDataURL(blob);
+              })
+          )
+          .catch(() => [id, null])
+      )
+    ).then((pairs) => {
+      if (cancelled) return;
+      const map = {};
+      for (const [id, dataUrl] of pairs) if (dataUrl) map[id] = dataUrl;
+      setHeadshotDataUrls(map);
+    });
+    return () => { cancelled = true; };
+  }, [myPicksOnly, byId]);
+
+  const logoReadyRef = useRef(!!teamLogoDataUrl);
+  const headshotCountRef = useRef(Object.keys(headshotDataUrls).length);
+  useEffect(() => { logoReadyRef.current = !!teamLogoDataUrl; }, [teamLogoDataUrl]);
+  useEffect(() => { headshotCountRef.current = Object.keys(headshotDataUrls).length; }, [headshotDataUrls]);
+
+  async function waitForImages(timeoutMs = 6000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (logoReadyRef.current && headshotCountRef.current >= expectedHeadshotCount) return true;
+      await new Promise((r) => setTimeout(r, 100));
     }
-    if (trades.length > 0) {
-      lines.push('');
-      lines.push('Trades:');
-      for (const t of trades) {
-        lines.push(`  w/ ${t.partnerTeam}: Gave #${t.gave.join(', #')} → Got #${t.got.join(', #')}`);
-      }
+    return false;
+  }
+
+  async function generateBlob() {
+    if (!exportRef.current) return null;
+    const imgs = exportRef.current.querySelectorAll('img');
+    await Promise.all(
+      Array.from(imgs).map((img) =>
+        img.complete && img.naturalHeight > 0
+          ? Promise.resolve()
+          : new Promise((resolve) => {
+              img.addEventListener('load', resolve, { once: true });
+              img.addEventListener('error', resolve, { once: true });
+            })
+      )
+    );
+    const toPng = await loadToPng();
+    const dataUrl = await toPng(exportRef.current, {
+      cacheBust: true,
+      pixelRatio: 2,
+      backgroundColor: themeBg,
+    });
+    const res = await fetch(dataUrl);
+    return res.blob();
+  }
+
+  const fileName = `${team.toLowerCase()}-mock-${new Date().toISOString().slice(0, 10)}.png`;
+
+  function handleCopy() {
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      toast.error('Clipboard unsupported — use Share instead');
+      return;
     }
-    lines.push('', 'MockDraft Showdown');
-    const text = lines.join('\n');
-    navigator.clipboard.writeText(text)
-      .then(() => toast.success('Copied to clipboard — paste into Discord'))
-      .catch(() => toast.error('Copy failed'));
+    setExporting(true);
+    const blobPromise = (async () => {
+      await waitForImages();
+      cachedBlobRef.current = null;
+      const blob = await generateBlob();
+      if (!blob) throw new Error('render failed');
+      cachedBlobRef.current = blob;
+      return blob;
+    })();
+    navigator.clipboard
+      .write([new ClipboardItem({ 'image/png': blobPromise })])
+      .then(() => { toast.success('Copied — paste into Discord with Ctrl+V'); })
+      .catch((e) => {
+        console.error('[copy]', e);
+        if (e.name === 'NotAllowedError' || e.message?.includes('focused')) {
+          toast.error('Click the page first, then tap Copy');
+        } else {
+          toast.error('Copy failed — try Share instead');
+        }
+      })
+      .finally(() => setExporting(false));
+  }
+
+  function triggerDownload(blob) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function handleShare() {
+    if (isMobile) handleMobileShare();
+    else handleCopy();
+  }
+
+  async function handleMobileShare() {
+    setExporting(true);
+    try {
+      await waitForImages();
+      cachedBlobRef.current = null;
+      const blob = await generateBlob();
+      if (!blob) throw new Error('render failed');
+      cachedBlobRef.current = blob;
+      const file = new File([blob], fileName, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: title || `${team} Team Mock`,
+            text: `My ${team} mock draft — MockDraft Showdown`,
+          });
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+        }
+      }
+      triggerDownload(blob);
+      toast.success('Downloaded — share it with the squad');
+    } catch (e) {
+      console.error('[share]', e);
+      toast.error('Could not generate image');
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
     <div className="flex flex-col min-h-[calc(100dvh-56px)]">
+      {/* Off-screen export card for PNG generation */}
+      <div
+        style={{ position: 'fixed', top: 0, left: -10000, zIndex: -1, pointerEvents: 'none' }}
+        aria-hidden
+      >
+        <ExportCard
+          ref={exportRef}
+          savedMock={mockForExport}
+          myPicks={myPicksOnly}
+          byId={byId}
+          userTeam={team}
+          theme={theme}
+          teamLogoDataUrl={teamLogoDataUrl}
+          headshotDataUrls={headshotDataUrls}
+        />
+      </div>
+
       <div className="max-w-3xl mx-auto w-full px-4 py-6">
         {/* ── Header ── */}
         <div className="flex items-center gap-3 mb-1">
@@ -960,10 +1147,12 @@ function ResultsView({
               Change Team
             </button>
             <button
-              onClick={handleShareText}
-              className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-accent hover:brightness-125 transition ml-auto"
+              onClick={handleShare}
+              disabled={exporting}
+              className="font-display font-bold text-[10px] uppercase tracking-[0.12em] text-bg-deep rounded-lg px-3 py-1.5 transition hover:brightness-110 disabled:opacity-50 ml-auto"
+              style={{ background: 'var(--gradient-accent)' }}
             >
-              Share
+              {exporting ? 'Rendering…' : 'Share'}
             </button>
           </div>
         </div>
@@ -1094,7 +1283,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
   const [picks, setPicks] = useState([]); // sequential: [{pick_number, team, player_id, round, is_user}]
   const [phase, setPhase] = useState(PHASE_READY);
-  const [randomness, setRandomness] = useState(0.15);
+  const [randomness, setRandomness] = useState(0.25);
   const [speedIdx, setSpeedIdx] = useState(1); // default "Fast"
   const [showUsed, setShowUsed] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);

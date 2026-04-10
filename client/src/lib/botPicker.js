@@ -12,8 +12,13 @@
 //                  this lets the bot reach ~6-8 ranks for a top need and
 //                  ~3-4 ranks for a secondary need, then BPA takes over.
 //
-//   jitter         multiplicative 1 ± randomness/2. At default randomness 0.15
-//                  that's ±7.5%; at 1.0 (max chaos slider) it's ±50%.
+//   jitter         multiplicative 1 ± randomness/2. At default randomness 0.25
+//                  that's ±12.5%; at 1.0 (max chaos slider) it's ±50%.
+//
+// Selection: instead of always picking the max-score player, scores are used
+// as weights in a weighted random draw from a top-N candidate pool. This
+// creates natural draft variance — the same pool won't always produce the
+// same pick. The pool size scales with the randomness slider.
 
 const POS_ALIASES = {
   DL: 'DT', DE: 'EDGE', OG: 'IOL', OC: 'IOL',
@@ -26,7 +31,7 @@ function normalizePos(pos) {
   return POS_ALIASES[up] || up;
 }
 
-export function pickForTeam({ available, teamNeeds = [], randomness = 0.15 }) {
+export function pickForTeam({ available, teamNeeds = [], randomness = 0.25 }) {
   if (!available || available.length === 0) return null;
 
   const needs = (teamNeeds || []).map(normalizePos).filter(Boolean);
@@ -35,8 +40,7 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.15 }) {
     if (!needsPriority.has(pos)) needsPriority.set(pos, i);
   });
 
-  let bestScore = -Infinity;
-  let best = null;
+  const scored = [];
   for (const p of available) {
     const rank = Number.isFinite(p.rank) ? p.rank : 500;
     const baseScore = Math.exp(-0.025 * (rank - 1));
@@ -51,19 +55,38 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.15 }) {
     const jitter = 1 + (Math.random() - 0.5) * randomness;
 
     const score = baseScore * needsMultiplier * jitter;
-    if (score > bestScore) {
-      bestScore = score;
-      best = p;
-    }
+    scored.push({ player: p, score });
   }
-  return best;
+
+  // Weighted random selection from a top-N candidate pool.
+  // Pool size scales with the randomness slider:
+  //   randomness 0.15 → pool of ~7   (tight BPA, low variance)
+  //   randomness 0.50 → pool of ~10  (moderate variance)
+  //   randomness 1.00 → pool of ~15  (max chaos)
+  // This ensures the same board doesn't always produce identical picks.
+  scored.sort((a, b) => b.score - a.score);
+  const poolSize = Math.min(
+    Math.max(3, Math.round(5 + randomness * 10)),
+    scored.length
+  );
+  const pool = scored.slice(0, poolSize);
+
+  const totalWeight = pool.reduce((s, x) => s + x.score, 0);
+  if (totalWeight <= 0) return pool[0]?.player ?? null;
+
+  let roll = Math.random() * totalWeight;
+  for (const { player, score } of pool) {
+    roll -= score;
+    if (roll <= 0) return player;
+  }
+  return pool[pool.length - 1]?.player ?? null;
 }
 
 /**
  * Full non-sequential simulation — kept for legacy callers/tests. The live
  * team-mock page uses its own pick-by-pick loop instead.
  */
-export function simulateDraft({ draftOrder, players, userTeam, userPicks = {}, randomness = 0.15 }) {
+export function simulateDraft({ draftOrder, players, userTeam, userPicks = {}, randomness = 0.25 }) {
   const used = new Set(Object.values(userPicks).filter(Number.isFinite));
   const byId = new Map(players.map((p) => [p.id, p]));
   const sorted = [...draftOrder].sort((a, b) => a.pick_number - b.pick_number);

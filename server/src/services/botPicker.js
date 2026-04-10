@@ -23,8 +23,11 @@ function normalizePos(pos) {
  * needsMultiplier +20% for the team's top need, +13% for second, +7% for
  *                 third, 1.0 otherwise.
  * jitter          multiplicative 1 ± randomness/2.
+ *
+ * Selection uses weighted random from a top-N candidate pool (not
+ * deterministic max) so re-running the same board produces different picks.
  */
-export function pickForTeam({ available, teamNeeds = [], randomness = 0.15 }) {
+export function pickForTeam({ available, teamNeeds = [], randomness = 0.25 }) {
   if (!available || available.length === 0) return null;
 
   const needs = (teamNeeds || []).map(normalizePos).filter(Boolean);
@@ -33,9 +36,7 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.15 }) {
     if (!needsPriority.has(pos)) needsPriority.set(pos, i);
   });
 
-  let bestScore = -Infinity;
-  let best = null;
-
+  const scored = [];
   for (const p of available) {
     const rank = Number.isFinite(p.rank) ? p.rank : 500;
     const baseScore = Math.exp(-0.025 * (rank - 1));
@@ -50,16 +51,29 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.15 }) {
     const jitter = 1 + (Math.random() - 0.5) * randomness;
 
     const score = baseScore * needsMultiplier * jitter;
-    if (score > bestScore) {
-      bestScore = score;
-      best = p;
-    }
+    scored.push({ player: p, score });
   }
 
-  return best;
+  // Weighted random selection from a top-N candidate pool.
+  scored.sort((a, b) => b.score - a.score);
+  const poolSize = Math.min(
+    Math.max(3, Math.round(5 + randomness * 10)),
+    scored.length
+  );
+  const pool = scored.slice(0, poolSize);
+
+  const totalWeight = pool.reduce((s, x) => s + x.score, 0);
+  if (totalWeight <= 0) return pool[0]?.player ?? null;
+
+  let roll = Math.random() * totalWeight;
+  for (const { player, score } of pool) {
+    roll -= score;
+    if (roll <= 0) return player;
+  }
+  return pool[pool.length - 1]?.player ?? null;
 }
 
-export function simulateDraft({ draftOrder, players, userTeam, userPicks = {}, randomness = 0.15 }) {
+export function simulateDraft({ draftOrder, players, userTeam, userPicks = {}, randomness = 0.25 }) {
   const used = new Set();
   for (const pid of Object.values(userPicks)) {
     if (Number.isFinite(pid)) used.add(pid);
