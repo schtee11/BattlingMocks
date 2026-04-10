@@ -1658,8 +1658,11 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // ── Layout ─────────────────────────────────────────────────────────────────
   // Dedicated results screen once the draft is complete — swaps the in-draft
   // two-panel layout for a "Mock complete" summary with save controls.
+  // ResultsView needs to scroll freely — break out of the parent's
+  // viewport-locked overflow:hidden wrapper with fixed positioning.
   if (phase === PHASE_DONE) {
     return (
+      <div className="fixed inset-0 top-[40px] sm:top-[56px] z-20 bg-bg-deep overflow-y-auto overscroll-contain">
       <ResultsView
         team={team}
         picks={picks}
@@ -1672,6 +1675,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         onRestart={restart}
         onChangeTeam={onChangeTeam}
       />
+      </div>
     );
   }
 
