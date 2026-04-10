@@ -133,6 +133,9 @@ export function TradeModal({
   const [partnerTeam, setPartnerTeam] = useState(initialPartner);
   const [yourSelected, setYourSelected] = useState(new Set());
   const [theirSelected, setTheirSelected] = useState(new Set());
+  // Tracks hashes of trades the AI has already declined so the user can't
+  // re-propose identical terms — they must change the deal first.
+  const [rejectedHashes, setRejectedHashes] = useState(new Set());
 
   useEffect(() => { setTheirSelected(new Set()); }, [partnerTeam]);
   // When the user switches "From" team (R1 dual-mode), reset both sides and
@@ -207,6 +210,19 @@ export function TradeModal({
       };
     }
 
+    // Block re-proposing an identical deal that was already declined.
+    // The hash is deterministic so spamming would always get the same result.
+    const currentHash = tradeHash(effectiveFromTeam, partnerTeam, [...yourSelected], [...theirSelected]);
+    if (rejectedHashes.has(currentHash)) {
+      return {
+        ok: false,
+        reason: 'rejected',
+        text: fromTeamEditable
+          ? `${partnerTeam} already declined these exact terms — change the deal`
+          : `${partnerTeam} already said no — change the terms to try again`,
+      };
+    }
+
     // Symmetric check: figure out who's "moving up" (the team that ends up
     // with the single best pick in the deal) and require THAT team to pay a
     // premium. This handles both directions naturally — whether the FROM side
@@ -251,7 +267,7 @@ export function TradeModal({
           ? `${moverUpTeam} needs ~${shortBy} more value — too far off`
           : fromIsMovingUp
             ? `Too far off — add ~${shortBy} more value`
-            : `Too far off — ${partnerTeam} needs ~${shortBy} more`,
+            : `Too far off — not enough value back (~${shortBy} more needed from ${partnerTeam})`,
       };
     }
 
@@ -285,9 +301,7 @@ export function TradeModal({
     } else {
       previewText = fromTeamEditable
         ? `${moverUpTeam} needs ~${shortBy} more value (${probPct}%)`
-        : fromIsMovingUp
-          ? `Add ~${shortBy} more value (${probPct}%)`
-          : `${partnerTeam} needs ~${shortBy} more (${probPct}%)`;
+        : `Add ~${shortBy} more value (${probPct}%)`;
     }
     return {
       ok: 'pending',
@@ -304,7 +318,7 @@ export function TradeModal({
 
   // Only hard structural violations block the button entirely. Probabilistic
   // deals always allow proposing — the actual roll happens on click.
-  const HARD_BLOCK_REASONS = new Set(['empty', 'one_for_one', 'hard_underpay']);
+  const HARD_BLOCK_REASONS = new Set(['empty', 'one_for_one', 'hard_underpay', 'rejected']);
   const canPropose = !HARD_BLOCK_REASONS.has(evalResult.reason);
 
   function handlePropose() {
@@ -323,10 +337,12 @@ export function TradeModal({
       [...theirSelected]
     );
     if (roll >= prob) {
+      // Lock this exact deal so re-proposing it is blocked — user must change terms.
+      setRejectedHashes((prev) => new Set([...prev, roll]));
       toast.error(
         fromTeamEditable
           ? `${partnerTeam} declined (${evalResult.probability}% odds)`
-          : `${partnerTeam} declined — try adding more value (${evalResult.probability}%)`
+          : `${partnerTeam} declined — change the terms to try again (${evalResult.probability}%)`
       );
       return;
     }
