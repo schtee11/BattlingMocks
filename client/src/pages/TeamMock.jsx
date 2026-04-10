@@ -271,7 +271,9 @@ function SavedView({ savedMock, players, onRestart }) {
     }, 500);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedMock.id, theme, teamLogoDataUrl, headshotsLoadedCount]);
+  }, [savedMock.id, theme, teamLogoDataUrl, headshotsLoadedCount,
+      // Re-render when trades change so the cached blob always includes them.
+      Array.isArray(savedMock.trades) ? savedMock.trades.length : 0]);
 
   const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
 
@@ -392,6 +394,7 @@ function SavedView({ savedMock, players, onRestart }) {
           theme={theme}
           teamLogoDataUrl={teamLogoDataUrl}
           headshotDataUrls={headshotDataUrls}
+          trades={Array.isArray(savedMock.trades) ? savedMock.trades : []}
         />
       </div>
 
@@ -627,7 +630,7 @@ const TEAM_BRAND = {
 };
 
 const ExportCard = forwardRef(function ExportCard(
-  { savedMock, myPicks, byId, userTeam, theme, teamLogoDataUrl, headshotDataUrls = {} },
+  { savedMock, myPicks, byId, userTeam, theme, teamLogoDataUrl, headshotDataUrls = {}, trades = [] },
   ref
 ) {
   const title = savedMock.title || `${userTeam} Team Mock`;
@@ -866,10 +869,122 @@ const ExportCard = forwardRef(function ExportCard(
         </div>
       ))}
 
+      {/* ── Trades Made ── */}
+      {trades.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: 3,
+                color: C.muted,
+              }}
+            >
+              Trades Made
+            </div>
+            <div style={{ flex: 1, height: 1, background: C.subtle }} />
+            <div style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace' }}>
+              {trades.length} trade{trades.length === 1 ? '' : 's'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {trades.map((t, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  padding: '14px 18px',
+                  borderRadius: 12,
+                  background: C.surface,
+                  border: `1px solid ${C.subtle}`,
+                }}
+              >
+                {/* User team badge */}
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
+                    background: TEAM_BRAND[userTeam] || C.accent,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: userTeam.length >= 4 ? 10 : 12,
+                    fontWeight: 900,
+                    color: '#ffffff',
+                    flexShrink: 0,
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {userTeam}
+                </div>
+                <div style={{ fontSize: 13, color: C.muted, fontFamily: 'monospace', flexShrink: 0 }}>↔</div>
+                {/* Partner team badge */}
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
+                    background: TEAM_BRAND[t.partnerTeam] || C.accent,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: (t.partnerTeam || '').length >= 4 ? 10 : 12,
+                    fontWeight: 900,
+                    color: '#ffffff',
+                    flexShrink: 0,
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {t.partnerTeam}
+                </div>
+                {/* Pick details */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: C.muted }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        textTransform: 'uppercase',
+                        letterSpacing: 1.5,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Gave
+                    </span>{' '}
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.text }}>
+                      {(t.gave || []).map((n) => `#${n}`).join(', ')}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        textTransform: 'uppercase',
+                        letterSpacing: 1.5,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Got
+                    </span>{' '}
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>
+                      {(t.got || []).map((n) => `#${n}`).join(', ')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Branding footer ── */}
       <div
         style={{
-          marginTop: 36,
+          marginTop: trades.length > 0 ? 0 : 36,
           paddingTop: 20,
           borderTop: `1px solid ${C.subtle}`,
           display: 'flex',
@@ -1060,7 +1175,7 @@ function ResultsView({
     }, 500);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, teamLogoDataUrl, headshotsLoadedCount]);
+  }, [theme, teamLogoDataUrl, headshotsLoadedCount, trades.length]);
 
   const fileName = `${team.toLowerCase()}-mock-${new Date().toISOString().slice(0, 10)}.png`;
 
@@ -1154,6 +1269,7 @@ function ResultsView({
           theme={theme}
           teamLogoDataUrl={teamLogoDataUrl}
           headshotDataUrls={headshotDataUrls}
+          trades={trades}
         />
       </div>
 
