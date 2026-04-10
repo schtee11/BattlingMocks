@@ -4,30 +4,35 @@ import { TeamLogo } from './ui/TeamLogo.jsx';
 import tradeValuesChart from '../lib/tradeValues2026.json';
 
 // ── Probability helpers ─────────────────────────────────────────────────────
-// Instead of hard accept/reject, trades have a % chance of acceptance based
-// on how far the mover-up's value is from the required threshold. The same
-// trade always gives the same verdict via a deterministic seed (no flickering
-// on re-render), but tweaking the package rerolls.
+// Trades have a % chance of acceptance based on how far the mover-up's value
+// is from the required threshold. Fair deals are nearly always accepted;
+// underpays drop steeply; extreme overpays are dampened (unrealistic gifts).
+// Same trade always gives the same verdict via a deterministic seed.
 
-// Hard guardrails — no probabilistic luck can push past these thresholds.
-// Real front offices don't propose or accept laughably lopsided deals.
-//   OVERPAY:  mover-up giving 35%+ MORE than required → unrealistic overpay
-//   UNDERPAY: mover-up giving 20%+ LESS than required → explicit hard floor
-//             (the logistic curve already kills probability here, but this
-//              makes the rejection deterministic rather than 0.x% lucky)
-const HARD_OVERPAY_LIMIT = 0.35;
-const HARD_UNDERPAY_LIMIT = -0.20;
+// Only hard wall: extreme lowballs (25%+ underpay) are always rejected.
+const HARD_UNDERPAY_LIMIT = -0.25;
 
-// Logistic curve: midpoint at -3% surplus, steepness 0.3.
-// Only applied within the realistic negotiation zone (UNDERPAY..OVERPAY).
-//   +10% surplus → 98% accept
-//   +5%          → 92%
-//    0% (fair)   → 71%
-//   -3%          → 50%
-//   -8%          → 18%
-//   -15%         → 3%
+// Acceptance probability curve:
+//   Sigmoid base centered at -8% surplus (fair ≈ 94%) with an exponential
+//   dampener above +30% surplus to make gift trades very unlikely.
+//
+//   +10% → 99.8%   (slight overpay — partner happy)
+//   +5%  → 99%     (good deal)
+//    0%  → 94%     (fair — almost always accepted)
+//   -5%  → 74%     (slight underpay — decent chance)
+//   -8%  → 50%     (midpoint)
+//   -10% → 33%     (getting risky)
+//   -15% → 8%      (very unlikely)
+//   +35% → ~47%    (starting to look unrealistic)
+//   +50% → ~5%     (gift trade — nearly impossible)
 function acceptanceProbability(surplusPct) {
-  return 1 / (1 + Math.exp(-0.3 * ((surplusPct * 100) + 3)));
+  const base = 1 / (1 + Math.exp(-0.35 * ((surplusPct * 100) + 8)));
+  // Dampen extreme overpays — real teams don't make gift trades
+  if (surplusPct > 0.30) {
+    const excess = (surplusPct - 0.30) * 100;
+    return base * Math.exp(-0.15 * excess);
+  }
+  return base;
 }
 
 // Deterministic random from trade contents — same picks = same roll.
@@ -212,25 +217,10 @@ export function TradeModal({
     const moverDownCount = fromIsMovingUp ? theirCount : yourCount;
     const moverUpTeam = fromIsMovingUp ? effectiveFromTeam : partnerTeam;
 
-    // Direction premium: giving multiple picks for fewer costs more.
-    // Uses quadratic scaling so extreme differentials (5-for-1, 7-for-1)
-    // require massively more value — linear was too weak for lopsided deals.
-    //   2-for-1 (diff=1): 7.5%    3-for-1 (diff=2): 18%
-    //   4-for-1 (diff=3): 31.5%   5-for-1 (diff=4): 48%
-    //   7-for-1 (diff=6): 90%
-    let premium = 0;
-    if (moverUpCount > moverDownCount) {
-      const diff = moverUpCount - moverDownCount;
-      premium += 0.06 * diff + 0.015 * diff * diff;
-    }
-
-    // Package dilution — 4+ picks for 1 adds risk.
-    if (moverUpCount >= 4 && moverDownCount === 1) premium += 0.04;
-
-    // Top-pick resistance: the best pick in the deal is hard to pry loose.
-    if (topPickInDeal <= 3) premium += 0.10;
-    else if (topPickInDeal <= 10) premium += 0.06;
-    else if (topPickInDeal <= 20) premium += 0.03;
+    // Simple premium: mover-up pays a flat 5% for moving up.
+    // Top-5 picks are slightly harder to pry loose (+3%).
+    let premium = 0.05;
+    if (topPickInDeal <= 5) premium += 0.03;
 
     const required = moverDownTotal * (1 + premium);
 
@@ -238,18 +228,7 @@ export function TradeModal({
     const surplus = moverUpTotal - required;
     const surplusPct = required > 0 ? surplus / required : 0;
 
-    // Hard guardrails — deterministic reject outside the realistic zone.
-    if (surplusPct > HARD_OVERPAY_LIMIT) {
-      return {
-        ok: false,
-        reason: 'absurd_overpay',
-        text: fromTeamEditable
-          ? `Too lopsided — ${moverUpTeam} would be massively overpaying`
-          : fromIsMovingUp
-            ? `Way too much — you'd be massively overpaying`
-            : `Too lopsided — ${partnerTeam} would never give this much`,
-      };
-    }
+    // Hard reject: extreme lowballs only.
     if (surplusPct < HARD_UNDERPAY_LIMIT) {
       const shortBy = Math.ceil(-surplus);
       return {
@@ -257,11 +236,14 @@ export function TradeModal({
         reason: 'hard_underpay',
         text: fromTeamEditable
           ? `${moverUpTeam} needs ~${shortBy} more value — too far off`
-          : `Rejected — needs ~${shortBy} more value`,
+          : fromIsMovingUp
+            ? `Too far off — add ~${shortBy} more value`
+            : `Too far off — ${partnerTeam} needs ~${shortBy} more`,
       };
     }
 
-    // Acceptance probability from the logistic curve.
+    // Acceptance probability — fair deals ~94%, overpays higher,
+    // underpays drop steeply, extreme overpays dampened.
     const prob = acceptanceProbability(surplusPct);
     const probPct = Math.round(prob * 100);
 
@@ -275,31 +257,14 @@ export function TradeModal({
     );
     const accepted = roll < prob;
 
-    // Grade the verdict based on probability and acceptance.
-    if (probPct >= 95) {
-      // Near-certain: always goes through, might be overpaying.
-      const isOverpay = surplusPct > 0.15;
-      return {
-        ok: true,
-        probability: probPct,
-        reason: isOverpay ? 'overpaying' : 'good',
-        text: fromTeamEditable
-          ? isOverpay ? `Accepted — ${moverUpTeam} overpays (${probPct}%)` : `Accepted (${probPct}%)`
-          : isOverpay
-            ? fromIsMovingUp
-              ? `Accepted — you're overpaying (${probPct}%)`
-              : `Accepted — ${partnerTeam} is overpaying (${probPct}%)`
-            : `${partnerTeam} accepts (${probPct}%)`,
-      };
-    }
     if (accepted) {
       return {
         ok: true,
         probability: probPct,
-        reason: probPct >= 70 ? 'fair' : 'lucky',
+        reason: probPct >= 70 ? 'good' : 'lucky',
         text: fromTeamEditable
-          ? `Accepted (${probPct}% chance)`
-          : `${partnerTeam} accepts (${probPct}% chance)`,
+          ? `Accepted (${probPct}%)`
+          : `${partnerTeam} accepts (${probPct}%)`,
       };
     }
     // Rejected — show probability so user knows how close they are.
@@ -310,13 +275,13 @@ export function TradeModal({
       reason: probPct >= 35 ? 'close' : 'undervalued',
       text: fromTeamEditable
         ? probPct >= 35
-          ? `Rejected this time (${probPct}%) — tweak the deal`
-          : `${moverUpTeam} needs to add ~${shortBy} more value (${probPct}%)`
+          ? `Rejected (${probPct}%) — tweak the deal`
+          : `${moverUpTeam} needs ~${shortBy} more value (${probPct}%)`
         : probPct >= 35
           ? `Rejected (${probPct}%) — tweak the deal`
           : fromIsMovingUp
-            ? `Rejected — add ~${shortBy} more value (${probPct}%)`
-            : `Rejected — ${partnerTeam} needs to add ~${shortBy} more (${probPct}%)`,
+            ? `Add ~${shortBy} more value (${probPct}%)`
+            : `${partnerTeam} needs ~${shortBy} more (${probPct}%)`,
     };
   }
 
@@ -325,7 +290,7 @@ export function TradeModal({
   // Only hard structural violations block the button entirely. Probabilistic
   // rejections (close, lucky, undervalued) still allow proposing — the user
   // can see the outcome and tweak the deal rather than being locked out.
-  const HARD_BLOCK_REASONS = new Set(['empty', 'one_for_one', 'absurd_overpay', 'hard_underpay']);
+  const HARD_BLOCK_REASONS = new Set(['empty', 'one_for_one', 'hard_underpay']);
   const canPropose = !HARD_BLOCK_REASONS.has(evalResult.reason);
 
   function handlePropose() {
@@ -398,11 +363,9 @@ export function TradeModal({
   //   close               → orange (rejected but within striking distance)
   //   undervalued / others→ red (clear reject)
   const verdictColor = (() => {
-    if (evalResult.reason === 'overpaying') return '#eab308';
-    if (evalResult.reason === 'absurd_overpay') return '#ef4444';
     if (evalResult.reason === 'hard_underpay') return '#ef4444';
     if (evalResult.reason === 'close') return '#f97316';
-    if (evalResult.reason === 'lucky') return '#34d399'; // mint — got lucky
+    if (evalResult.reason === 'lucky') return '#34d399';
     if (evalResult.ok) return '#22c55e';
     return '#ef4444';
   })();
