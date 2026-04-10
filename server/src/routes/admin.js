@@ -128,22 +128,21 @@ router.post('/sync/draft-order-all', async (req, res) => {
     let updated = 0;
     for (const p of filtered) {
       try {
-        const { rowCount: existed } = await pool.query(
-          'SELECT 1 FROM draft_order WHERE pick_number = $1',
-          [p.pick]
-        );
-        await pool.query(
+        // Use RETURNING + xmax to distinguish inserts from updates without an
+        // extra SELECT. xmax = 0 means the row was freshly inserted.
+        const { rows } = await pool.query(
           `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round)
            VALUES ($1, $2, $3, ARRAY[]::TEXT[], $4)
            ON CONFLICT (pick_number) DO UPDATE
              SET team = EXCLUDED.team,
                  team_name = EXCLUDED.team_name,
                  round = EXCLUDED.round,
-                 updated_at = NOW()`,
+                 updated_at = NOW()
+           RETURNING (xmax = 0) AS is_insert`,
           [p.pick, p.team_abbr, p.team_name || p.team_abbr, p.round]
         );
-        if (existed) updated++;
-        else inserted++;
+        if (rows[0]?.is_insert) inserted++;
+        else updated++;
       } catch (e) {
         console.warn('[sync draft-order-all] pick', p.pick, e.message);
       }
@@ -242,21 +241,26 @@ router.post('/trades/apply', async (req, res) => {
 
 // ---------- Users (admin view) ----------
 router.get('/users', async (_req, res) => {
-  const { rows } = await pool.query(`
-    SELECT
-      u.id,
-      u.display_name,
-      u.avatar_url,
-      u.discord_id,
-      u.created_at,
-      (m.id IS NOT NULL) AS has_mock,
-      COALESCE(m.total_score, 0) AS total_score,
-      m.submitted_at
-    FROM users u
-    LEFT JOIN mocks m ON m.user_id = u.id AND m.mock_type = 'round1'
-    ORDER BY u.created_at DESC
-  `);
-  res.json(rows);
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        u.id,
+        u.display_name,
+        u.avatar_url,
+        u.discord_id,
+        u.created_at,
+        (m.id IS NOT NULL) AS has_mock,
+        COALESCE(m.total_score, 0) AS total_score,
+        m.submitted_at
+      FROM users u
+      LEFT JOIN mocks m ON m.user_id = u.id AND m.mock_type = 'round1'
+      ORDER BY u.created_at DESC
+    `);
+    res.json(rows);
+  } catch (e) {
+    console.error('[admin users]', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 // ---------- Players CRUD ----------
@@ -522,22 +526,27 @@ router.post('/fetch-headshots', async (req, res) => {
 
 // ---------- Draft order ----------
 router.get('/draft-order', async (req, res) => {
-  // Same round filter as the public endpoint — admin UI stays R1 unless
-  // explicitly asking for more via ?round=all.
-  const roundParam = (req.query.round || '1').toString().toLowerCase();
-  let rows;
-  if (roundParam === 'all') {
-    ({ rows } = await pool.query(
-      'SELECT pick_number, team, team_name, team_needs, round FROM draft_order ORDER BY pick_number'
-    ));
-  } else {
-    const round = parseInt(roundParam, 10) || 1;
-    ({ rows } = await pool.query(
-      'SELECT pick_number, team, team_name, team_needs, round FROM draft_order WHERE round = $1 ORDER BY pick_number',
-      [round]
-    ));
+  try {
+    // Same round filter as the public endpoint — admin UI stays R1 unless
+    // explicitly asking for more via ?round=all.
+    const roundParam = (req.query.round || '1').toString().toLowerCase();
+    let rows;
+    if (roundParam === 'all') {
+      ({ rows } = await pool.query(
+        'SELECT pick_number, team, team_name, team_needs, round FROM draft_order ORDER BY pick_number'
+      ));
+    } else {
+      const round = parseInt(roundParam, 10) || 1;
+      ({ rows } = await pool.query(
+        'SELECT pick_number, team, team_name, team_needs, round FROM draft_order WHERE round = $1 ORDER BY pick_number',
+        [round]
+      ));
+    }
+    res.json(rows);
+  } catch (e) {
+    console.error('[admin draft-order]', e);
+    res.status(500).json({ error: 'server error' });
   }
-  res.json(rows);
 });
 
 router.post('/draft-order', async (req, res) => {

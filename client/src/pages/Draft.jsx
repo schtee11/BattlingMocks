@@ -296,7 +296,6 @@ export default function Draft() {
     if (s.locked) return;
     if (s.isMobile) {
       setDraftingForSlot(slot);
-      setBoardOpen(false);
       return;
     }
     if (s.selectedPlayer != null) {

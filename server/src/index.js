@@ -65,11 +65,16 @@ app.use((req, _res, next) => {
 });
 
 app.get('/api/settings', async (_req, res) => {
-  const { rows } = await pool.query('SELECT * FROM draft_settings WHERE id = 1');
-  const { rows: countRows } = await pool.query(
-    "SELECT COUNT(*)::int AS c FROM mocks WHERE mock_type = 'round1'"
-  );
-  res.json({ ...rows[0], mock_count: countRows[0].c });
+  try {
+    const { rows } = await pool.query('SELECT * FROM draft_settings WHERE id = 1');
+    const { rows: countRows } = await pool.query(
+      "SELECT COUNT(*)::int AS c FROM mocks WHERE mock_type = 'round1'"
+    );
+    res.json({ ...rows[0], mock_count: countRows[0].c });
+  } catch (e) {
+    console.error('[settings]', e);
+    res.status(500).json({ error: 'server error' });
+  }
 });
 
 app.use('/api/players', players);

@@ -111,6 +111,7 @@ ON CONFLICT (id) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_mocks_user_id ON mocks(user_id);
 CREATE INDEX IF NOT EXISTS idx_mocks_total_score ON mocks(total_score DESC, submitted_at ASC);
 CREATE INDEX IF NOT EXISTS idx_mock_picks_mock_id ON mock_picks(mock_id);
+CREATE INDEX IF NOT EXISTS idx_mock_picks_player_id ON mock_picks(player_id);
 CREATE INDEX IF NOT EXISTS idx_actual_picks_player ON actual_picks(player_id);
 CREATE INDEX IF NOT EXISTS idx_users_display_name_lower ON users (LOWER(display_name));
 `;

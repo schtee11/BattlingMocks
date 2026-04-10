@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { toPng } from 'html-to-image';
+// Lazy-loaded on first export to keep the initial chunk small
+const loadToPng = () => import('html-to-image').then((m) => m.toPng);
 import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam } from '../lib/botPicker.js';
@@ -239,6 +240,7 @@ function SavedView({ savedMock, players, onRestart }) {
             })
       )
     );
+    const toPng = await loadToPng();
     const dataUrl = await toPng(exportRef.current, {
       // cacheBust forces html-to-image to append a unique query param to
       // every image URL, defeating any stale browser cache. Necessary
