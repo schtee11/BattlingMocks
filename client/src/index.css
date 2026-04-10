@@ -146,8 +146,16 @@ html[data-theme="light"] { color-scheme: light; }
 
 /* Scale up on large monitors — zoom scales everything (px values, rem,
    fixed sizing) identically to browser zoom, unlike font-size which only
-   affects rem-based units. */
-@media (min-width: 1440px) { html { zoom: 1.25; } }
+   affects rem-based units.
+   The height compensation (÷1.25 = 80%) counteracts the zoom on the
+   h-full chain: 80% CSS × zoom 1.25 = 100% visual = exactly fills viewport.
+   Without it, the zoomed layout overflows the bottom and clips controls. */
+@media (min-width: 1440px) {
+  html {
+    zoom: 1.25;
+    height: calc(100% / 1.25);
+  }
+}
 
 body {
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
