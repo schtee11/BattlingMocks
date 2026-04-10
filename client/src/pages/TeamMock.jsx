@@ -1850,6 +1850,26 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         {/* Fixed top: status banner + action bar */}
         <div className="shrink-0 border-b border-border-subtle">
           <StatusBanner compact />
+          {/* Pre-draft settings — always visible so user can adjust before starting */}
+          {phase === PHASE_READY && (
+            <div className="px-3 pb-3 pt-1 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Speed</span>
+                <input type="range" min="0" max={SPEED_STEPS.length - 1} step="1" value={speedIdx}
+                  onChange={(e) => setSpeedIdx(Number(e.target.value))}
+                  className="flex-1 h-1 accent-accent cursor-pointer" />
+                <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{SPEED_LABELS[speedIdx]}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Chaos</span>
+                <input type="range" min="0" max="1" step="0.05" value={randomness}
+                  onChange={(e) => setRandomness(Number(e.target.value))}
+                  className="flex-1 h-1 accent-accent cursor-pointer" />
+                <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
+              </div>
+            </div>
+          )}
+          {/* During-draft action bar: Pause/Resume + Trade + gear icon */}
           {phase !== PHASE_READY && phase !== PHASE_DONE && (
             <div className="px-3 pb-2 flex items-center gap-2">
               {phase === PHASE_RUNNING && (
@@ -1882,7 +1902,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               </button>
             </div>
           )}
-          {/* Collapsible settings drawer */}
+          {/* Collapsible settings drawer (during draft only) */}
           {settingsOpen && phase !== PHASE_READY && phase !== PHASE_DONE && (
             <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border-subtle bg-bg-surface/30">
               <div className="flex items-center gap-2">
