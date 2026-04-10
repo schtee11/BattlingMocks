@@ -64,6 +64,21 @@ app.use((req, _res, next) => {
   next();
 });
 
+// Public read of the algo-config blob. Returns the stored overrides only —
+// the client merges with its own ALGO_DEFAULTS so old fields always have a
+// fallback value even before an admin has touched the panel.
+app.get('/api/algo-config', async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT COALESCE(algo_config, \'{}\'::jsonb) AS algo_config FROM draft_settings WHERE id = 1'
+    );
+    res.json(rows[0]?.algo_config ?? {});
+  } catch (e) {
+    console.error('[algo-config]', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
 app.get('/api/settings', async (_req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM draft_settings WHERE id = 1');

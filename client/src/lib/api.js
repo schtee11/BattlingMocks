@@ -74,6 +74,7 @@ export const api = {
     );
   },
   getSettings: () => cached('settings', 30_000, () => request('/api/settings')),
+  getAlgoConfig: () => cached('algo-config', 60_000, () => request('/api/algo-config')),
   getStats: () => cached('stats', 30_000, () => request('/api/stats')),
   getActualPicks: ({ fresh = false } = {}) => {
     if (fresh) invalidateCache('actual-picks');
@@ -102,6 +103,11 @@ export const api = {
   deleteTeamMock: (id) => request(`/api/team-mocks/${id}`, { method: 'DELETE' }),
 
   // admin
+  adminGetAlgoConfig: (key) => request('/api/admin/algo-config', { adminKey: key }),
+  adminSaveAlgoConfig: (key, config) =>
+    request('/api/admin/algo-config', { method: 'PUT', body: config, adminKey: key }),
+  adminResetAlgoConfig: (key) =>
+    request('/api/admin/algo-config', { method: 'DELETE', adminKey: key }),
   adminListUsers: (key) => request('/api/admin/users', { adminKey: key }),
   addPlayer: (key, p) => request('/api/admin/players', { method: 'POST', body: p, adminKey: key }),
   updatePlayer: (key, id, p) =>

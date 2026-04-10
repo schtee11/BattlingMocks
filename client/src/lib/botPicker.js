@@ -1,3 +1,5 @@
+import { getAlgoConfig } from './algoConfig.js';
+
 // Client-side bot picker — mirrors server/src/services/botPicker.js.
 //
 // Scoring: each available player gets a score = baseScore * needsMultiplier * jitter.
@@ -47,18 +49,21 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
     if (!needsPriority.has(pos)) needsPriority.set(pos, i);
   });
 
+  const cfg = getAlgoConfig();
+
   const scored = [];
   for (const p of available) {
     const rank = Number.isFinite(p.rank) ? p.rank : 500;
-    // Decay rate -0.04 (was -0.025): rank-8 with top-need boost now scores
-    // 0.756 × 1.20 = 0.907, safely below rank-1's 1.0 baseline.
-    const baseScore = Math.exp(-0.04 * (rank - 1));
+    const baseScore = Math.exp(-cfg.decayRate * (rank - 1));
 
     const pos = normalizePos(p.position);
     let needsMultiplier = 1;
     if (needsPriority.has(pos)) {
       const priority = needsPriority.get(pos);
-      needsMultiplier = priority === 0 ? 1.20 : priority === 1 ? 1.13 : 1.07;
+      needsMultiplier =
+        priority === 0 ? 1 + cfg.needsBoost1 :
+        priority === 1 ? 1 + cfg.needsBoost2 :
+                         1 + cfg.needsBoost3;
     }
 
     const jitter = 1 + (Math.random() - 0.5) * randomness;
@@ -67,20 +72,16 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
     scored.push({ player: p, rank, score });
   }
 
-  // Hard fall cap: boost top-ranked players who have fallen too far so they
-  // are virtually guaranteed to be selected before drifting further.
-  //   rank 1–5:  max 5-pick fall  → ×15 boost
-  //   rank 6–10: max 9-pick fall  → ×8  boost
-  //   rank 11–20: max 13-pick fall → ×4  boost
+  // Hard fall cap: boost top-ranked players who have fallen too far.
   for (const entry of scored) {
     const { rank } = entry;
     const fall = pickNumber - rank;
-    if (rank <= 5 && fall > 5) {
-      entry.score *= 15;
-    } else if (rank <= 10 && fall > 9) {
-      entry.score *= 8;
-    } else if (rank <= 20 && fall > 13) {
-      entry.score *= 4;
+    if (rank <= cfg.fallCap1MaxRank && fall > cfg.fallCap1MaxFall) {
+      entry.score *= cfg.fallCap1Boost;
+    } else if (rank <= cfg.fallCap2MaxRank && fall > cfg.fallCap2MaxFall) {
+      entry.score *= cfg.fallCap2Boost;
+    } else if (rank <= cfg.fallCap3MaxRank && fall > cfg.fallCap3MaxFall) {
+      entry.score *= cfg.fallCap3Boost;
     }
   }
 

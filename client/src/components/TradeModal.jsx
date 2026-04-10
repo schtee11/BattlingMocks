@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { TeamLogo } from './ui/TeamLogo.jsx';
 import tradeValuesChart from '../lib/tradeValues2026.json';
+import { getAlgoConfig } from '../lib/algoConfig.js';
 
 // ── Probability helpers ─────────────────────────────────────────────────────
 // Trades have a % chance of acceptance based on how far the mover-up's value
@@ -12,8 +13,9 @@ import tradeValuesChart from '../lib/tradeValues2026.json';
 // by a deterministic hash roll at proposal time (handlePropose). This keeps
 // the preview monotonic: more value → higher %, always.
 
-// Only hard wall: extreme lowballs (25%+ underpay) are always rejected.
-const HARD_UNDERPAY_LIMIT = -0.25;
+// Hard-reject limit is read from algo config so it's admin-tunable.
+// Kept as a file-level accessor so the sigmoid comment below stays legible.
+function hardUnderpayLimit() { return -(getAlgoConfig().hardUnderpayLimit ?? 0.25); }
 
 // Acceptance probability curve:
 //   Sigmoid base centered at -8% surplus (fair ≈ 94%) with an exponential
@@ -221,10 +223,11 @@ export function TradeModal({
     const moverDownCount = fromIsMovingUp ? theirCount : yourCount;
     const moverUpTeam = fromIsMovingUp ? effectiveFromTeam : partnerTeam;
 
-    // Simple premium: mover-up pays a flat 5% for moving up.
-    // Top-5 picks are slightly harder to pry loose (+3%).
-    let premium = 0.05;
-    if (topPickInDeal <= 5) premium += 0.03;
+    // Premium: mover-up pays a base % for moving up, plus an extra % when
+    // the top pick in the deal is in the top 5. Both are admin-tunable.
+    const cfg = getAlgoConfig();
+    let premium = cfg.tradeBasePremium ?? 0.05;
+    if (topPickInDeal <= 5) premium += cfg.tradeTop5Bonus ?? 0.03;
 
     const required = moverDownTotal * (1 + premium);
 
@@ -233,7 +236,7 @@ export function TradeModal({
     const surplusPct = required > 0 ? surplus / required : 0;
 
     // Hard reject: extreme lowballs only.
-    if (surplusPct < HARD_UNDERPAY_LIMIT) {
+    if (surplusPct < hardUnderpayLimit()) {
       const shortBy = Math.ceil(-surplus);
       return {
         ok: false,

@@ -6,6 +6,7 @@ const loadToPng = () => import('html-to-image').then((m) => m.toPng);
 import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam } from '../lib/botPicker.js';
+import { loadAlgoConfig } from '../lib/algoConfig.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -2207,7 +2208,7 @@ export default function TeamMock() {
   function loadData() {
     setPlayers(null);
     setDraftOrder(null);
-    Promise.all([api.getPlayers(), api.getDraftOrderAll({ fresh: true })])
+    Promise.all([api.getPlayers(), api.getDraftOrderAll({ fresh: true }), loadAlgoConfig()])
       .then(([pl, order]) => {
         setPlayers(pl);
         setDraftOrder(order);
