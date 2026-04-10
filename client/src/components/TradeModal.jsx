@@ -246,7 +246,7 @@ export function TradeModal({
       const shortBy = Math.ceil(-surplus);
       return {
         ok: false,
-        reason: 'undervalued',
+        reason: 'hard_underpay',
         text: fromTeamEditable
           ? `${moverUpTeam} needs ~${shortBy} more value — too far off`
           : `Rejected — needs ~${shortBy} more value`,
@@ -306,10 +306,21 @@ export function TradeModal({
   }
 
   const evalResult = evaluateTrade();
-  const canPropose = evalResult.ok;
+
+  // Only hard structural violations block the button entirely. Probabilistic
+  // rejections (close, lucky, undervalued) still allow proposing — the user
+  // can see the outcome and tweak the deal rather than being locked out.
+  const HARD_BLOCK_REASONS = new Set(['empty', 'one_for_one', 'absurd_overpay', 'hard_underpay']);
+  const canPropose = !HARD_BLOCK_REASONS.has(evalResult.reason);
 
   function handlePropose() {
+    if (!canPropose) {
+      toast.error(evalResult.text);
+      return;
+    }
     if (!evalResult.ok) {
+      // Probabilistic rejection — trade was proposed but the bot said no.
+      // User can see probability in the verdict panel and adjust picks.
       toast.error(evalResult.text);
       return;
     }
@@ -378,7 +389,8 @@ export function TradeModal({
   //   undervalued / others→ red (clear reject)
   const verdictColor = (() => {
     if (evalResult.reason === 'overpaying') return '#eab308';
-    if (evalResult.reason === 'absurd_overpay') return '#ef4444'; // hard-rejected overpay
+    if (evalResult.reason === 'absurd_overpay') return '#ef4444';
+    if (evalResult.reason === 'hard_underpay') return '#ef4444';
     if (evalResult.reason === 'close') return '#f97316';
     if (evalResult.reason === 'lucky') return '#34d399'; // mint — got lucky
     if (evalResult.ok) return '#22c55e';
