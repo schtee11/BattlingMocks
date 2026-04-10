@@ -9,7 +9,17 @@ import tradeValuesChart from '../lib/tradeValues2026.json';
 // trade always gives the same verdict via a deterministic seed (no flickering
 // on re-render), but tweaking the package rerolls.
 
+// Hard guardrails — no probabilistic luck can push past these thresholds.
+// Real front offices don't propose or accept laughably lopsided deals.
+//   OVERPAY:  mover-up giving 35%+ MORE than required → unrealistic overpay
+//   UNDERPAY: mover-up giving 20%+ LESS than required → explicit hard floor
+//             (the logistic curve already kills probability here, but this
+//              makes the rejection deterministic rather than 0.x% lucky)
+const HARD_OVERPAY_LIMIT = 0.35;
+const HARD_UNDERPAY_LIMIT = -0.20;
+
 // Logistic curve: midpoint at -3% surplus, steepness 0.3.
+// Only applied within the realistic negotiation zone (UNDERPAY..OVERPAY).
 //   +10% surplus → 98% accept
 //   +5%          → 92%
 //    0% (fair)   → 71%
@@ -222,6 +232,27 @@ export function TradeModal({
     const surplus = moverUpTotal - required;
     const surplusPct = required > 0 ? surplus / required : 0;
 
+    // Hard guardrails — deterministic reject outside the realistic zone.
+    if (surplusPct > HARD_OVERPAY_LIMIT) {
+      return {
+        ok: false,
+        reason: 'absurd_overpay',
+        text: fromTeamEditable
+          ? `Too lopsided — ${moverUpTeam} would be massively overpaying`
+          : `Way too much — you'd be massively overpaying`,
+      };
+    }
+    if (surplusPct < HARD_UNDERPAY_LIMIT) {
+      const shortBy = Math.ceil(-surplus);
+      return {
+        ok: false,
+        reason: 'hard_underpay',
+        text: fromTeamEditable
+          ? `${moverUpTeam} needs ~${shortBy} more value — too far off`
+          : `Rejected — needs ~${shortBy} more value`,
+      };
+    }
+
     // Acceptance probability from the logistic curve.
     const prob = acceptanceProbability(surplusPct);
     const probPct = Math.round(prob * 100);
@@ -275,10 +306,21 @@ export function TradeModal({
   }
 
   const evalResult = evaluateTrade();
-  const canPropose = evalResult.ok;
+
+  // Only hard structural violations block the button entirely. Probabilistic
+  // rejections (close, lucky, undervalued) still allow proposing — the user
+  // can see the outcome and tweak the deal rather than being locked out.
+  const HARD_BLOCK_REASONS = new Set(['empty', 'one_for_one', 'absurd_overpay', 'hard_underpay']);
+  const canPropose = !HARD_BLOCK_REASONS.has(evalResult.reason);
 
   function handlePropose() {
+    if (!canPropose) {
+      toast.error(evalResult.text);
+      return;
+    }
     if (!evalResult.ok) {
+      // Probabilistic rejection — trade was proposed but the bot said no.
+      // User can see probability in the verdict panel and adjust picks.
       toast.error(evalResult.text);
       return;
     }
@@ -290,18 +332,13 @@ export function TradeModal({
     });
   }
 
-  // Force Trade — bypass the bot's evaluation entirely and apply the trade
-  // as-is. Still enforces the minimum sanity checks (both sides have picks
-  // selected, no hard 1-for-1). Useful when the user wants to simulate a
-  // specific historical or hypothetical trade the bot wouldn't accept on
-  // pure chart math.
+  // Force Trade — bypass ALL evaluation rules and apply the trade as-is.
+  // Only requires both sides to have at least one pick selected (can't
+  // force nothing). Users can force 1-for-1, overpays, underpays — it's
+  // their sandbox.
   function handleForce() {
     if (yourCount === 0 || theirCount === 0) {
       toast.error('Pick at least one from each side');
-      return;
-    }
-    if (yourCount === 1 && theirCount === 1) {
-      toast.error('1-for-1 swaps are still off the table');
       return;
     }
     onAccepted({
@@ -347,6 +384,8 @@ export function TradeModal({
   //   undervalued / others→ red (clear reject)
   const verdictColor = (() => {
     if (evalResult.reason === 'overpaying') return '#eab308';
+    if (evalResult.reason === 'absurd_overpay') return '#ef4444';
+    if (evalResult.reason === 'hard_underpay') return '#ef4444';
     if (evalResult.reason === 'close') return '#f97316';
     if (evalResult.reason === 'lucky') return '#34d399'; // mint — got lucky
     if (evalResult.ok) return '#22c55e';
@@ -526,7 +565,7 @@ export function TradeModal({
               Skips the bot's evaluation but still blocks empty/1-for-1. */}
           <button
             onClick={handleForce}
-            disabled={yourCount === 0 || theirCount === 0 || (yourCount === 1 && theirCount === 1)}
+            disabled={yourCount === 0 || theirCount === 0}
             title="Override the bot and accept this trade anyway"
             className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-gold rounded-lg px-3 py-2 border border-gold/40 hover:bg-gold/[0.08] transition disabled:opacity-30 disabled:cursor-not-allowed"
           >

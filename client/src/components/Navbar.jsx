@@ -1,4 +1,4 @@
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth.js';
 import { prettyName } from '../lib/displayName.js';
 import { ThemeToggle } from './ThemeToggle.jsx';
@@ -6,6 +6,8 @@ import { Avatar } from './ui/Avatar.jsx';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const linkCls = ({ isActive }) =>
     `relative px-3 py-4 text-[12px] font-display font-semibold uppercase tracking-[0.16em] transition-colors ${
       isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary'
@@ -41,7 +43,16 @@ export default function Navbar() {
           <NavLink to="/draft" className={linkCls}>
             {({ isActive }) => (<><span>Draft</span>{isActive && activeBar}</>)}
           </NavLink>
-          <NavLink to="/team-mock" className={linkCls}>
+          <NavLink
+            to="/team-mock"
+            className={linkCls}
+            onClick={(e) => {
+              if (location.pathname === '/team-mock') {
+                e.preventDefault();
+                navigate('/team-mock', { state: { reset: Date.now() }, replace: true });
+              }
+            }}
+          >
             {({ isActive }) => (<><span>Team Mock</span>{isActive && activeBar}</>)}
           </NavLink>
           <NavLink to="/leaderboard" className={linkCls}>

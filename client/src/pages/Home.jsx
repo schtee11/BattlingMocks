@@ -60,6 +60,24 @@ export default function Home() {
         )}
       </div>
 
+      {/* Team Mock promo */}
+      <div className="max-w-4xl mx-auto px-4 mb-16">
+        <Card glass className="px-6 py-8 text-center">
+          <div className="caption text-accent mb-2">New Feature</div>
+          <h2 className="font-display display-xl text-display text-text-primary mt-1">
+            Team Mock Draft
+          </h2>
+          <p className="mt-3 text-[14px] text-text-secondary max-w-lg mx-auto">
+            Pick your favorite team and draft all 7 rounds. Bots handle every other team using BPA + team needs. Trade up, trade down — it's your sandbox.
+          </p>
+          <div className="mt-5">
+            <Link to="/team-mock">
+              <Button size="lg">Try Team Mock →</Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+
       {/* How it works */}
       <div className="max-w-4xl mx-auto px-4 pb-24">
         <div className="text-center mb-8">
