@@ -1092,6 +1092,7 @@ function ResultsView({
     }
   }
 
+
   return (
     <div className="flex flex-col">
       {/* Off-screen export card for PNG generation */}
@@ -1140,6 +1141,14 @@ function ResultsView({
               placeholder="Name this mock…"
               className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2 text-[13px] text-text-primary placeholder-text-muted focus:border-accent/60 outline-none transition"
             />
+            <button
+              onClick={handleShare}
+              disabled={exporting}
+              title={isMobile ? 'Share via share sheet' : 'Copy image — paste into Discord with Ctrl+V'}
+              className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.12em] px-3 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
+            >
+              {exporting ? '…' : 'Share'}
+            </button>
             <button
               onClick={() => onSave(title.trim() || `${team} · ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`)}
               disabled={saving}
