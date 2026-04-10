@@ -213,9 +213,15 @@ export function TradeModal({
     const moverUpTeam = fromIsMovingUp ? effectiveFromTeam : partnerTeam;
 
     // Direction premium: giving multiple picks for fewer costs more.
+    // Uses quadratic scaling so extreme differentials (5-for-1, 7-for-1)
+    // require massively more value — linear was too weak for lopsided deals.
+    //   2-for-1 (diff=1): 7.5%    3-for-1 (diff=2): 18%
+    //   4-for-1 (diff=3): 31.5%   5-for-1 (diff=4): 48%
+    //   7-for-1 (diff=6): 90%
     let premium = 0;
     if (moverUpCount > moverDownCount) {
-      premium += 0.06 * (moverUpCount - moverDownCount);
+      const diff = moverUpCount - moverDownCount;
+      premium += 0.06 * diff + 0.015 * diff * diff;
     }
 
     // Package dilution — 4+ picks for 1 adds risk.
@@ -239,7 +245,9 @@ export function TradeModal({
         reason: 'absurd_overpay',
         text: fromTeamEditable
           ? `Too lopsided — ${moverUpTeam} would be massively overpaying`
-          : `Way too much — you'd be massively overpaying`,
+          : fromIsMovingUp
+            ? `Way too much — you'd be massively overpaying`
+            : `Too lopsided — ${partnerTeam} would never give this much`,
       };
     }
     if (surplusPct < HARD_UNDERPAY_LIMIT) {
@@ -270,13 +278,18 @@ export function TradeModal({
     // Grade the verdict based on probability and acceptance.
     if (probPct >= 95) {
       // Near-certain: always goes through, might be overpaying.
+      const isOverpay = surplusPct > 0.15;
       return {
         ok: true,
         probability: probPct,
-        reason: surplusPct > 0.15 ? 'overpaying' : 'good',
+        reason: isOverpay ? 'overpaying' : 'good',
         text: fromTeamEditable
-          ? surplusPct > 0.15 ? `Accepted — ${moverUpTeam} overpays (${probPct}%)` : `Accepted (${probPct}%)`
-          : surplusPct > 0.15 ? `Accepted — you're overpaying (${probPct}%)` : `${partnerTeam} accepts (${probPct}%)`,
+          ? isOverpay ? `Accepted — ${moverUpTeam} overpays (${probPct}%)` : `Accepted (${probPct}%)`
+          : isOverpay
+            ? fromIsMovingUp
+              ? `Accepted — you're overpaying (${probPct}%)`
+              : `Accepted — ${partnerTeam} is overpaying (${probPct}%)`
+            : `${partnerTeam} accepts (${probPct}%)`,
       };
     }
     if (accepted) {
@@ -301,7 +314,9 @@ export function TradeModal({
           : `${moverUpTeam} needs to add ~${shortBy} more value (${probPct}%)`
         : probPct >= 35
           ? `Rejected (${probPct}%) — tweak the deal`
-          : `Rejected — needs ~${shortBy} more value (${probPct}%)`,
+          : fromIsMovingUp
+            ? `Rejected — add ~${shortBy} more value (${probPct}%)`
+            : `Rejected — ${partnerTeam} needs to add ~${shortBy} more (${probPct}%)`,
     };
   }
 
