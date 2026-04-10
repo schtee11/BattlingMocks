@@ -271,7 +271,9 @@ function SavedView({ savedMock, players, onRestart }) {
     }, 500);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedMock.id, theme, teamLogoDataUrl, headshotsLoadedCount]);
+  }, [savedMock.id, theme, teamLogoDataUrl, headshotsLoadedCount,
+      // Re-render when trades change so the cached blob always includes them.
+      Array.isArray(savedMock.trades) ? savedMock.trades.length : 0]);
 
   const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
 
@@ -1173,7 +1175,7 @@ function ResultsView({
     }, 500);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, teamLogoDataUrl, headshotsLoadedCount]);
+  }, [theme, teamLogoDataUrl, headshotsLoadedCount, trades.length]);
 
   const fileName = `${team.toLowerCase()}-mock-${new Date().toISOString().slice(0, 10)}.png`;
 
