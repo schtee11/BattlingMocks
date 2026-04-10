@@ -369,7 +369,7 @@ function SavedView({ savedMock, players, onRestart }) {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-32">
       {/* Off-screen export card — positioned far offscreen so it renders but
           stays invisible; html-to-image captures it into a PNG on demand. */}
       <div
@@ -455,7 +455,7 @@ function SavedView({ savedMock, players, onRestart }) {
                 return (
                   <div
                     key={pick.pick_number}
-                    className="relative flex items-center gap-4 p-4 rounded-xl border border-border-subtle bg-bg-surface/40 hover:border-accent/40 transition-colors overflow-hidden"
+                    className="relative flex items-center gap-4 p-4 rounded-xl border border-border-subtle bg-bg-surface/40 hover:border-accent/40 transition-colors overflow-hidden min-h-[88px]"
                     style={{ borderLeft: `4px solid ${color}` }}
                   >
                     {/* Pick number overlay */}
