@@ -412,6 +412,9 @@ function SavedView({ savedMock, players, onRestart }) {
               })}
               <span className="mx-2 text-text-muted">·</span>
               {myPicks.length} pick{myPicks.length === 1 ? '' : 's'}
+              {Array.isArray(savedMock.trades) && savedMock.trades.length > 0 && (
+                <span> · {savedMock.trades.length} trade{savedMock.trades.length === 1 ? '' : 's'}</span>
+              )}
             </p>
           </div>
         </div>
@@ -492,6 +495,47 @@ function SavedView({ savedMock, players, onRestart }) {
           </div>
         ))}
       </div>
+
+      {/* ── Trades made during the mock ── */}
+      {Array.isArray(savedMock.trades) && savedMock.trades.length > 0 && (
+        <div className="mt-10">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="font-display text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+              Trades Made
+            </div>
+            <div className="flex-1 h-px bg-border-subtle" />
+            <div className="font-mono text-[10px] text-text-muted">
+              {savedMock.trades.length} trade{savedMock.trades.length === 1 ? '' : 's'}
+            </div>
+          </div>
+          <div className="space-y-3">
+            {savedMock.trades.map((t, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-border-subtle bg-bg-surface/40"
+              >
+                <TeamLogo abbr={userTeam} size="sm" />
+                <div className="text-[12px] text-text-muted font-mono">↔</div>
+                <TeamLogo abbr={t.partnerTeam} size="sm" />
+                <div className="flex-1 min-w-0 text-[12px] sm:text-[13px]">
+                  <div className="text-text-secondary">
+                    <span className="text-text-muted text-[10px] font-display uppercase tracking-wide">Gave</span>{' '}
+                    <span className="font-mono font-semibold text-text-primary">
+                      {(t.gave || []).map((n) => `#${n}`).join(', ')}
+                    </span>
+                  </div>
+                  <div className="text-text-secondary mt-1">
+                    <span className="text-text-muted text-[10px] font-display uppercase tracking-wide">Got</span>{' '}
+                    <span className="font-mono font-semibold text-accent">
+                      {(t.got || []).map((n) => `#${n}`).join(', ')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1124,7 +1168,7 @@ function ResultsView({
               {team} Team Mock
             </h2>
             <p className="text-text-secondary text-[11px]">
-              {userPicksMade} picks made · {picks.length} total in draft
+              {userPicksMade} picks for {team}{trades.length > 0 ? ` · ${trades.length} trade${trades.length === 1 ? '' : 's'}` : ''}
             </p>
           </div>
         </div>
@@ -1457,7 +1501,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         round: p.round,
         team: p.team,
       }));
-      await api.submitTeamMock(user.id, team, payload, title);
+      await api.submitTeamMock(user.id, team, payload, title, trades);
       toast.success('Team mock saved!');
       onSaved();
     } catch (e) {
@@ -2127,7 +2171,7 @@ function SavedMocksList({ mocks, onOpen, onDelete, onNew }) {
                   })}
                 </div>
                 <div className="text-[10px] text-text-muted mt-0.5">
-                  {m.pick_count} picks
+                  {m.pick_count} picks{m.trade_count > 0 && ` · ${m.trade_count} trade${m.trade_count === 1 ? '' : 's'}`}
                 </div>
               </div>
               <button

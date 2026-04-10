@@ -95,6 +95,10 @@ CREATE INDEX IF NOT EXISTS idx_mock_picks_round ON mock_picks(round);
 ALTER TABLE mocks ADD COLUMN IF NOT EXISTS mock_type VARCHAR(20) NOT NULL DEFAULT 'round1';
 ALTER TABLE mocks ADD COLUMN IF NOT EXISTS team_abbr VARCHAR(5);
 ALTER TABLE mocks ADD COLUMN IF NOT EXISTS title VARCHAR(80);
+-- Phase 4b: persist the trades made during a team mock simulation so the
+-- saved-mock detail view can render them. Stored as a JSON array:
+-- [{ "partnerTeam": "NYJ", "gave": [25,100], "got": [20] }, ...]
+ALTER TABLE mocks ADD COLUMN IF NOT EXISTS trades JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE mocks DROP CONSTRAINT IF EXISTS mocks_user_id_key;
 -- Earlier iterations of Phase 4 added a full (user_id, mock_type) unique
 -- constraint; drop it so users can save as many team mocks as they want.

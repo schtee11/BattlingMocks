@@ -94,10 +94,10 @@ export const api = {
   // team-specific mock (Phase 4) — unlimited per user
   listTeamMocks: (userId) => request(`/api/team-mocks/user/${userId}`),
   getTeamMockById: (id) => request(`/api/team-mocks/${id}`),
-  submitTeamMock: (user_id, team_abbr, picks, title) =>
+  submitTeamMock: (user_id, team_abbr, picks, title, trades) =>
     request('/api/team-mocks', {
       method: 'POST',
-      body: { user_id, team_abbr, picks, title },
+      body: { user_id, team_abbr, picks, title, trades },
     }),
   deleteTeamMock: (id) => request(`/api/team-mocks/${id}`, { method: 'DELETE' }),
 

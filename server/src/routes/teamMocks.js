@@ -13,7 +13,7 @@ const router = Router();
 
 // POST /api/team-mocks — create a new team mock (never updates)
 router.post('/', async (req, res) => {
-  const { user_id, team_abbr, picks, title } = req.body || {};
+  const { user_id, team_abbr, picks, title, trades } = req.body || {};
   if (!user_id || !team_abbr || !Array.isArray(picks)) {
     return res.status(400).json({ error: 'user_id, team_abbr, picks[] required' });
   }
@@ -37,6 +37,7 @@ router.post('/', async (req, res) => {
   }
 
   const trimmedTitle = typeof title === 'string' ? title.trim().slice(0, 80) : null;
+  const tradesJson = Array.isArray(trades) ? JSON.stringify(trades) : '[]';
 
   const client = await pool.connect();
   try {
@@ -60,10 +61,10 @@ router.post('/', async (req, res) => {
 
     // Always INSERT — never UPDATE — so users can save unlimited team mocks
     const ins = await client.query(
-      `INSERT INTO mocks (user_id, mock_type, team_abbr, title)
-       VALUES ($1, 'team', $2, $3)
+      `INSERT INTO mocks (user_id, mock_type, team_abbr, title, trades)
+       VALUES ($1, 'team', $2, $3, $4::jsonb)
        RETURNING id`,
-      [user_id, team_abbr, trimmedTitle]
+      [user_id, team_abbr, trimmedTitle, tradesJson]
     );
     const mockId = ins.rows[0].id;
 
@@ -96,9 +97,12 @@ router.post('/', async (req, res) => {
 // GET /api/team-mocks/user/:userId — list all team mocks for a user
 // (metadata only, no picks — keeps the payload small for the list view)
 router.get('/user/:userId', async (req, res) => {
+  // Count only the picks owned by the user's team (not all 262 bot+user
+  // picks), and include the trade count for the list card.
   const { rows } = await pool.query(
     `SELECT m.id, m.user_id, m.submitted_at, m.team_abbr, m.title,
-            COUNT(mp.*)::int AS pick_count
+            COUNT(mp.*) FILTER (WHERE mp.team = m.team_abbr)::int AS pick_count,
+            COALESCE(jsonb_array_length(m.trades), 0)::int AS trade_count
      FROM mocks m
      LEFT JOIN mock_picks mp ON mp.mock_id = m.id
      WHERE m.user_id = $1 AND m.mock_type = 'team'
@@ -115,7 +119,8 @@ router.get('/:id', async (req, res) => {
   if (!Number.isFinite(mockId)) return res.status(400).json({ error: 'invalid id' });
 
   const { rows: mocks } = await pool.query(
-    `SELECT id, user_id, submitted_at, team_abbr, title, mock_type
+    `SELECT id, user_id, submitted_at, team_abbr, title, mock_type,
+            COALESCE(trades, '[]'::jsonb) AS trades
      FROM mocks
      WHERE id = $1 AND mock_type = 'team'`,
     [mockId]
