@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 // Lazy-loaded on first export to keep the initial chunk small
 const loadToPng = () => import('html-to-image').then((m) => m.toPng);
@@ -852,9 +852,8 @@ const ExportCard = forwardRef(function ExportCard(
 });
 
 // ─── Post-draft Results View ──────────────────────────────────────────────────
-// Shown right after the draft finishes but before the user saves. Mirrors the
-// SavedView layout so users get a consistent "here's your picks" read, with a
-// prominent Save CTA + optional title rename.
+// Shown right after the draft finishes. Shows only the user's picks (not the
+// full 262-pick board), any trades made during the mock, and save/share CTAs.
 function ResultsView({
   team,
   picks,
@@ -862,6 +861,7 @@ function ResultsView({
   userPicksMade,
   userSlotCount,
   saving,
+  trades = [],
   onSave,
   onRestart,
   onChangeTeam,
@@ -870,17 +870,41 @@ function ResultsView({
     `${team} · ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
   );
 
-  const byRound = useMemo(() => {
+  const myPicksOnly = useMemo(() => picks.filter((p) => p.is_user), [picks]);
+
+  const myPicksByRound = useMemo(() => {
     const map = {};
-    for (const p of picks) {
+    for (const p of myPicksOnly) {
       if (!map[p.round]) map[p.round] = [];
       map[p.round].push(p);
     }
     return map;
-  }, [picks]);
-  const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+  }, [myPicksOnly]);
+  const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
 
-  const myPicksOnly = useMemo(() => picks.filter((p) => p.is_user), [picks]);
+  // Generate a shareable text summary and copy to clipboard
+  function handleShareText() {
+    const lines = [`${team} 7-Round Mock Draft`];
+    for (const r of rounds) {
+      for (const pick of myPicksByRound[r]) {
+        const player = byId.get(pick.player_id);
+        if (!player) continue;
+        lines.push(`R${pick.round} #${pick.pick_number} — ${player.name}, ${player.position}${player.school ? `, ${player.school}` : ''}`);
+      }
+    }
+    if (trades.length > 0) {
+      lines.push('');
+      lines.push('Trades:');
+      for (const t of trades) {
+        lines.push(`  w/ ${t.partnerTeam}: Gave #${t.gave.join(', #')} → Got #${t.got.join(', #')}`);
+      }
+    }
+    lines.push('', 'MockDraft Showdown');
+    const text = lines.join('\n');
+    navigator.clipboard.writeText(text)
+      .then(() => toast.success('Copied to clipboard — paste into Discord'))
+      .catch(() => toast.error('Copy failed'));
+  }
 
   return (
     <div className="flex flex-col min-h-[calc(100dvh-56px)]">
@@ -901,7 +925,7 @@ function ResultsView({
           </div>
         </div>
 
-        {/* ── Save card ── */}
+        {/* ── Save / Share card ── */}
         <div className="mt-4 p-3 rounded-xl border border-accent/40 bg-accent/[0.05]">
           <label className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted block mb-1">
             Mock Title
@@ -935,95 +959,57 @@ function ResultsView({
             >
               Change Team
             </button>
+            <button
+              onClick={handleShareText}
+              className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-accent hover:brightness-125 transition ml-auto"
+            >
+              Share
+            </button>
           </div>
         </div>
 
-        {/* ── My Picks (highlighted block) ── */}
-        {myPicksOnly.length > 0 && (
-          <div className="mt-6">
-            <div className="flex items-center gap-2 mb-2">
-              <TeamLogo abbr={team} size="xs" />
-              <span className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary">
-                Your {team} Picks
-              </span>
-              <span className="font-mono text-[10px] text-text-muted ml-auto">
-                {userPicksMade} / {userSlotCount}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {myPicksOnly.map((pick) => {
-                const player = byId.get(pick.player_id);
-                if (!player) return null;
-                const color = posHex(player.position);
-                return (
-                  <div
-                    key={pick.pick_number}
-                    className="flex items-center gap-2.5 p-2.5 rounded-lg border border-accent/30 bg-accent/[0.06]"
-                    style={{ borderLeft: `3px solid ${color}` }}
-                  >
-                    <span className="font-mono text-[10px] text-text-muted w-10 text-right shrink-0">
-                      {ROUND_LABELS[pick.round] || `R${pick.round}`} · {pick.pick_number}
-                    </span>
-                    <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="sm" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-semibold truncate text-text-primary">
-                        {player.name}
-                      </div>
-                      <div className="text-[10px] text-text-muted truncate">{player.school}</div>
-                    </div>
-                    <PositionBadge position={player.position} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ── Full draft board, grouped by round ── */}
-        <div className="mt-8 space-y-5">
-          <div className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary">
-            Full Draft Board
+        {/* ── User Picks by round ── */}
+        <div className="mt-6 space-y-6">
+          <div className="flex items-center gap-2">
+            <TeamLogo abbr={team} size="xs" />
+            <span className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary">
+              Your {team} Picks
+            </span>
+            <span className="font-mono text-[10px] text-text-muted ml-auto">
+              {userPicksMade} / {userSlotCount}
+            </span>
           </div>
           {rounds.map((r) => (
             <div key={r}>
-              <div className="text-[10px] font-display font-semibold uppercase tracking-[0.16em] text-text-muted mb-2">
-                {ROUND_LABELS[r] || `Round ${r}`} Round
+              <div className="flex items-center gap-3 mb-2">
+                <div className="font-display text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                  {ROUND_LABELS[r] || `Round ${r}`} Round
+                </div>
+                <div className="flex-1 h-px bg-border-subtle" />
               </div>
-              <div className="space-y-1.5">
-                {byRound[r].map((pick) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {myPicksByRound[r].map((pick) => {
                   const player = byId.get(pick.player_id);
                   if (!player) return null;
-                  const isUserPick = pick.is_user;
+                  const color = posHex(player.position);
                   return (
                     <div
                       key={pick.pick_number}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${
-                        isUserPick
-                          ? 'border-accent/30 bg-accent/[0.05]'
-                          : 'border-border-subtle bg-bg-surface/30'
-                      }`}
-                      style={isUserPick ? { borderLeft: `3px solid ${posHex(player.position)}` } : undefined}
+                      className="flex items-center gap-2.5 p-2.5 rounded-lg border border-accent/30 bg-accent/[0.06]"
+                      style={{ borderLeft: `3px solid ${color}` }}
                     >
-                      <span className="font-mono text-[9.5px] text-text-muted w-6 text-right shrink-0">
-                        {pick.pick_number}
-                      </span>
-                      {isUserPick ? (
-                        <TeamLogo abbr={pick.team} size="xs" />
-                      ) : (
-                        <span className="font-display text-[9px] font-semibold uppercase tracking-wide text-text-muted w-7 shrink-0">
-                          {pick.team}
-                        </span>
-                      )}
-                      <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="xs" />
+                      <div className="shrink-0 w-12 text-right">
+                        <div className="font-mono text-[10px] font-semibold text-text-muted">R{pick.round}</div>
+                        <div className="font-mono text-[12px] font-bold text-text-primary">#{pick.pick_number}</div>
+                      </div>
+                      <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="sm" />
                       <div className="flex-1 min-w-0">
-                        <div className={`text-[12.5px] font-semibold truncate ${isUserPick ? 'text-text-primary' : 'text-text-secondary'}`}>
+                        <div className="text-[13px] font-semibold truncate text-text-primary">
                           {player.name}
                         </div>
-                        {player.school && (
-                          <div className="text-[10px] text-text-muted truncate">{player.school}</div>
-                        )}
+                        <div className="text-[10px] text-text-muted truncate">{player.school}</div>
                       </div>
-                      <PositionBadge position={player.position} muted={!isUserPick} />
+                      <PositionBadge position={player.position} />
                     </div>
                   );
                 })}
@@ -1031,6 +1017,41 @@ function ResultsView({
             </div>
           ))}
         </div>
+
+        {/* ── Trades made during the mock ── */}
+        {trades.length > 0 && (
+          <div className="mt-8">
+            <div className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary mb-3">
+              Trades Made
+            </div>
+            <div className="space-y-2">
+              {trades.map((t, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 p-3 rounded-lg border border-border-subtle bg-bg-surface/40"
+                >
+                  <TeamLogo abbr={team} size="xs" />
+                  <div className="text-[10px] text-text-muted font-mono">↔</div>
+                  <TeamLogo abbr={t.partnerTeam} size="xs" />
+                  <div className="flex-1 min-w-0 text-[11px]">
+                    <div className="text-text-secondary">
+                      <span className="text-text-muted">Gave:</span>{' '}
+                      <span className="font-mono font-semibold text-text-primary">
+                        {t.gave.map((n) => `#${n}`).join(', ')}
+                      </span>
+                    </div>
+                    <div className="text-text-secondary mt-0.5">
+                      <span className="text-text-muted">Got:</span>{' '}
+                      <span className="font-mono font-semibold text-accent">
+                        {t.got.map((n) => `#${n}`).join(', ')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1085,6 +1106,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }, [search]);
   const [posFilter, setPosFilter] = useState('ALL');
   const [saving, setSaving] = useState(false);
+  const [trades, setTrades] = useState([]); // record trades for the results view
 
   const currentIdx = picks.length; // next slot to fill
   const currentSlot = currentIdx < liveOrder.length ? liveOrder[currentIdx] : null;
@@ -1147,6 +1169,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
   function restart() {
     setPicks([]);
+    setTrades([]);
     setPhase(PHASE_READY);
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }
@@ -1165,6 +1188,11 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         return row;
       })
     );
+    // Record trade for the results view
+    setTrades((prev) => [
+      ...prev,
+      { partnerTeam, gave: [...yourPicks].sort((a, b) => a - b), got: [...theirPicks].sort((a, b) => a - b) },
+    ]);
   }
 
   async function handleSave(customTitle) {
@@ -1446,6 +1474,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         userPicksMade={userPicksMade}
         userSlotCount={userSlotCount}
         saving={saving}
+        trades={trades}
         onSave={handleSave}
         onRestart={restart}
         onChangeTeam={onChangeTeam}
@@ -1889,6 +1918,7 @@ function SavedMocksList({ mocks, onOpen, onDelete, onNew }) {
 export default function TeamMock() {
   const { user } = useAuth();
   const nav = useNavigate();
+  const location = useLocation();
   const [players, setPlayers] = useState(null);
   const [draftOrder, setDraftOrder] = useState(null);
   // undefined = loading, [] = none yet
@@ -1954,6 +1984,17 @@ export default function TeamMock() {
       console.error('[delete team mock]', e);
     }
   }
+
+  // When the user clicks the "Team Mock" nav link while already on /team-mock,
+  // the Navbar navigates with { state: { reset } }. Reset all drill-in state
+  // so the user lands back on the mocks list / team picker.
+  useEffect(() => {
+    if (location.state?.reset) {
+      setTeam(null);
+      setActiveMock(null);
+      setShowPickerExplicit(false);
+    }
+  }, [location.state?.reset]);
 
   const [showPickerExplicit, setShowPickerExplicit] = useState(false);
   function startNew() {

@@ -332,18 +332,13 @@ export function TradeModal({
     });
   }
 
-  // Force Trade — bypass the bot's evaluation entirely and apply the trade
-  // as-is. Still enforces the minimum sanity checks (both sides have picks
-  // selected, no hard 1-for-1). Useful when the user wants to simulate a
-  // specific historical or hypothetical trade the bot wouldn't accept on
-  // pure chart math.
+  // Force Trade — bypass ALL evaluation rules and apply the trade as-is.
+  // Only requires both sides to have at least one pick selected (can't
+  // force nothing). Users can force 1-for-1, overpays, underpays — it's
+  // their sandbox.
   function handleForce() {
     if (yourCount === 0 || theirCount === 0) {
       toast.error('Pick at least one from each side');
-      return;
-    }
-    if (yourCount === 1 && theirCount === 1) {
-      toast.error('1-for-1 swaps are still off the table');
       return;
     }
     onAccepted({
@@ -570,7 +565,7 @@ export function TradeModal({
               Skips the bot's evaluation but still blocks empty/1-for-1. */}
           <button
             onClick={handleForce}
-            disabled={yourCount === 0 || theirCount === 0 || (yourCount === 1 && theirCount === 1)}
+            disabled={yourCount === 0 || theirCount === 0}
             title="Override the bot and accept this trade anyway"
             className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-gold rounded-lg px-3 py-2 border border-gold/40 hover:bg-gold/[0.08] transition disabled:opacity-30 disabled:cursor-not-allowed"
           >
