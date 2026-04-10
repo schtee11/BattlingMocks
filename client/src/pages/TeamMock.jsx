@@ -1291,20 +1291,6 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
 
-  // Lock body scroll while the in-draft layout is active so the
-  // viewport-locked panels don't let the page scroll behind them.
-  // Release the lock when the draft finishes (PHASE_DONE) so the
-  // ResultsView can scroll normally.
-  useEffect(() => {
-    if (phase === PHASE_DONE) {
-      document.body.style.overflow = '';
-      return;
-    }
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, [phase]);
-
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
   const userSlotCount = useMemo(
     () => liveOrder.filter((s) => s.team === team).length,
@@ -1326,6 +1312,20 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [posFilter, setPosFilter] = useState('ALL');
   const [saving, setSaving] = useState(false);
   const [trades, setTrades] = useState([]); // record trades for the results view
+
+  // Lock body scroll while the in-draft layout is active so the
+  // viewport-locked panels don't let the page scroll behind them.
+  // Release the lock when the draft finishes (PHASE_DONE) so the
+  // ResultsView can scroll normally.
+  useEffect(() => {
+    if (phase === PHASE_DONE) {
+      document.body.style.overflow = '';
+      return;
+    }
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [phase]);
 
   // Mobile: tab-based layout replaces the old resizable panels
   const [mobileTab, setMobileTab] = useState('board'); // 'board' | 'picks' | 'prospects'
