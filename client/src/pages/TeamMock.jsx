@@ -1297,6 +1297,10 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [saving, setSaving] = useState(false);
   const [trades, setTrades] = useState([]); // record trades for the results view
 
+  // Mobile: tab-based layout replaces the old resizable panels
+  const [mobileTab, setMobileTab] = useState('board'); // 'board' | 'picks' | 'prospects'
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   const currentIdx = picks.length; // next slot to fill
   const currentSlot = currentIdx < liveOrder.length ? liveOrder[currentIdx] : null;
   const usedIds = useMemo(() => new Set(picks.map((p) => p.player_id)), [picks]);
@@ -1334,6 +1338,11 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     }, delay);
     return () => clearTimeout(timer);
   }, [phase, currentSlot, picks, players, team, randomness, speedIdx]);
+
+  // Auto-switch mobile to Prospects tab when it's the user's turn to pick
+  useEffect(() => {
+    if (phase === PHASE_ON_CLOCK) setMobileTab('prospects');
+  }, [phase]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
   function start() { setPhase(PHASE_RUNNING); }
@@ -1437,41 +1446,6 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // Only the user's picks, in draft order (not reversed — small list, easier to
   // read chronologically so users can see their roster build out top to bottom)
   const myPicks = useMemo(() => picks.filter((p) => p.is_user), [picks]);
-
-  // Mobile: resizable top panel
-  const [topH, setTopH] = useState(() => {
-    if (typeof window === 'undefined') return 220;
-    const v = parseInt(localStorage.getItem('mds_team_top_h') || '', 10);
-    return Number.isFinite(v) && v >= 60 && v <= 600 ? v : 220;
-  });
-  const [topCollapsed, setTopCollapsed] = useState(false);
-  const [bottomCollapsed, setBottomCollapsed] = useState(false);
-  const containerRef = useRef(null);
-  const dragging = useRef(false);
-  const dragStartY = useRef(0);
-  const dragStartH = useRef(0);
-  function onHandlePointerDown(e) {
-    e.preventDefault();
-    dragging.current = true;
-    dragStartY.current = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
-    dragStartH.current = topH;
-    const onMove = (ev) => {
-      if (!dragging.current) return;
-      const y = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
-      const delta = y - dragStartY.current;
-      const containerH = containerRef.current?.clientHeight ?? window.innerHeight;
-      const newH = Math.max(60, Math.min(containerH - 120, dragStartH.current + delta));
-      setTopH(newH);
-      localStorage.setItem('mds_team_top_h', String(Math.round(newH)));
-    };
-    const onUp = () => {
-      dragging.current = false;
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  }
 
   const FILTERS = ['ALL', ...POSITIONS];
 
@@ -1837,146 +1811,104 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       </div>
 
       {/* ── Mobile ── */}
-      <div ref={containerRef} className="flex flex-col md:hidden" style={{ flex: 1, overflow: 'hidden' }}>
-        {/* Sticky status banner + inline controls at top */}
-        <div className="border-b border-border-subtle shrink-0">
+      {/* ── Mobile: tab-based layout ── */}
+      <div className="flex flex-col md:hidden" style={{ flex: 1, overflow: 'hidden' }}>
+        {/* Fixed top: status banner + action bar */}
+        <div className="shrink-0 border-b border-border-subtle">
           <StatusBanner compact />
           {phase !== PHASE_READY && phase !== PHASE_DONE && (
-            <div className="px-2 pb-2 space-y-1.5">
-              {/* Row 1: Speed + Pause/Resume + Trade */}
-              <div className="flex items-center gap-1.5">
-                <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                  <span className="font-display text-[9px] font-semibold uppercase tracking-wider text-text-muted shrink-0 w-9">
-                    Speed
-                  </span>
-                  <input
-                    type="range" min="0" max={SPEED_STEPS.length - 1} step="1"
-                    value={speedIdx}
-                    onChange={(e) => setSpeedIdx(Number(e.target.value))}
-                    className="flex-1 h-1 accent-accent cursor-pointer min-w-0"
-                  />
-                  <span className="font-mono text-[9px] text-text-muted w-11 text-right shrink-0">
-                    {SPEED_LABELS[speedIdx]}
-                  </span>
-                </div>
-                {phase === PHASE_RUNNING && (
-                  <button onClick={pause} className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-border-subtle text-text-primary">
-                    Pause
-                  </button>
-                )}
-                {phase === PHASE_PAUSED && (
-                  <button onClick={resume} className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md text-bg-deep" style={{ background: 'var(--gradient-accent)' }}>
-                    Resume
-                  </button>
-                )}
-                <button
-                  onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
-                  className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-accent/40 text-text-primary"
-                >
-                  Trade
+            <div className="px-3 pb-2 flex items-center gap-2">
+              {phase === PHASE_RUNNING && (
+                <button onClick={pause}
+                  className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md border border-border-subtle text-text-primary">
+                  Pause
                 </button>
-              </div>
-              {/* Row 2: Bot Chaos + Restart */}
-              <div className="flex items-center gap-1.5">
-                <div className="flex-1 flex items-center gap-1.5 min-w-0">
-                  <span className="font-display text-[9px] font-semibold uppercase tracking-wider text-text-muted shrink-0 w-9">
-                    Chaos
-                  </span>
-                  <input
-                    type="range" min="0" max="1" step="0.05"
-                    value={randomness}
-                    onChange={(e) => setRandomness(Number(e.target.value))}
-                    className="flex-1 h-1 accent-accent cursor-pointer min-w-0"
-                  />
-                  <span className="font-mono text-[9px] text-text-muted w-11 text-right shrink-0">
-                    {Math.round(randomness * 100)}%
-                  </span>
-                </div>
-                <button
-                  onClick={restart}
-                  className="shrink-0 font-display text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md border border-border-subtle text-text-muted hover:text-text-primary"
-                >
-                  Restart
+              )}
+              {phase === PHASE_PAUSED && (
+                <button onClick={resume}
+                  className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md text-bg-deep"
+                  style={{ background: 'var(--gradient-accent)' }}>
+                  Resume
                 </button>
+              )}
+              <button
+                onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
+                className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md border border-accent/40 text-text-primary">
+                Trade
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={() => setSettingsOpen((v) => !v)}
+                className="w-8 h-8 flex items-center justify-center rounded-md border border-border-subtle text-text-muted hover:text-text-primary transition"
+                title="Settings"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M8.34 1.804A1 1 0 019.32 1h1.36a1 1 0 01.98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 011.262.125l.962.962a1 1 0 01.125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.294a1 1 0 01.804.98v1.362a1 1 0 01-.804.98l-1.473.295a6.95 6.95 0 01-.587 1.416l.834 1.25a1 1 0 01-.125 1.262l-.962.962a1 1 0 01-1.262.125l-1.25-.834a6.953 6.953 0 01-1.416.587l-.294 1.473a1 1 0 01-.98.804H9.32a1 1 0 01-.98-.804l-.295-1.473a6.957 6.957 0 01-1.416-.587l-1.25.834a1 1 0 01-1.262-.125l-.962-.962a1 1 0 01-.125-1.262l.834-1.25a6.957 6.957 0 01-.587-1.416l-1.473-.294A1 1 0 011 11.18V9.82a1 1 0 01.804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 01.125-1.262l.962-.962A1 1 0 015.38 3.53l1.25.834a6.957 6.957 0 011.416-.587l.294-1.473zM13 10a3 3 0 11-6 0 3 3 0 016 0z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+          )}
+          {/* Collapsible settings drawer */}
+          {settingsOpen && phase !== PHASE_READY && phase !== PHASE_DONE && (
+            <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border-subtle bg-bg-surface/30">
+              <div className="flex items-center gap-2">
+                <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Speed</span>
+                <input type="range" min="0" max={SPEED_STEPS.length - 1} step="1" value={speedIdx}
+                  onChange={(e) => setSpeedIdx(Number(e.target.value))}
+                  className="flex-1 h-1 accent-accent cursor-pointer" />
+                <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{SPEED_LABELS[speedIdx]}</span>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Chaos</span>
+                <input type="range" min="0" max="1" step="0.05" value={randomness}
+                  onChange={(e) => setRandomness(Number(e.target.value))}
+                  className="flex-1 h-1 accent-accent cursor-pointer" />
+                <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
+              </div>
+              <button onClick={restart}
+                className="w-full font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-muted hover:text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition">
+                Restart Draft
+              </button>
             </div>
           )}
         </div>
 
-        {/* Top: Draft history */}
-        <div
-          className="flex flex-col border-b border-border-subtle overflow-hidden"
-          style={{ height: topCollapsed ? 40 : topH }}
-        >
-          <button
-            onClick={() => setTopCollapsed((v) => !v)}
-            className="flex items-center gap-2 px-3 h-10 shrink-0 border-b border-border-subtle"
-          >
-            <span className="font-display text-[11px] font-bold uppercase tracking-wider text-text-primary flex-1 text-left">
-              Draft Board ({picks.length}/{liveOrder.length})
-            </span>
-            <span className="text-text-muted text-[10px]">{topCollapsed ? '▼' : '▲'}</span>
-          </button>
-          {!topCollapsed && (
-            <div className="flex-1 overflow-y-auto overscroll-contain p-2 space-y-2">
-              {/* My Picks — sticky sub-section */}
-              {myPicks.length > 0 && (
-                <div className="space-y-1 pb-1 border-b border-border-subtle">
-                  <div className="flex items-center gap-1.5 px-1">
-                    <TeamLogo abbr={team} size="xs" />
-                    <span className="font-display text-[9px] font-bold uppercase tracking-wider text-text-muted flex-1">
-                      My Picks
-                    </span>
-                    <span className="font-mono text-[9px] text-text-muted">
-                      {myPicks.length}/{userSlotCount}
-                    </span>
-                  </div>
-                  {myPicks.map(renderMyPick)}
-                </div>
-              )}
-              {/* Everyone else's picks */}
+        {/* Tab content — single scroll area per tab */}
+        <div className="flex-1 overflow-hidden">
+          {mobileTab === 'board' && (
+            <div className="h-full overflow-y-auto overscroll-contain p-2 space-y-1">
               {recentPicks.length === 0 ? (
-                <div className="text-center text-text-muted text-xs py-6">
-                  Tap Start Mock Draft above to begin
+                <div className="text-center text-text-muted text-xs py-8">
+                  {phase === PHASE_READY ? 'Tap Start Mock Draft above to begin' : 'Draft in progress…'}
                 </div>
               ) : (
-                <div className="space-y-1">
-                  {myPicks.length > 0 && (
-                    <div className="px-1 font-display text-[9px] font-bold uppercase tracking-wider text-text-muted">
-                      Full Board
-                    </div>
-                  )}
-                  {recentPicks.map(renderHistoryPick)}
-                </div>
+                recentPicks.map(renderHistoryPick)
               )}
             </div>
           )}
-        </div>
 
-        {/* Drag handle */}
-        {!topCollapsed && !bottomCollapsed && (
-          <div
-            onPointerDown={onHandlePointerDown}
-            className="h-3 shrink-0 flex items-center justify-center cursor-row-resize touch-none z-10 bg-bg-deep"
-          >
-            <div className="w-10 h-0.5 rounded-full bg-border-subtle" />
-          </div>
-        )}
+          {mobileTab === 'picks' && (
+            <div className="h-full overflow-y-auto overscroll-contain p-2 space-y-1">
+              <div className="flex items-center gap-2 px-1 py-2">
+                <TeamLogo abbr={team} size="xs" />
+                <span className="font-display text-[11px] font-bold uppercase tracking-wider text-text-primary flex-1">
+                  My Picks
+                </span>
+                <span className="font-mono text-[10px] text-text-muted">
+                  {myPicks.length}/{userSlotCount}
+                </span>
+              </div>
+              {myPicks.length === 0 ? (
+                <div className="text-center text-text-muted text-xs py-8">No picks yet</div>
+              ) : (
+                myPicks.map(renderMyPick)
+              )}
+            </div>
+          )}
 
-        {/* Bottom: Prospects */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <button
-            onClick={() => setBottomCollapsed((v) => !v)}
-            className="flex items-center gap-2 px-3 h-10 shrink-0 border-b border-border-subtle"
-          >
-            <span className="font-display text-[11px] font-bold uppercase tracking-wider text-text-primary flex-1 text-left">
-              Prospects
-            </span>
-            <span className="text-text-muted text-[10px]">{bottomCollapsed ? '▼' : '▲'}</span>
-          </button>
-          {!bottomCollapsed && (
-            <>
-              <div className="px-3 py-2 flex gap-2 border-b border-border-subtle">
+          {mobileTab === 'prospects' && (
+            <div className="h-full flex flex-col overflow-hidden">
+              <div className="px-3 py-2 flex gap-2 border-b border-border-subtle shrink-0">
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -1984,25 +1916,18 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                   disabled={phase === PHASE_READY}
                   className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-1.5 text-[12px] text-text-primary placeholder-text-muted focus:border-accent/60 outline-none transition disabled:opacity-50"
                 />
-                <label className="flex items-center gap-1 shrink-0 text-[9.5px] font-display uppercase tracking-[0.1em] text-text-muted cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={showUsed}
-                    onChange={(e) => setShowUsed(e.target.checked)}
-                    className="w-3.5 h-3.5 accent-accent cursor-pointer"
-                  />
+                <label className="flex items-center gap-1 shrink-0 text-[10px] font-display uppercase tracking-[0.1em] text-text-muted cursor-pointer select-none">
+                  <input type="checkbox" checked={showUsed} onChange={(e) => setShowUsed(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-accent cursor-pointer" />
                   Drafted
                 </label>
               </div>
-              <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none border-b border-border-subtle">
+              <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none border-b border-border-subtle shrink-0">
                 {FILTERS.map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setPosFilter(f)}
+                  <button key={f} onClick={() => setPosFilter(f)}
                     className={`shrink-0 px-2 py-0.5 rounded-md font-display text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
                       posFilter === f ? 'bg-accent text-bg-deep' : 'text-text-muted hover:text-text-primary'
-                    }`}
-                  >
+                    }`}>
                     {f}
                   </button>
                 ))}
@@ -2010,8 +1935,38 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               <ul className="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1">
                 {filteredProspects.map(renderProspect)}
               </ul>
-            </>
+            </div>
           )}
+        </div>
+
+        {/* Bottom tab bar */}
+        <div className="shrink-0 border-t border-border-subtle bg-bg-deep/95 flex" style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
+          {[
+            { key: 'board', label: 'Board', badge: `${picks.length}` },
+            { key: 'picks', label: 'My Picks', badge: `${myPicks.length}` },
+            { key: 'prospects', label: 'Prospects', badge: phase === PHASE_ON_CLOCK ? '!' : null },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setMobileTab(t.key)}
+              className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition ${
+                mobileTab === t.key ? 'text-accent' : 'text-text-muted'
+              }`}
+            >
+              <span className="font-display text-[11px] font-bold uppercase tracking-[0.12em]">
+                {t.label}
+              </span>
+              {t.badge && (
+                <span className={`font-mono text-[9px] ${
+                  t.key === 'prospects' && phase === PHASE_ON_CLOCK
+                    ? 'text-accent animate-pulse'
+                    : 'text-text-muted'
+                }`}>
+                  {t.badge}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
