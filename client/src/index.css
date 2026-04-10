@@ -144,6 +144,11 @@ html, body, #root { height: 100%; }
 html { color-scheme: dark; }
 html[data-theme="light"] { color-scheme: light; }
 
+/* Scale up on large monitors so the UI feels naturally sized at 100% zoom.
+   Tailwind uses rem throughout, so bumping the root font-size scales
+   spacing, text, and component sizes proportionally. */
+@media (min-width: 1440px) { html { font-size: 20px; } }
+
 body {
   font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   color: var(--text-primary);
