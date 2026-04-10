@@ -1171,14 +1171,6 @@ function ResultsView({
             >
               Change Team
             </button>
-            <button
-              onClick={handleShare}
-              disabled={exporting}
-              className="font-display font-bold text-[10px] uppercase tracking-[0.12em] text-bg-deep rounded-lg px-3 py-1.5 transition hover:brightness-110 disabled:opacity-50 ml-auto"
-              style={{ background: 'var(--gradient-accent)' }}
-            >
-              {exporting ? 'Rendering…' : 'Share'}
-            </button>
           </div>
         </div>
 
