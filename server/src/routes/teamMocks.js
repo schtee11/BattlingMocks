@@ -67,14 +67,20 @@ router.post('/', async (req, res) => {
     );
     const mockId = ins.rows[0].id;
 
-    for (const p of picks) {
+    // Batch insert all picks in one query instead of N individual INSERTs
+    const values = [];
+    const params = [];
+    picks.forEach((p, i) => {
       const round = Number.isInteger(p.round) ? p.round : 1;
       const pickTeam = typeof p.team === 'string' ? p.team.toUpperCase().slice(0, 5) : null;
-      await client.query(
-        'INSERT INTO mock_picks (mock_id, pick_number, player_id, round, team) VALUES ($1, $2, $3, $4, $5)',
-        [mockId, p.pick_number, p.player_id, round, pickTeam]
-      );
-    }
+      const off = i * 5;
+      values.push(`($${off + 1}, $${off + 2}, $${off + 3}, $${off + 4}, $${off + 5})`);
+      params.push(mockId, p.pick_number, p.player_id, round, pickTeam);
+    });
+    await client.query(
+      `INSERT INTO mock_picks (mock_id, pick_number, player_id, round, team) VALUES ${values.join(', ')}`,
+      params
+    );
 
     await client.query('COMMIT');
     res.status(201).json({ mock_id: mockId });

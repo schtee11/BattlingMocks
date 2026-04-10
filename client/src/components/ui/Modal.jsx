@@ -15,7 +15,7 @@ export function Modal({ open, onClose, title, children, footer }) {
         className="absolute inset-0 bg-black/75 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-md glass rounded-xl p-6 animate-fade-in">
+      <div role="dialog" aria-modal="true" className="relative w-full max-w-md glass rounded-xl p-6 animate-fade-in">
         {title && (
           <h3 className="font-display font-bold uppercase tracking-[0.14em] text-text-primary text-[17px] mb-2">
             {title}
