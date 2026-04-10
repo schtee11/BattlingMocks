@@ -14,8 +14,29 @@ function normalizePos(pos) {
   return POS_ALIASES[up] || up;
 }
 
+// Positional value tiers — multiplier applied to baseScore so premium
+// positions command extra draft capital (QB especially). Kept in sync with
+// client/src/lib/algoConfig.js ALGO_DEFAULTS.positionTiers. Missing keys
+// fall through to 1.00 (Tier 3).
+const POSITION_TIERS = {
+  QB:   1.30, // Tier 1 — franchise QB premium
+  OT:   1.12, // Tier 2 — tackle premium (covers LT + RT)
+  EDGE: 1.12, // Tier 2 — pass rusher premium
+  WR:   1.12, // Tier 2 — receiver premium
+};
+function positionTierMultiplier(canonicalPos) {
+  const m = POSITION_TIERS[canonicalPos];
+  return Number.isFinite(m) && m > 0 ? m : 1;
+}
+
+// Selection sharpness — exponent applied to pool scores at the weighted-
+// random draw. Kept in sync with ALGO_DEFAULTS.scoreSharpness. See the
+// client picker for rationale. Default 5 → ~62% rate for a consensus #1
+// on a top-need team at randomness=0.25.
+const SCORE_SHARPNESS = 5;
+
 /**
- * Score = baseScore * needsMultiplier * jitter.
+ * Score = baseScore * needsMultiplier * tierMult * jitter.
  *
  * baseScore       exponential decay off rank so top picks dominate but mid-
  *                 round picks can still edge out BPA when needs intervene.
@@ -25,12 +46,17 @@ function normalizePos(pos) {
  *                 falls of consensus top talents.
  * needsMultiplier +20% for the team's top need, +13% for second, +7% for
  *                 third, 1.0 otherwise.
+ * tierMult        ×1.30 for QB (Tier 1), ×1.12 for OT/EDGE/WR (Tier 2), ×1.00
+ *                 for everything else. Calibrated so a rank-7 QB edges out a
+ *                 rank-1 non-QB on tier alone but a rank-8 QB does not.
  * jitter          multiplicative 1 ± randomness/2.
  * Hard fall cap   Top-ranked players who have fallen too far get a large score
  *                 multiplier applied before pool selection. Requires pickNumber.
  *
  * Selection uses weighted random from a top-N candidate pool (not
  * deterministic max) so re-running the same board produces different picks.
+ * Pool weights are score^SCORE_SHARPNESS so the top scorer clearly dominates
+ * while variance still exists.
  */
 export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pickNumber = 999 }) {
   if (!available || available.length === 0) return null;
@@ -55,9 +81,11 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
       needsMultiplier = priority === 0 ? 1.20 : priority === 1 ? 1.13 : 1.07;
     }
 
+    const tierMult = positionTierMultiplier(pos);
+
     const jitter = 1 + (Math.random() - 0.5) * randomness;
 
-    let score = baseScore * needsMultiplier * jitter;
+    let score = baseScore * needsMultiplier * tierMult * jitter;
     scored.push({ player: p, rank, score });
   }
 
@@ -86,13 +114,15 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
   );
   const pool = scored.slice(0, poolSize);
 
-  const totalWeight = pool.reduce((s, x) => s + x.score, 0);
+  // Weighted random draw with sharpness exponent — see SCORE_SHARPNESS.
+  const weights = pool.map((x) => Math.pow(Math.max(x.score, 0), SCORE_SHARPNESS));
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
   if (totalWeight <= 0) return pool[0]?.player ?? null;
 
   let roll = Math.random() * totalWeight;
-  for (const { player, score } of pool) {
-    roll -= score;
-    if (roll <= 0) return player;
+  for (let i = 0; i < pool.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) return pool[i].player;
   }
   return pool[pool.length - 1]?.player ?? null;
 }
