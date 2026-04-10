@@ -22,7 +22,7 @@ function getRedirectUri(req) {
 }
 
 function frontendUrl() {
-  return process.env.FRONTEND_URL || 'http://localhost:5173';
+  return (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
 }
 
 function redirectToFrontend(res, pathWithHash) {
