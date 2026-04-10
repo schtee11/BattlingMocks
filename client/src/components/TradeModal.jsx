@@ -2,15 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { TeamLogo } from './ui/TeamLogo.jsx';
 import tradeValuesChart from '../lib/tradeValues2026.json';
+import { getAlgoConfig } from '../lib/algoConfig.js';
 
 // ── Probability helpers ─────────────────────────────────────────────────────
 // Trades have a % chance of acceptance based on how far the mover-up's value
 // is from the required threshold. Fair deals are nearly always accepted;
 // underpays drop steeply; extreme overpays are dampened (unrealistic gifts).
-// Same trade always gives the same verdict via a deterministic seed.
+//
+// The live preview ONLY shows the probability — accept/reject is decided
+// by a deterministic hash roll at proposal time (handlePropose). This keeps
+// the preview monotonic: more value → higher %, always.
 
-// Only hard wall: extreme lowballs (25%+ underpay) are always rejected.
-const HARD_UNDERPAY_LIMIT = -0.25;
+// Hard-reject limit is read from algo config so it's admin-tunable.
+// Kept as a file-level accessor so the sigmoid comment below stays legible.
+function hardUnderpayLimit() { return -(getAlgoConfig().hardUnderpayLimit ?? 0.25); }
 
 // Acceptance probability curve:
 //   Sigmoid base centered at -8% surplus (fair ≈ 94%) with an exponential
@@ -35,7 +40,8 @@ function acceptanceProbability(surplusPct) {
   return base;
 }
 
-// Deterministic random from trade contents — same picks = same roll.
+// Deterministic random from trade contents — used ONLY at proposal time so
+// the live preview never shows an accept/reject that contradicts the %.
 function tradeHash(from, partner, aPicks, bPicks) {
   const key = [from, partner, ...aPicks.sort((a, b) => a - b), '|', ...bPicks.sort((a, b) => a - b)].join(',');
   let h = 0;
@@ -217,10 +223,11 @@ export function TradeModal({
     const moverDownCount = fromIsMovingUp ? theirCount : yourCount;
     const moverUpTeam = fromIsMovingUp ? effectiveFromTeam : partnerTeam;
 
-    // Simple premium: mover-up pays a flat 5% for moving up.
-    // Top-5 picks are slightly harder to pry loose (+3%).
-    let premium = 0.05;
-    if (topPickInDeal <= 5) premium += 0.03;
+    // Premium: mover-up pays a base % for moving up, plus an extra % when
+    // the top pick in the deal is in the top 5. Both are admin-tunable.
+    const cfg = getAlgoConfig();
+    let premium = cfg.tradeBasePremium ?? 0.05;
+    if (topPickInDeal <= 5) premium += cfg.tradeTop5Bonus ?? 0.03;
 
     const required = moverDownTotal * (1 + premium);
 
@@ -229,7 +236,7 @@ export function TradeModal({
     const surplusPct = required > 0 ? surplus / required : 0;
 
     // Hard reject: extreme lowballs only.
-    if (surplusPct < HARD_UNDERPAY_LIMIT) {
+    if (surplusPct < hardUnderpayLimit()) {
       const shortBy = Math.ceil(-surplus);
       return {
         ok: false,
@@ -247,49 +254,45 @@ export function TradeModal({
     const prob = acceptanceProbability(surplusPct);
     const probPct = Math.round(prob * 100);
 
-    // Deterministic roll seeded from the trade contents. Same trade = same
-    // outcome. Modify a single pick and it rerolls.
-    const roll = tradeHash(
-      effectiveFromTeam,
-      partnerTeam,
-      [...yourSelected],
-      [...theirSelected]
-    );
-    const accepted = roll < prob;
-
-    if (accepted) {
-      return {
-        ok: true,
-        probability: probPct,
-        reason: probPct >= 70 ? 'good' : 'lucky',
-        text: fromTeamEditable
-          ? `Accepted (${probPct}%)`
-          : `${partnerTeam} accepts (${probPct}%)`,
-      };
-    }
-    // Rejected — show probability so user knows how close they are.
+    // Preview shows only the probability — NOT accepted/rejected yet.
+    // The actual roll happens in handlePropose so the live preview is
+    // always monotonic: more value → higher %, no hash-driven surprises.
     const shortBy = surplus < 0 ? Math.ceil(-surplus) : 0;
+    let previewText;
+    if (probPct >= 80) {
+      previewText = fromTeamEditable
+        ? `${partnerTeam} very likely accepts (${probPct}%)`
+        : `${partnerTeam} very likely accepts (${probPct}%)`;
+    } else if (probPct >= 50) {
+      previewText = fromTeamEditable
+        ? `${partnerTeam} might accept (${probPct}%)`
+        : `${partnerTeam} might accept (${probPct}%)`;
+    } else if (probPct >= 25) {
+      previewText = fromTeamEditable
+        ? `${partnerTeam} probably declines (${probPct}%)`
+        : `${partnerTeam} probably declines (${probPct}%) — add ~${shortBy} more value`;
+    } else {
+      previewText = fromTeamEditable
+        ? `${moverUpTeam} needs ~${shortBy} more value (${probPct}%)`
+        : fromIsMovingUp
+          ? `Add ~${shortBy} more value (${probPct}%)`
+          : `${partnerTeam} needs ~${shortBy} more (${probPct}%)`;
+    }
     return {
-      ok: false,
+      ok: 'pending',
       probability: probPct,
-      reason: probPct >= 35 ? 'close' : 'undervalued',
-      text: fromTeamEditable
-        ? probPct >= 35
-          ? `Rejected (${probPct}%) — tweak the deal`
-          : `${moverUpTeam} needs ~${shortBy} more value (${probPct}%)`
-        : probPct >= 35
-          ? `Rejected (${probPct}%) — tweak the deal`
-          : fromIsMovingUp
-            ? `Add ~${shortBy} more value (${probPct}%)`
-            : `${partnerTeam} needs ~${shortBy} more (${probPct}%)`,
+      surplusPct,
+      fromIsMovingUp,
+      moverUpTeam,
+      reason: 'pending',
+      text: previewText,
     };
   }
 
   const evalResult = evaluateTrade();
 
   // Only hard structural violations block the button entirely. Probabilistic
-  // rejections (close, lucky, undervalued) still allow proposing — the user
-  // can see the outcome and tweak the deal rather than being locked out.
+  // deals always allow proposing — the actual roll happens on click.
   const HARD_BLOCK_REASONS = new Set(['empty', 'one_for_one', 'hard_underpay']);
   const canPropose = !HARD_BLOCK_REASONS.has(evalResult.reason);
 
@@ -298,10 +301,22 @@ export function TradeModal({
       toast.error(evalResult.text);
       return;
     }
-    if (!evalResult.ok) {
-      // Probabilistic rejection — trade was proposed but the bot said no.
-      // User can see probability in the verdict panel and adjust picks.
-      toast.error(evalResult.text);
+    // Apply deterministic roll NOW (at proposal time, not in the preview).
+    // This keeps the live preview strictly probability-based while still
+    // giving a concrete accept/reject outcome when the user clicks Propose.
+    const prob = (evalResult.probability ?? 0) / 100;
+    const roll = tradeHash(
+      effectiveFromTeam,
+      partnerTeam,
+      [...yourSelected],
+      [...theirSelected]
+    );
+    if (roll >= prob) {
+      toast.error(
+        fromTeamEditable
+          ? `${partnerTeam} declined (${evalResult.probability}% odds)`
+          : `${partnerTeam} declined — try adding more value (${evalResult.probability}%)`
+      );
       return;
     }
     onAccepted({
@@ -357,16 +372,17 @@ export function TradeModal({
     );
   }
 
-  // Verdict palette — richer feedback for the probabilistic model:
-  //   fair / good / lucky → green (accepted)
-  //   overpaying          → yellow (accepted but gave up too much)
-  //   close               → orange (rejected but within striking distance)
-  //   undervalued / others→ red (clear reject)
+  // Verdict palette — driven by probability bands so color is monotonic:
+  //   ≥ 80% → green   (very likely accepted)
+  //   ≥ 50% → yellow  (might accept)
+  //   ≥ 25% → orange  (probably declines)
+  //   < 25% → red     (very unlikely / hard blocks)
   const verdictColor = (() => {
-    if (evalResult.reason === 'hard_underpay') return '#ef4444';
-    if (evalResult.reason === 'close') return '#f97316';
-    if (evalResult.reason === 'lucky') return '#34d399';
-    if (evalResult.ok) return '#22c55e';
+    if (evalResult.reason === 'hard_underpay' || evalResult.reason === 'empty' || evalResult.reason === 'one_for_one') return '#ef4444';
+    const pct = evalResult.probability ?? 0;
+    if (pct >= 80) return '#22c55e';
+    if (pct >= 50) return '#eab308';
+    if (pct >= 25) return '#f97316';
     return '#ef4444';
   })();
   const verdictText = evalResult.text;

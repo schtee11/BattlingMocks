@@ -108,6 +108,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS mocks_round1_user_unique
   ON mocks(user_id) WHERE mock_type = 'round1';
 CREATE INDEX IF NOT EXISTS idx_mocks_user_id_mock_type ON mocks(user_id, mock_type);
 
+-- Algo config: admin-editable JSON blob that drives the bot picker and trade
+-- acceptance engine. Stored as overrides; the server/client merge with defaults.
+ALTER TABLE draft_settings ADD COLUMN IF NOT EXISTS algo_config JSONB DEFAULT '{}'::jsonb;
+
 INSERT INTO draft_settings (id, draft_year, is_locked)
 VALUES (1, 2026, FALSE)
 ON CONFLICT (id) DO NOTHING;
