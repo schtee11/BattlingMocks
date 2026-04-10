@@ -1926,7 +1926,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             )}
           </div>
           {/* Controls */}
-          <div className="px-4 py-3 border-t border-border-subtle space-y-3">
+          <div className="shrink-0 px-4 py-3 border-t border-border-subtle space-y-3">
             {/* Speed slider */}
             <div>
               <div className="flex justify-between text-[10px] text-text-muted mb-1">
