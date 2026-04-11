@@ -28,6 +28,21 @@ const ERRORS = {
     title: 'Sign-in cancelled',
     body: 'You dismissed the sign-in prompt before it finished.',
   },
+  link_user_missing: {
+    title: 'Link failed',
+    body: "We couldn't find the account you were trying to link to. Please sign in again and retry.",
+    backTo: '/settings',
+  },
+  already_linked_other: {
+    title: 'Already linked elsewhere',
+    body: 'This account is already linked to a different Battling Mocks user. Sign in as that user to manage it, or unlink it there first.',
+    backTo: '/settings',
+  },
+};
+
+const PROVIDER_LABELS = {
+  discord: 'Discord',
+  google: 'Google',
 };
 
 export default function AuthCallback() {
@@ -40,11 +55,29 @@ export default function AuthCallback() {
     const params = new URLSearchParams(hash);
     const err = params.get('error');
     const id = params.get('id');
+    const linked = params.get('linked');
+    const provider = params.get('provider');
 
     if (err) {
       setError(ERRORS[err] || { title: 'Sign-in error', body: err });
       return;
     }
+
+    // Link-flow success path: a provider was attached to the existing user.
+    // We don't need to re-fetch the user (they're already logged in), just
+    // show a toast and bounce back to /settings.
+    if (linked) {
+      const label = PROVIDER_LABELS[provider] || provider || 'Account';
+      if (linked === 'already') {
+        toast.success(`${label} was already linked.`);
+      } else {
+        toast.success(`${label} linked!`);
+      }
+      window.history.replaceState(null, '', '/settings');
+      nav('/settings', { replace: true });
+      return;
+    }
+
     if (!id) {
       setError({
         title: 'Sign-in error',
@@ -71,6 +104,8 @@ export default function AuthCallback() {
   }, []);
 
   if (error) {
+    const backTo = error.backTo || '/join';
+    const backLabel = backTo === '/settings' ? 'Back to settings' : 'Try again';
     return (
       <div className="max-w-md mx-auto px-4 py-20 text-center route-fade">
         <Card glass className="p-7">
@@ -81,8 +116,8 @@ export default function AuthCallback() {
             {error.body}
           </p>
           <div className="flex items-center justify-center gap-2 flex-wrap">
-            <Link to="/join">
-              <Button>Try again</Button>
+            <Link to={backTo}>
+              <Button>{backLabel}</Button>
             </Link>
             <Link to="/">
               <Button variant="secondary">Back to home</Button>
