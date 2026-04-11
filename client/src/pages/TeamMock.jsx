@@ -1626,9 +1626,15 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       return t.creating;
     }
 
-    // Debounced flush: batch rapid bot picks into one POST. 600ms matches
-    // the upper end of the current SPEED_STEPS so a "Fast" auto-run flushes
-    // every few picks, while a "Slow" run flushes each pick individually.
+    // Debounced flush: batch rapid picks into one POST. 600ms matches the
+    // upper end of the current SPEED_STEPS so a "Fast" auto-run coalesces
+    // several bot picks of advancement into one flush cycle.
+    //
+    // Only USER picks are actually sent to the server. Bot picks are
+    // deterministic output of the algorithm we control, so they're noise
+    // for consensus/ADP analysis — the signal is what humans chose. The
+    // session row itself is still created on the first pick so we capture
+    // "this draft was attempted" + the algo_config snapshot regardless.
     if (t.flushTimer) clearTimeout(t.flushTimer);
     t.flushTimer = setTimeout(async () => {
       t.flushTimer = null;
@@ -1636,12 +1642,18 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       if (!sessionId) return; // session create failed — drop this flush
 
       const startIdx = t.sentCount;
-      const batch = picks.slice(startIdx);
-      if (batch.length === 0) return;
+      const slice = picks.slice(startIdx);
+      if (slice.length === 0) return;
+
+      const batch = slice.filter((p) => p.is_user);
 
       // Optimistically advance sentCount so a concurrent effect run doesn't
-      // re-send the same picks. If the POST fails we roll back.
+      // re-send the same picks. Advance past the whole slice (including bot
+      // picks we intentionally dropped) — those are processed, not pending.
       t.sentCount = picks.length;
+
+      if (batch.length === 0) return; // nothing to send this cycle
+
       try {
         await api.logDraftSessionPicks(sessionId, batch);
       } catch (e) {
@@ -1651,9 +1663,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     }, 600);
   }, [picks, team, randomness, user]);
 
-  // When the draft completes, flush any trailing picks immediately and mark
-  // the session complete so we can distinguish "finished" from "abandoned"
-  // in later analysis.
+  // When the draft completes, flush any trailing user picks immediately
+  // and mark the session complete so we can distinguish "finished" from
+  // "abandoned" in later analysis.
   useEffect(() => {
     if (phase !== PHASE_DONE) return;
     const t = telemetry.current;
@@ -1661,7 +1673,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       if (t.flushTimer) { clearTimeout(t.flushTimer); t.flushTimer = null; }
       const sessionId = t.sessionId || (t.creating ? await t.creating : null);
       if (!sessionId) return;
-      const trailing = picks.slice(t.sentCount);
+      const trailing = picks.slice(t.sentCount).filter((p) => p.is_user);
       if (trailing.length > 0) {
         try {
           await api.logDraftSessionPicks(sessionId, trailing);
@@ -1669,6 +1681,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         } catch (e) {
           console.warn('[telemetry] final flush failed:', e.message);
         }
+      } else {
+        // Nothing user-side left to send, but still mark all picks processed.
+        t.sentCount = picks.length;
       }
       try {
         await api.completeDraftSession(sessionId);
