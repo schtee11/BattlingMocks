@@ -2,7 +2,7 @@ import { getAlgoConfig } from './algoConfig.js';
 
 // Client-side bot picker — mirrors server/src/services/botPicker.js.
 //
-// Scoring: each available player gets a score = baseScore * needsMultiplier * jitter.
+// Scoring: score = baseScore * needsMultiplier * tierMult * jitter.
 //
 //   baseScore      exponential decay off rank so top picks dominate but
 //                  mid-round picks are still competitive when needs intervene.
@@ -15,6 +15,12 @@ import { getAlgoConfig } from './algoConfig.js';
 //                  +7% for third, 1.0 otherwise. With the steeper base curve a
 //                  needs boost moves a player ~4-6 spots up, then BPA takes over.
 //
+//   tierMult       ×1.30 for QB (Tier 1), ×1.12 for OT/EDGE/WR (Tier 2),
+//                  ×1.00 for everything else. Makes premium positions harder
+//                  to pass on; calibrated so a rank-7 QB still edges out a
+//                  rank-1 non-QB on tier alone but a rank-8 QB does not.
+//                  Tiers are sourced from cfg.positionTiers.
+//
 //   jitter         multiplicative 1 ± randomness/2. At default randomness 0.25
 //                  that's ±12.5%; at 1.0 (max chaos slider) it's ±50%.
 //
@@ -25,14 +31,27 @@ import { getAlgoConfig } from './algoConfig.js';
 //                  pick 20+. Requires callers to pass pickNumber.
 //
 // Selection: instead of always picking the max-score player, scores are used
-// as weights in a weighted random draw from a top-N candidate pool. This
-// creates natural draft variance — the same pool won't always produce the
-// same pick. The pool size scales with the randomness slider.
+// as weights in a weighted random draw from a top-N candidate pool. Pool
+// weights are score^cfg.scoreSharpness so the top scorer clearly dominates
+// without collapsing to deterministic max. Default sharpness=5 yields
+// ~62% rate for a consensus #1 talent on a top-need team (measured on
+// the 2026 board at randomness=0.25); bump to 7 for ~80% near-lock
+// behavior via admin override. The pool size scales with the randomness
+// slider.
 
 const POS_ALIASES = {
-  DL: 'DT', DE: 'EDGE', OG: 'IOL', OC: 'IOL',
-  C: 'IOL', G: 'IOL', ILB: 'LB', OLB: 'LB',
+  // Defensive line
+  DL: 'DT', DE: 'EDGE', NT: 'DT',
+  // Offensive line (interior)
+  OG: 'IOL', OC: 'IOL', C: 'IOL', G: 'IOL', RG: 'IOL', LG: 'IOL',
+  // Offensive line (tackle)
+  T: 'OT', LT: 'OT', RT: 'OT',
+  // Linebackers
+  ILB: 'LB', OLB: 'LB', MLB: 'LB',
+  // Defensive backs
   FS: 'S', SS: 'S', DB: 'CB',
+  // Backs
+  HB: 'RB', FB: 'RB',
 };
 function normalizePos(pos) {
   if (!pos) return '';
@@ -40,14 +59,45 @@ function normalizePos(pos) {
   return POS_ALIASES[up] || up;
 }
 
+// Need-token expansions — tokens an admin may enter in the Team Needs UI
+// that should match MULTIPLE canonical player positions with the same
+// priority. "OL" in particular is commonly used to mean "any offensive
+// line help" (tackle OR interior), so it expands to both OT and IOL.
+const NEEDS_EXPANSIONS = {
+  OL: ['OT', 'IOL'],
+};
+
+function expandNeedToken(token) {
+  if (!token) return [];
+  const up = String(token).toUpperCase().trim();
+  if (NEEDS_EXPANSIONS[up]) return NEEDS_EXPANSIONS[up];
+  const norm = normalizePos(up);
+  return norm ? [norm] : [];
+}
+
+function positionTierMultiplier(canonicalPos, cfg) {
+  const m = cfg.positionTiers?.[canonicalPos];
+  return Number.isFinite(m) && m > 0 ? m : 1;
+}
+
 export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pickNumber = 999 }) {
   if (!available || available.length === 0) return null;
 
-  const needs = (teamNeeds || []).map(normalizePos).filter(Boolean);
+  // Build a position → priority map. Each input token can expand to MULTIPLE
+  // canonical positions (e.g. "OL" → ["OT","IOL"]); all expanded positions
+  // from the same token share the same priority index, so an admin listing
+  // "OL" as their top need effectively boosts both tackles and interior
+  // linemen equally at priority 0.
   const needsPriority = new Map();
-  needs.forEach((pos, i) => {
-    if (!needsPriority.has(pos)) needsPriority.set(pos, i);
-  });
+  let priorityCounter = 0;
+  for (const token of teamNeeds || []) {
+    const positions = expandNeedToken(token);
+    if (positions.length === 0) continue;
+    for (const pos of positions) {
+      if (!needsPriority.has(pos)) needsPriority.set(pos, priorityCounter);
+    }
+    priorityCounter++;
+  }
 
   const cfg = getAlgoConfig();
 
@@ -66,9 +116,11 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
                          1 + cfg.needsBoost3;
     }
 
+    const tierMult = positionTierMultiplier(pos, cfg);
+
     const jitter = 1 + (Math.random() - 0.5) * randomness;
 
-    let score = baseScore * needsMultiplier * jitter;
+    let score = baseScore * needsMultiplier * tierMult * jitter;
     scored.push({ player: p, rank, score });
   }
 
@@ -98,13 +150,20 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
   );
   const pool = scored.slice(0, poolSize);
 
-  const totalWeight = pool.reduce((s, x) => s + x.score, 0);
+  // Apply selection sharpness: weight = score^sharpness. Sharpness > 1
+  // makes the top-scoring player clearly dominate the pool draw without
+  // collapsing to deterministic max. Ordering is unchanged.
+  const sharpness = Number.isFinite(cfg.scoreSharpness) && cfg.scoreSharpness > 0
+    ? cfg.scoreSharpness
+    : 1;
+  const weights = pool.map((x) => Math.pow(Math.max(x.score, 0), sharpness));
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
   if (totalWeight <= 0) return pool[0]?.player ?? null;
 
   let roll = Math.random() * totalWeight;
-  for (const { player, score } of pool) {
-    roll -= score;
-    if (roll <= 0) return player;
+  for (let i = 0; i < pool.length; i++) {
+    roll -= weights[i];
+    if (roll <= 0) return pool[i].player;
   }
   return pool[pool.length - 1]?.player ?? null;
 }

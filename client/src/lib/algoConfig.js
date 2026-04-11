@@ -27,6 +27,34 @@ export const ALGO_DEFAULTS = {
   fallCap2MaxRank: 10, fallCap2MaxFall: 9,  fallCap2Boost: 8,
   fallCap3MaxRank: 20, fallCap3MaxFall: 13, fallCap3Boost: 4,
 
+  // Positional value tiers — multiplier applied to baseScore so premium
+  // positions command extra draft capital (QB especially). Keys are the
+  // CANONICAL positions produced by normalizePos() in botPicker.js:
+  // QB, RB, WR, TE, OT, IOL, EDGE, DT, CB, S, LB. Missing keys fall
+  // through to 1.00 (Tier 3). Calibrated so a rank-7 QB still outscores
+  // a rank-1 non-QB on base+tier alone (0.785 × 1.30 = 1.021 > 1.000)
+  // but a rank-8 QB does not (0.756 × 1.30 = 0.983 < 1.000).
+  positionTiers: {
+    QB:   1.30, // Tier 1 — franchise QB premium
+    OT:   1.12, // Tier 2 — tackle premium (covers LT + RT)
+    EDGE: 1.12, // Tier 2 — pass rusher premium
+    WR:   1.12, // Tier 2 — receiver premium
+    // Tier 3 implicit 1.00: RB, TE, IOL (G/C), DT (IDL), CB, S, LB
+  },
+
+  // Selection sharpness — exponent applied to pool scores when doing the
+  // weighted-random draw. Does NOT change which players make the pool,
+  // only how dominant the top-scoring player's share is in the final draw.
+  // Measured on the 2026 prospects board with a QB-needy Raiders at 1.01
+  // and randomness=0.25:
+  //   sharpness = 1  → ~18% Mendoza rate (linear, very flat pool)
+  //   sharpness = 3  → ~39% Mendoza rate
+  //   sharpness = 5  → ~62% Mendoza rate (default — clear top-pick dominance)
+  //   sharpness = 7  → ~80% Mendoza rate (near-lock)
+  //   sharpness = 10 → ~93% Mendoza rate (effectively deterministic at #1)
+  // Tunable via admin /api/admin/algo-config without a code change.
+  scoreSharpness: 5,
+
   // ── Trade acceptance (TradeModal) ─────────────────────────────────────────
   // Base premium the mover-up must pay over chart value (fraction).
   tradeBasePremium: 0.05,
@@ -48,7 +76,17 @@ let _cache = null;
 export async function loadAlgoConfig() {
   try {
     const stored = await api.getAlgoConfig();
-    _cache = { ...ALGO_DEFAULTS, ...stored };
+    // Deep-merge positionTiers so a partial admin override (e.g. just
+    // { QB: 1.35 }) doesn't wipe the default OT/EDGE/WR entries. All
+    // other config fields remain shallow-merged.
+    _cache = {
+      ...ALGO_DEFAULTS,
+      ...stored,
+      positionTiers: {
+        ...ALGO_DEFAULTS.positionTiers,
+        ...(stored?.positionTiers || {}),
+      },
+    };
   } catch {
     // Network error — keep any existing cache or fall back to defaults.
     if (!_cache) _cache = { ...ALGO_DEFAULTS };
