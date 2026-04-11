@@ -87,6 +87,11 @@ export default function Admin() {
   const [algoForm, setAlgoForm] = useState(null); // null = not yet loaded
   const [algoBusy, setAlgoBusy] = useState(false);
 
+  // Run-scoring busy flag — hoisted here with every other hook so it
+  // declares before any early returns. Rules of Hooks demands every
+  // render call the same number of hooks in the same order.
+  const [scoreBusy, setScoreBusy] = useState(false);
+
   const userIsAdmin = isAdmin(user);
 
   async function unlock(candidateKey) {
@@ -407,7 +412,6 @@ export default function Admin() {
     } catch (e) { toast.error(e.message); }
   }
 
-  const [scoreBusy, setScoreBusy] = useState(false);
   async function runScore() {
     if (scoreBusy) return;
     setScoreBusy(true);
