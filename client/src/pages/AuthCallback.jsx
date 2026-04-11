@@ -14,19 +14,19 @@ import { Spinner } from '../components/ui/Spinner.jsx';
 const ERRORS = {
   not_configured: {
     title: 'Sign-in unavailable',
-    body: 'Discord sign-in is not configured on the server. Please try again later or contact the admin.',
+    body: 'That sign-in provider is not configured on the server. Try another option or contact the admin.',
   },
   invalid_state: {
     title: 'Session mismatch',
     body: 'The sign-in request expired or was reused. Please start sign-in again.',
   },
   auth_failed: {
-    title: 'Discord sign-in failed',
-    body: 'Discord did not return a valid session. Please try signing in again.',
+    title: 'Sign-in failed',
+    body: 'Your sign-in provider did not return a valid session. Please try signing in again.',
   },
   access_denied: {
     title: 'Sign-in cancelled',
-    body: 'You dismissed the Discord prompt before sign-in finished.',
+    body: 'You dismissed the sign-in prompt before it finished.',
   },
 };
 
@@ -99,7 +99,7 @@ export default function AuthCallback() {
       <div className="mt-6 flex justify-center">
         <Spinner className="w-10 h-10" label="Signing you in" />
       </div>
-      <p className="text-text-muted text-[12px] mt-4">Verifying your Discord session…</p>
+      <p className="text-text-muted text-[12px] mt-4">Verifying your session…</p>
     </div>
   );
 }
