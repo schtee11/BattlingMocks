@@ -103,16 +103,17 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfi
             <div className="text-[11px] text-text-muted truncate hidden lg:block">{player.school}</div>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            <span className="caption text-text-muted text-[10px] shrink-0">Select player</span>
-            {Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
-              <>
-                <span className="text-text-muted text-[10px] px-0.5">·</span>
-                {team.team_needs.map((need) => (
-                  <PositionBadge key={need} position={need} />
-                ))}
-              </>
-            )}
+          <div className="caption text-text-muted text-[10px] mt-1">Select player</div>
+        )}
+        {/* Team needs — always shown when the team has any. Gives the user
+            quick draft context (top positional needs) regardless of whether
+            the slot is empty or already filled. */}
+        {Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            <span className="caption text-[9px] text-text-muted shrink-0">Needs</span>
+            {team.team_needs.slice(0, 4).map((need) => (
+              <PositionBadge key={need} position={need} />
+            ))}
           </div>
         )}
       </div>

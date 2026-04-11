@@ -686,6 +686,13 @@ export default function Draft() {
                             <PositionBadge position={player.position} />
                           </div>
                           <div className="text-[10px] text-text-muted truncate">{player.school}</div>
+                          {Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              {team.team_needs.slice(0, 4).map((need) => (
+                                <PositionBadge key={need} position={need} />
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -694,6 +701,13 @@ export default function Draft() {
                         <div className="text-[12px] text-text-secondary truncate">
                           {isActive ? 'On the clock — pick a player below' : (team?.team_name || 'Empty')}
                         </div>
+                        {Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1 flex-wrap">
+                            {team.team_needs.slice(0, 4).map((need) => (
+                              <PositionBadge key={need} position={need} />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                     {player && (
