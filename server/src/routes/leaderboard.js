@@ -7,7 +7,12 @@ router.get('/', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const offset = parseInt(req.query.offset) || 0;
 
-  // Single query: rank + per-mock stats (picks correct, exact matches)
+  // Single query: rank + per-mock stats (picks correct, exact matches, percentile).
+  //
+  // percentile = 100 * (total_players_below_or_equal - 1) / max(total_players - 1, 1)
+  // ("you scored higher than X% of participants"). NTILE would bucket, not
+  // rank; we want a continuous percentile so tiny leaderboards still show
+  // meaningful separation between players.
   const { rows } = await pool.query(
     `
     WITH stats AS (
@@ -26,12 +31,28 @@ router.get('/', async (req, res) => {
       LEFT JOIN actual_picks ap ON ap.player_id = mp.player_id
       WHERE m.mock_type = 'round1'
       GROUP BY m.id, u.id
+    ),
+    ranked AS (
+      SELECT
+        id, user_id, display_name, avatar_url, total_score, submitted_at,
+        picks_correct::int AS picks_correct,
+        exact_picks::int   AS exact_picks,
+        RANK() OVER (ORDER BY total_score DESC, submitted_at ASC) AS rank,
+        PERCENT_RANK() OVER (ORDER BY total_score ASC) AS pct_rank,
+        COUNT(*) OVER () AS total_entries
+      FROM stats
     )
     SELECT
       id, user_id, display_name, avatar_url, total_score, submitted_at,
-      picks_correct::int, exact_picks::int,
-      RANK() OVER (ORDER BY total_score DESC, submitted_at ASC) AS rank
-    FROM stats
+      picks_correct, exact_picks, rank::int AS rank,
+      -- Percent_rank gives a 0..1 float. Multiply by 100 and round for display.
+      -- With only 1 entry, PERCENT_RANK returns 0 — clamp to 100 so a solo
+      -- user still sees "top of the board".
+      CASE
+        WHEN total_entries <= 1 THEN 100
+        ELSE ROUND(pct_rank * 100)::int
+      END AS percentile
+    FROM ranked
     ORDER BY total_score DESC, submitted_at ASC
     LIMIT $1 OFFSET $2
     `,

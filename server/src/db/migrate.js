@@ -1,4 +1,6 @@
-import { pathToFileURL } from 'url';
+import { pathToFileURL, fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
 import { pool } from './pool.js';
 
 const SQL = `
@@ -163,6 +165,68 @@ CREATE INDEX IF NOT EXISTS idx_mock_picks_mock_id ON mock_picks(mock_id);
 CREATE INDEX IF NOT EXISTS idx_mock_picks_player_id ON mock_picks(player_id);
 CREATE INDEX IF NOT EXISTS idx_actual_picks_player ON actual_picks(player_id);
 CREATE INDEX IF NOT EXISTS idx_users_display_name_lower ON users (LOWER(display_name));
+
+-- ---------------------------------------------------------------------------
+-- Phase 6 (Enterprise Upgrade): additive-only schema changes.
+--
+-- Ground rules: every statement below is idempotent (ADD COLUMN IF NOT EXISTS
+-- / CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS) and every new
+-- column has a safe default so existing rows don't need backfill. We do NOT
+-- recreate or modify existing tables here — see "skipped" note at the bottom.
+-- ---------------------------------------------------------------------------
+
+-- Confidence picks on predictive R1 mocks. Up to 3 per mock (enforced in the
+-- submit route). An exact match on a confident pick gets a 1.5x multiplier.
+ALTER TABLE mock_picks ADD COLUMN IF NOT EXISTS is_confident BOOLEAN DEFAULT FALSE;
+
+-- Extended prospect metadata. All nullable / defaulted so seed data without
+-- these fields still imports cleanly.
+ALTER TABLE players ADD COLUMN IF NOT EXISTS height VARCHAR(10);
+ALTER TABLE players ADD COLUMN IF NOT EXISTS weight INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS projected_round INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS consensus_rank INTEGER;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS draft_year INTEGER DEFAULT 2026;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS strengths TEXT;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS weaknesses TEXT;
+
+-- Draft-order extras for 7-round compensatory/original-team tracking.
+ALTER TABLE draft_order ADD COLUMN IF NOT EXISTS is_compensatory BOOLEAN DEFAULT FALSE;
+ALTER TABLE draft_order ADD COLUMN IF NOT EXISTS original_team_id VARCHAR(5);
+ALTER TABLE draft_order ADD COLUMN IF NOT EXISTS draft_year INTEGER DEFAULT 2026;
+
+-- Phase 6: dedicated team-needs table keyed by (team_id, draft_year, position).
+-- Decouples editable needs from draft_order rows so admins can manage team
+-- needs once per team instead of per-pick. draft_order.team_needs still works
+-- as a legacy fast-read cache; new UI reads from this table.
+CREATE TABLE IF NOT EXISTS team_needs (
+  id SERIAL PRIMARY KEY,
+  team_id VARCHAR(5) NOT NULL,
+  team_name VARCHAR(80) NOT NULL,
+  position VARCHAR(10) NOT NULL,
+  priority INTEGER NOT NULL CHECK (priority BETWEEN 1 AND 3),
+  draft_year INTEGER DEFAULT 2026,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (team_id, position, draft_year)
+);
+CREATE INDEX IF NOT EXISTS idx_team_needs_team_year ON team_needs(team_id, draft_year);
+
+-- Phase 6 indexes
+CREATE INDEX IF NOT EXISTS idx_players_draft_year_rank
+  ON players(draft_year, consensus_rank) WHERE consensus_rank IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_draft_order_year_pick ON draft_order(draft_year, pick_number);
+
+-- ---------------------------------------------------------------------------
+-- INTENTIONALLY SKIPPED (would duplicate existing functionality):
+--   * team_mocks / team_mock_picks tables — the existing 'mocks' table
+--     already stores team mocks via mock_type='team' + team_abbr + trades
+--     JSONB column, and mock_picks handles the per-pick rows (1..262). The
+--     team-mocks route (server/src/routes/teamMocks.js) already implements
+--     listing/saving/deleting through those columns. Creating separate
+--     team_mocks tables would require rewriting the working team-mock flow
+--     and migrating existing saves.
+--     TODO: confirm with WillyT that the unified mocks table is OK long-term.
+--   * team_mock_trades table — trades are persisted as JSONB on mocks.trades.
+-- ---------------------------------------------------------------------------
 `;
 
 // Split the migration SQL into individual statements and run them one at a
@@ -199,6 +263,38 @@ export async function migrate() {
     }
   }
   console.log(`[migrate] schema ready (${ok} ok, ${failed} failed)`);
+  // Phase 6: auto-seed team_needs from the static JSON file if the table is
+  // empty. This runs on every deploy so the UI always has data after a fresh
+  // migrate. It's idempotent — we only insert if the table is empty, so an
+  // admin can edit needs in the panel without migrations clobbering them.
+  try {
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM team_needs');
+    if ((rows[0]?.c ?? 0) === 0) {
+      const __dirname = dirname(fileURLToPath(import.meta.url));
+      const path = join(__dirname, '..', 'data', 'team-needs-2026.json');
+      const data = JSON.parse(readFileSync(path, 'utf8'));
+      let inserted = 0;
+      for (const t of data) {
+        const teamId = t.teamId;
+        const teamName = t.teamName || teamId;
+        for (const n of t.needs || []) {
+          if (!Number.isInteger(n.priority) || n.priority < 1 || n.priority > 3) continue;
+          await pool.query(
+            `INSERT INTO team_needs (team_id, team_name, position, priority, draft_year)
+             VALUES ($1, $2, $3, $4, 2026)
+             ON CONFLICT (team_id, position, draft_year) DO NOTHING`,
+            [teamId, teamName, String(n.position).toUpperCase(), n.priority]
+          );
+          inserted++;
+        }
+      }
+      console.log(`[migrate] team_needs seeded: ${inserted} rows`);
+    } else {
+      console.log(`[migrate] team_needs already populated (${rows[0].c} rows)`);
+    }
+  } catch (e) {
+    console.warn('[migrate] team_needs seed skipped:', e.message);
+  }
   return { ok, failed };
 }
 

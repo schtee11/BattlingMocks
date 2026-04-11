@@ -18,6 +18,7 @@ router.post('/', async (req, res) => {
   }
   const slots = new Set();
   const players = new Set();
+  let confidentCount = 0;
   for (const p of picks) {
     if (!Number.isInteger(p.pick_number) || p.pick_number < 1 || p.pick_number > 32) {
       return res.status(400).json({ error: 'invalid pick_number' });
@@ -29,6 +30,11 @@ router.post('/', async (req, res) => {
     if (players.has(p.player_id)) return res.status(400).json({ error: 'duplicate player_id' });
     slots.add(p.pick_number);
     players.add(p.player_id);
+    if (p.is_confident === true) confidentCount++;
+  }
+  // Confidence picks are capped at 3 per mock (1.5x multiplier per exact match).
+  if (confidentCount > 3) {
+    return res.status(400).json({ error: 'at most 3 confidence picks allowed' });
   }
 
   const client = await pool.connect();
@@ -73,12 +79,12 @@ router.post('/', async (req, res) => {
     const values = [];
     const params = [];
     picks.forEach((p, i) => {
-      const off = i * 3;
-      values.push(`($${off + 1}, $${off + 2}, $${off + 3})`);
-      params.push(mockId, p.pick_number, p.player_id);
+      const off = i * 4;
+      values.push(`($${off + 1}, $${off + 2}, $${off + 3}, $${off + 4})`);
+      params.push(mockId, p.pick_number, p.player_id, p.is_confident === true);
     });
     await client.query(
-      `INSERT INTO mock_picks (mock_id, pick_number, player_id) VALUES ${values.join(', ')}`,
+      `INSERT INTO mock_picks (mock_id, pick_number, player_id, is_confident) VALUES ${values.join(', ')}`,
       params
     );
     await client.query('COMMIT');
@@ -100,7 +106,8 @@ router.get('/:userId', async (req, res) => {
   if (!mocks.length) return res.status(404).json({ error: 'no mock' });
   const mock = mocks[0];
   const { rows: picks } = await pool.query(
-    `SELECT mp.pick_number, mp.player_id, p.name, p.position, p.school, p.headshot_url
+    `SELECT mp.pick_number, mp.player_id, mp.is_confident,
+            p.name, p.position, p.school, p.headshot_url
      FROM mock_picks mp JOIN players p ON p.id = mp.player_id
      WHERE mp.mock_id = $1 ORDER BY mp.pick_number`,
     [mock.id]

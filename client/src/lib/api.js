@@ -80,12 +80,21 @@ export const api = {
     if (fresh) invalidateCache('actual-picks');
     return cached('actual-picks', 30_000, () => request('/api/actual-picks'));
   },
+  // Phase 6: enterprise upgrade endpoints
+  getTeams: () => cached('teams', 5 * 60_000, () => request('/api/teams')),
+  getPlayerById: (id) => cached(`player-${id}`, 5 * 60_000, () => request(`/api/players/${id}`)),
+  getUserProfile: (userId) => request(`/api/users/${userId}/profile`),
+  getPredictiveLive: ({ fresh = false } = {}) => {
+    if (fresh) invalidateCache('predictive-live');
+    return cached('predictive-live', 8_000, () => request('/api/predictive/live'));
+  },
   checkName: (name) => request(`/api/users/check?name=${encodeURIComponent(name)}`),
   getUserByName: (name) => request(`/api/users/by-name?name=${encodeURIComponent(name)}`),
   createUser: (display_name) => request('/api/users', { method: 'POST', body: { display_name } }),
   getUser: (id) => request(`/api/users/${id}`),
   submitMock: (user_id, picks) => {
     invalidateCache('stats');
+    // picks may include { pick_number, player_id, is_confident? }
     return request('/api/mocks', { method: 'POST', body: { user_id, picks } });
   },
   getMock: (userId) => request(`/api/mocks/${userId}`),

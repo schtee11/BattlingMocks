@@ -7,10 +7,16 @@ import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { Avatar } from '../components/ui/Avatar.jsx';
+import { usePageMeta } from '../hooks/usePageMeta.js';
 
 const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
 export default function LeaderboardPage() {
+  usePageMeta({
+    title: 'Leaderboard',
+    description:
+      'See the live standings of every 2026 NFL Draft predictive mock. Rankings, exact matches, and percentile rank updating in real time.',
+  });
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
@@ -32,6 +38,12 @@ export default function LeaderboardPage() {
 
   const topThree = data?.entries?.slice(0, 3) || [];
   const rest = data?.entries?.slice(3) || [];
+
+  // Your own rank + percentile chip (shown above the table when signed in).
+  const myRow = useMemo(() => {
+    if (!user || !data?.entries?.length) return null;
+    return data.entries.find((e) => e.user_id === user.id) || null;
+  }, [user, data]);
 
   function scrollToMe() {
     userRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -82,6 +94,26 @@ export default function LeaderboardPage() {
         <Card className="banner-warn p-4 mb-4">
           <span className="caption" style={{ color: 'var(--warn-text)' }}>Scores Revealed Draft Night</span>
           <div className="text-[13px] mt-1 opacity-80">Mocks are shown in submission order until real results are entered.</div>
+        </Card>
+      )}
+
+      {myRow && !allZero && (
+        <Card glass className="p-4 mb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="caption text-accent">Your Standing</div>
+            <div className="font-display font-bold uppercase tracking-wide text-text-primary text-[18px] mt-1">
+              Rank #{myRow.rank} · {myRow.total_score} pts
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="caption text-[10px]">Percentile</div>
+            <div className="font-mono font-bold text-3xl tabular text-gold mt-1">
+              {myRow.percentile}%
+            </div>
+            <div className="text-[10.5px] text-text-muted mt-0.5">
+              Higher than {myRow.percentile}% of scouts
+            </div>
+          </div>
         </Card>
       )}
 
