@@ -474,7 +474,7 @@ async function searchEspnForHeadshot(name, school) {
     try {
       const r = await fetch(url, {
         headers: {
-          'User-Agent': 'MockDraftShowdown/1.0 (+https://mockdraftshowdown.netlify.app)',
+          'User-Agent': 'MockDraftShowdown/1.0 (+https://mockdraftshowdown.com)',
           Accept: 'application/json',
         },
       });

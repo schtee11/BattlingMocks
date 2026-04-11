@@ -8,7 +8,7 @@
 // Each pick has: { pick, overall, round, team: "Chiefs",
 //                  displayName, position, college, link: "/name/kc/..." }
 
-const UA = 'MockDraftShowdown/1.0 (+https://mockdraftshowdown.netlify.app)';
+const UA = 'MockDraftShowdown/1.0 (+https://mockdraftshowdown.com)';
 
 let loggedRaw = false;
 

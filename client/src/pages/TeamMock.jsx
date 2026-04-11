@@ -1004,7 +1004,7 @@ const ExportCard = forwardRef(function ExportCard(
           <span style={{ color: C.accent }}>SHOWDOWN</span>
         </div>
         <div style={{ fontSize: 12, color: C.muted }}>
-          mockdraftshowdown.netlify.app
+          mockdraftshowdown.com
         </div>
       </div>
     </div>
