@@ -2082,6 +2082,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     // RUNNING or ON_CLOCK
     const isYou = phase === PHASE_ON_CLOCK;
     const slot = currentSlot;
+    const slotNeeds = Array.isArray(slot?.team_needs) ? slot.team_needs : [];
     return (
       <div
         className={`${compact ? 'px-3 py-2' : 'px-4 py-3'} flex items-center gap-3 border-l-[3px] transition-colors`}
@@ -2101,6 +2102,13 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               {ROUND_LABELS[slot?.round] || `R${slot?.round}`}
             </span>
           </div>
+          {slotNeeds.length > 0 && (
+            <div className="flex items-center gap-1 mt-1 flex-wrap">
+              {slotNeeds.slice(0, 5).map((need) => (
+                <PositionBadge key={need} position={need} />
+              ))}
+            </div>
+          )}
         </div>
         <div className="text-right shrink-0">
           <div className="text-[10px] font-mono text-text-muted">

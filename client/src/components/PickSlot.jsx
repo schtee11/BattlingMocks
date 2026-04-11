@@ -107,10 +107,10 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfi
         ) : (
           <div className="caption text-text-muted text-[10px] mt-1">Select player</div>
         )}
-        {/* Team needs — always shown when the team has any. Gives the user
-            quick draft context (top positional needs) regardless of whether
-            the slot is empty or already filled. */}
-        {Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
+        {/* Team needs — only shown on empty slots. Once the user makes a
+            pick for this team, the needs collapse so the filled row stays
+            focused on the player. */}
+        {!player && Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             <span className="caption text-[9px] text-text-muted shrink-0">Needs</span>
             {team.team_needs.slice(0, 4).map((need) => (
