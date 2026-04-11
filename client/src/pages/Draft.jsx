@@ -34,7 +34,8 @@ import { PickSlot } from '../components/PickSlot.jsx';
 import { ProspectCard } from '../components/ProspectCard.jsx';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
-import { Modal } from '../components/ui/Modal.jsx';
+import { ConfirmModal } from '../components/ui/ConfirmModal.jsx';
+import { EmptyState } from '../components/ui/EmptyState.jsx';
 import { ProgressBar } from '../components/ui/ProgressBar.jsx';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -902,7 +903,12 @@ export default function Draft() {
       {/* Footer / Submit (desktop) */}
       <div className="mt-5 hidden md:flex items-center justify-between gap-3">
         <div className="text-[12px] text-text-secondary">
-          Tip: select a prospect and click a slot, or drag. Drag a filled slot to another to swap.
+          <span className="caption text-[10px] mr-2">Tip</span>
+          Drag a prospect onto a slot, or click to select and press{' '}
+          <kbd className="px-1.5 py-0.5 rounded border border-border-subtle bg-bg-surface font-mono text-[10px]">
+            Enter
+          </kbd>{' '}
+          to draft to the clock.
         </div>
         <Button
           size="xl"
@@ -934,36 +940,33 @@ export default function Draft() {
         </div>
       </div>
 
-      <Modal
+      <ConfirmModal
         open={showConfirm}
         onClose={() => setShowConfirm(false)}
+        onConfirm={submit}
         title="Lock in your mock?"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowConfirm(false)} disabled={busy}>Cancel</Button>
-            <Button onClick={submit} disabled={busy}>{busy ? 'Submitting…' : 'Submit'}</Button>
-          </>
-        }
-      >
-        Your mock will be saved. You can edit and resubmit until the admin locks submissions.
-      </Modal>
+        description="Your mock will be saved. You can edit and resubmit until the admin locks submissions."
+        confirmLabel={submitted ? 'Resubmit' : 'Submit'}
+        confirmVariant="primary"
+        busy={busy}
+      />
 
-      <Modal
+      <ConfirmModal
         open={showClearAll}
         onClose={() => setShowClearAll(false)}
+        onConfirm={() => {
+          setPicks({});
+          setConfidentSlots(new Set());
+          setShowClearAll(false);
+          setSubmitted(false);
+          toast.success('All picks cleared');
+        }}
         title="Clear all picks?"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowClearAll(false)}>Cancel</Button>
-            <Button variant="danger" onClick={() => {
-              setPicks({}); setShowClearAll(false); setSubmitted(false);
-              toast('Cleared');
-            }}>Clear all</Button>
-          </>
-        }
-      >
-        This removes every prospect from your current mock.
-      </Modal>
+        description="This removes every prospect from your current mock. Confidence flags will also be cleared."
+        confirmLabel="Clear all"
+        confirmVariant="danger"
+      />
+
 
       {/* Trade simulator modal — lets the user swap picks between any two
           teams. Trades are local to this session; only the final picks are
@@ -1053,6 +1056,29 @@ function ProspectListInner({
       >
         {!players ? (
           Array.from({ length: 14 }, (_, i) => <Skeleton key={i} className="h-[46px] w-full rounded-lg" />)
+        ) : filtered.length === 0 ? (
+          <li>
+            <EmptyState
+              compact
+              title="No prospects match"
+              description={
+                search
+                  ? `Nothing matches “${search}”. Try a different name or clear the filter.`
+                  : 'All prospects at this position are drafted. Switch filters to see more.'
+              }
+              action={
+                (search || posFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => { setSearch(''); setPosFilter('ALL'); }}
+                    className="font-display uppercase tracking-[0.14em] text-[11px] text-accent hover:underline"
+                  >
+                    Reset filters
+                  </button>
+                )
+              }
+            />
+          </li>
         ) : view === 'bigboard' ? (
           filtered.map((p) => (
             <ProspectCard

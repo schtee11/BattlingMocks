@@ -37,6 +37,7 @@ export default function Admin() {
   const { user } = useAuth();
   const [key, setKey] = useState(localStorage.getItem('mds_admin') || '');
   const [unlocked, setUnlocked] = useState(false);
+  const [unlockBusy, setUnlockBusy] = useState(false);
   const [tab, setTab] = useState('results');
   const playerSearchRef = useRef(null);
 
@@ -91,6 +92,7 @@ export default function Admin() {
   async function unlock(candidateKey) {
     const trying = candidateKey ?? key;
     if (!trying) return;
+    setUnlockBusy(true);
     try {
       await api.adminGetActualPicks(trying);
       localStorage.setItem('mds_admin', trying);
@@ -100,6 +102,8 @@ export default function Admin() {
       // Stored key was rejected — clear it so we don't loop forever
       if (candidateKey) localStorage.removeItem('mds_admin');
       else toast.error(e.message);
+    } finally {
+      setUnlockBusy(false);
     }
   }
 
@@ -322,17 +326,33 @@ export default function Admin() {
     return (
       <div className="max-w-md mx-auto px-4 py-16 route-fade">
         <Card className="p-6">
-          <h1 className="text-2xl font-bold text-text-primary mb-3">Admin</h1>
+          <div className="caption text-accent mb-1">Control Room</div>
+          <h1 className="font-display display-xl text-[24px] text-text-primary mb-1">Admin</h1>
+          <p className="text-text-secondary text-[12.5px] mb-4 leading-relaxed">
+            Enter the admin key to manage prospects, actual picks, and scoring.
+          </p>
+          <label htmlFor="admin-key" className="caption block mb-1.5">
+            Admin Key
+          </label>
           <input
+            id="admin-key"
             type="password"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="Admin key"
+            placeholder="••••••••"
             autoComplete="current-password"
-            className="w-full bg-bg-deep border border-border-focus rounded-lg px-4 py-3 text-text-primary mb-3 focus:border-accent outline-none"
-            onKeyDown={(e) => e.key === 'Enter' && unlock()}
+            disabled={unlockBusy}
+            className="w-full bg-bg-deep border border-border-focus rounded-lg px-4 py-3 text-text-primary mb-3 focus:border-accent outline-none disabled:opacity-60"
+            onKeyDown={(e) => e.key === 'Enter' && !unlockBusy && unlock()}
           />
-          <Button className="w-full" size="lg" onClick={() => unlock()}>Unlock</Button>
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={() => unlock()}
+            disabled={unlockBusy || !key}
+          >
+            {unlockBusy ? 'Unlocking…' : 'Unlock'}
+          </Button>
         </Card>
       </div>
     );
@@ -387,13 +407,23 @@ export default function Admin() {
     } catch (e) { toast.error(e.message); }
   }
 
+  const [scoreBusy, setScoreBusy] = useState(false);
   async function runScore() {
+    if (scoreBusy) return;
+    setScoreBusy(true);
+    const id = toast.loading('Scoring every mock…');
     try {
       const r = await api.runScore(key);
       setScoreSummary(r);
+      toast.dismiss(id);
       toast.success(`Scored ${r.total_mocks} mocks`);
       loadAll();
-    } catch (e) { toast.error(e.message); }
+    } catch (e) {
+      toast.dismiss(id);
+      toast.error(e.message);
+    } finally {
+      setScoreBusy(false);
+    }
   }
 
   async function setLock(val) {
@@ -541,12 +571,17 @@ export default function Admin() {
   }
 
   async function importProspects() {
+    const id = toast.loading('Importing prospects from seed…');
     try {
       const r = await api.importProspects(key);
       invalidateCache('players');
+      toast.dismiss(id);
       toast.success(`Added ${r.added}, updated ${r.updated}, unchanged ${r.unchanged}`);
       loadAll({ fresh: true });
-    } catch (e) { toast.error(e.message); }
+    } catch (e) {
+      toast.dismiss(id);
+      toast.error(e.message);
+    }
   }
 
   async function syncProspectsFromEspn(dry = false) {
@@ -776,6 +811,8 @@ export default function Admin() {
                   placeholder="Pick number, team abbr, or team name…"
                   autoComplete="off"
                   spellCheck={false}
+                  aria-label="Find pick by number or team"
+                  aria-expanded={pickOpen}
                   className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary focus:border-accent outline-none"
                 />
                 {pickOpen && (
@@ -838,6 +875,8 @@ export default function Admin() {
                   placeholder="Search player by name, school, or position…"
                   autoComplete="off"
                   spellCheck={false}
+                  aria-label="Search prospect to assign to this pick"
+                  aria-expanded={playerOpen}
                   className="w-full bg-bg-deep border border-border-focus rounded-lg px-3 py-2 text-text-primary focus:border-accent outline-none"
                 />
                 {playerOpen && (
@@ -1019,15 +1058,38 @@ export default function Admin() {
               </div>
             </div>
             <form onSubmit={addPlayer} className="grid md:grid-cols-4 gap-2 mb-4">
-              <input required value={newP.name} onChange={(e) => setNewP({ ...newP, name: e.target.value })} placeholder="Name" className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm md:col-span-2" />
-              <input required value={newP.position} onChange={(e) => setNewP({ ...newP, position: e.target.value.toUpperCase() })} placeholder="Pos" className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm uppercase" />
-              <input value={newP.school} onChange={(e) => setNewP({ ...newP, school: e.target.value })} placeholder="School" className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm" />
+              <input
+                required
+                value={newP.name}
+                onChange={(e) => setNewP({ ...newP, name: e.target.value })}
+                placeholder="Name"
+                aria-label="Prospect name"
+                className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm md:col-span-2"
+              />
+              <input
+                required
+                value={newP.position}
+                onChange={(e) => setNewP({ ...newP, position: e.target.value.toUpperCase() })}
+                placeholder="Pos"
+                aria-label="Prospect position"
+                className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm uppercase"
+              />
+              <input
+                value={newP.school}
+                onChange={(e) => setNewP({ ...newP, school: e.target.value })}
+                placeholder="School"
+                aria-label="Prospect school (optional)"
+                className="bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm"
+              />
               <Button type="submit" className="md:col-span-4">Add Prospect</Button>
             </form>
             <input
+              type="search"
               value={playerSearch}
               onChange={(e) => setPlayerSearch(e.target.value)}
-              placeholder="Search…"
+              placeholder="Search prospects…"
+              aria-label="Search prospects"
+              autoComplete="off"
               className="w-full bg-bg-deep border border-border-focus rounded px-2 py-2 text-sm mb-2"
             />
             <div className="text-[11px] text-text-muted mb-2">
@@ -1134,7 +1196,9 @@ export default function Admin() {
             <p className="text-text-secondary text-sm mb-3">
               Safe to re-run as more actual picks are entered.
             </p>
-            <Button onClick={runScore}>Score all mocks</Button>
+            <Button onClick={runScore} disabled={scoreBusy}>
+              {scoreBusy ? 'Scoring…' : 'Score all mocks'}
+            </Button>
             {settings?.scoring_run_at && (
               <div className="mt-3 text-xs text-text-muted">
                 Last run: {new Date(settings.scoring_run_at).toLocaleString()}
