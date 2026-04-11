@@ -9,7 +9,7 @@ import { PlayerHeadshot } from './ui/PlayerHeadshot.jsx';
 // instead of all 32. Parent passes STABLE onClear/onClick identities (via
 // useCallback with empty deps + latestRef pattern) so the memo comparator
 // stays effective — inline arrow functions would defeat it.
-function PickSlotInner({ slot, team, player, onClear, onClick, isActive }) {
+function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfident, onToggleConfident }) {
   const { setNodeRef, isOver } = useDroppable({ id: `slot-${slot}` });
   const [flash, setFlash] = useState(false);
   const [prevPid, setPrevPid] = useState(player?.id ?? null);
@@ -20,6 +20,13 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive }) {
   const handleClear = useCallback(
     (e) => { e.stopPropagation(); onClear?.(slot); },
     [onClear, slot]
+  );
+  // Confidence-pick toggle — only enabled when the slot is filled and a
+  // toggle handler is provided. Clicking the star never triggers the parent
+  // slot click (stopPropagation).
+  const handleToggleConfident = useCallback(
+    (e) => { e.stopPropagation(); onToggleConfident?.(slot); },
+    [onToggleConfident, slot]
   );
 
   useEffect(() => {
@@ -110,6 +117,24 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive }) {
         )}
       </div>
 
+      {/* Confidence-pick star — only on filled slots, only when the parent
+          wires up onToggleConfident (TeamMock and legacy flows skip it). */}
+      {player && onToggleConfident && (
+        <button
+          onClick={handleToggleConfident}
+          className={`shrink-0 rounded-full w-7 h-7 flex items-center justify-center transition-all ${
+            isConfident
+              ? 'text-gold shadow-glow-gold bg-gold/10 ring-1 ring-gold/50'
+              : 'text-text-muted hover:text-gold hover:bg-gold/5 opacity-60 hover:opacity-100'
+          }`}
+          aria-label={isConfident ? `Remove confidence pick ${slot}` : `Mark pick ${slot} as confidence pick`}
+          title={isConfident ? 'Confidence pick (1.5× on exact match)' : 'Mark as confidence pick'}
+          tabIndex={-1}
+        >
+          <span className="font-display text-[14px] leading-none">★</span>
+        </button>
+      )}
+
       {player && (
         <button
           onClick={handleClear}
@@ -129,6 +154,8 @@ export const PickSlot = memo(PickSlotInner, (prev, next) =>
   prev.team === next.team &&
   prev.player === next.player &&
   prev.isActive === next.isActive &&
+  prev.isConfident === next.isConfident &&
   prev.onClear === next.onClear &&
-  prev.onClick === next.onClick
+  prev.onClick === next.onClick &&
+  prev.onToggleConfident === next.onToggleConfident
 );

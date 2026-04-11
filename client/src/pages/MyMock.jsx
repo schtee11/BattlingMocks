@@ -12,15 +12,35 @@ import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { useCountUp } from '../hooks/useCountUp.js';
+import { usePageMeta } from '../hooks/usePageMeta.js';
 
-function scoreFor(actualSlot, pickSlot) {
-  if (actualSlot == null) return { pts: 0, label: 'Miss', color: '#ef4444' };
-  if (actualSlot === pickSlot) return { pts: 15, label: 'Exact', color: '#34d399' };
-  if (Math.abs(actualSlot - pickSlot) <= 5) return { pts: 8, label: 'Close', color: '#fbbf24' };
-  return { pts: 5, label: 'In R1', color: '#3b82f6' };
+// Client-side score preview — mirrors the server scoring tiers defined in
+// server/src/services/scoring.js. Used for live coloring on MyMock; the
+// authoritative total_score comes from the server after each scoring run.
+//
+//   Exact (right player at right slot)     : 10  (×1.5 = 15 on confidence picks)
+//   Team (right player, right team, wrong slot) : 7
+//   R1   (right player, wrong team)         : 3   (+1 bonus if within 3 slots)
+//   Miss (player not drafted in R1)         : 0
+function scoreFor({ actualForPlayer, predictedSlot, predictedTeam, isConfident }) {
+  if (!actualForPlayer) return { pts: 0, label: 'Miss', color: '#ef4444' };
+  const delta = Math.abs(actualForPlayer.pick_number - predictedSlot);
+  if (actualForPlayer.pick_number === predictedSlot) {
+    return { pts: isConfident ? 15 : 10, label: isConfident ? 'Exact ★' : 'Exact', color: '#34d399' };
+  }
+  if (predictedTeam && actualForPlayer.team === predictedTeam) {
+    return { pts: 7, label: 'Team', color: '#fbbf24' };
+  }
+  const bonus = delta <= 3 ? 1 : 0;
+  return { pts: 3 + bonus, label: bonus ? 'In R1 +1' : 'In R1', color: '#3b82f6' };
 }
 
 export default function MyMock() {
+  usePageMeta({
+    title: 'My Mock',
+    description:
+      'Your 2026 NFL Draft predictive mock — pick-by-pick scoring, total points, and live refresh during draft night.',
+  });
   const { user } = useAuth();
   const [mock, setMock] = useState(null);
   const [actuals, setActuals] = useState([]);
@@ -72,19 +92,19 @@ export default function MyMock() {
 
   const summary = useMemo(() => {
     if (!mock || !scored) return null;
-    let exact = 0, close = 0, correct = 0, miss = 0;
+    let exact = 0, team = 0, correct = 0, miss = 0;
     const biggestMisses = [];
     mock.picks.forEach((p) => {
       const a = actualByPlayer.get(p.player_id);
       if (!a) { miss++; biggestMisses.push({ type: 'undrafted', player: p }); return; }
       if (a.pick_number === p.pick_number) exact++;
-      else if (Math.abs(a.pick_number - p.pick_number) <= 5) close++;
+      else if (teamBySlot.get(p.pick_number) === a.team) team++;
       else correct++;
     });
     const myIds = new Set(mock.picks.map((p) => p.player_id));
     const r1Missed = actuals.filter((a) => !myIds.has(a.player_id));
-    return { exact, close, correct, miss, biggestMisses, r1Missed };
-  }, [mock, scored, actualByPlayer, actuals]);
+    return { exact, team, correct, miss, biggestMisses, r1Missed };
+  }, [mock, scored, actualByPlayer, actuals, teamBySlot]);
 
   if (!user) {
     return (
@@ -140,7 +160,7 @@ export default function MyMock() {
             <div className="caption">Total</div>
             <div className="font-mono font-bold text-6xl tabular text-gold leading-none mt-1">{totalScore}</div>
             <div className="text-text-muted text-[10.5px] font-display uppercase tracking-[0.14em] mt-1">
-              of 480 possible
+              of 352 possible
             </div>
           </div>
         </div>
@@ -148,7 +168,7 @@ export default function MyMock() {
           <div className="grid grid-cols-4 gap-3 mt-6">
             {[
               { label: 'Exact',   val: summary.exact,   color: '#34d399' },
-              { label: 'Close',   val: summary.close,   color: '#fbbf24' },
+              { label: 'Team',    val: summary.team,    color: '#fbbf24' },
               { label: 'In R1',   val: summary.correct, color: '#3b82f6' },
               { label: 'Missed',  val: summary.miss,    color: '#ef4444' },
             ].map((s) => (
@@ -182,10 +202,15 @@ export default function MyMock() {
       <ul className="space-y-1.5 stagger">
         {mock.picks.map((p) => {
           const a = actualByPlayer.get(p.player_id);
-          const { pts, label, color } = scoreFor(a?.pick_number, p.pick_number);
+          const teamAbbr = teamBySlot.get(p.pick_number);
+          const { pts, label, color } = scoreFor({
+            actualForPlayer: a,
+            predictedSlot: p.pick_number,
+            predictedTeam: teamAbbr,
+            isConfident: p.is_confident,
+          });
           const actualAtThisSlot = actualBySlot.get(p.pick_number);
           const posColor = posHex(p.position);
-          const teamAbbr = teamBySlot.get(p.pick_number);
           return (
             <li
               key={p.pick_number}
@@ -213,6 +238,14 @@ export default function MyMock() {
                 <div className="flex items-center gap-2">
                   <div className="text-text-primary font-semibold truncate">{p.name}</div>
                   <PositionBadge position={p.position} />
+                  {p.is_confident && (
+                    <span
+                      className="text-gold text-[13px] leading-none"
+                      title="Confidence pick (1.5× on exact match)"
+                    >
+                      ★
+                    </span>
+                  )}
                 </div>
                 <div className="text-[11px] text-text-muted truncate">{p.school}</div>
                 {scored && actualAtThisSlot && actualAtThisSlot.player_id !== p.player_id && (

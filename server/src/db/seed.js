@@ -6,6 +6,8 @@ import { pool } from './pool.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROSPECTS_PATH = join(__dirname, '..', 'data', 'prospects-2026.json');
 const ORDER_PATH = join(__dirname, '..', 'data', 'draft-order-2026.json');
+const TEAM_NEEDS_PATH = join(__dirname, '..', 'data', 'team-needs-2026.json');
+const NFL_TEAMS_PATH = join(__dirname, '..', 'data', 'nfl-teams.json');
 
 // Normalize legacy/variant position labels to the canonical set:
 // QB, RB, WR, TE, OT, IOL, EDGE, DT, CB, S, LB
@@ -85,6 +87,34 @@ export async function seedDraftOrder(order) {
 // value-only. Draft order rounds 2-7 are populated from ESPN via the
 // /api/admin/sync/draft-order-all admin endpoint.)
 
+// Phase 6: seed the new team_needs table from the static JSON file. Only runs
+// on a fresh install (or when the file changes) — uses ON CONFLICT upsert so
+// re-running the seed is idempotent.
+export async function seedTeamNeeds(teamNeeds, draftYear = 2026) {
+  let upserted = 0;
+  for (const t of teamNeeds) {
+    const teamId = t.teamId || t.team_id;
+    const teamName = t.teamName || t.team_name || teamId;
+    const needs = Array.isArray(t.needs) ? t.needs : [];
+    for (const need of needs) {
+      const pos = normalizePosition(need.position);
+      const priority = Number(need.priority);
+      if (!Number.isInteger(priority) || priority < 1 || priority > 3) continue;
+      await pool.query(
+        `INSERT INTO team_needs (team_id, team_name, position, priority, draft_year)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (team_id, position, draft_year) DO UPDATE
+           SET priority = EXCLUDED.priority,
+               team_name = EXCLUDED.team_name,
+               updated_at = NOW()`,
+        [teamId, teamName, pos, priority, draftYear]
+      );
+      upserted++;
+    }
+  }
+  return { upserted };
+}
+
 async function run() {
   const prospects = JSON.parse(readFileSync(PROSPECTS_PATH, 'utf8'));
   const order = JSON.parse(readFileSync(ORDER_PATH, 'utf8'));
@@ -93,6 +123,15 @@ async function run() {
   await seedDraftOrder(order);
   console.log(`[seed] draft_order R1: ${order.length} rows upserted`);
   console.log('[seed] R2-R7 sync via /api/admin/sync/draft-order-all (pulls from ESPN)');
+  // Team needs are optional — skip silently if the file isn't present so
+  // older deployments don't break on boot.
+  try {
+    const teamNeeds = JSON.parse(readFileSync(TEAM_NEEDS_PATH, 'utf8'));
+    const tn = await seedTeamNeeds(teamNeeds);
+    console.log(`[seed] team_needs: ${tn.upserted} rows upserted`);
+  } catch (e) {
+    console.warn('[seed] team_needs skipped:', e.message);
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

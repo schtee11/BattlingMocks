@@ -41,16 +41,30 @@ import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TradeModal } from '../components/TradeModal.jsx';
+import { CountdownTimer, DRAFT_START_2026 } from '../components/ui/CountdownTimer.jsx';
+import { usePageMeta } from '../hooks/usePageMeta.js';
+
+// Max number of picks a user can flag as "confidence" picks. Each confident
+// pick that lands as an exact match gets a 1.5x scoring multiplier.
+const MAX_CONFIDENCE_PICKS = 3;
 
 const FILTERS = ['ALL', ...POSITIONS];
 
 export default function Draft() {
+  usePageMeta({
+    title: 'Predictive Draft',
+    description:
+      'Build a 32-pick predictive mock of the 2026 NFL Draft and score live against the real picks. Mark confidence picks for a 1.5× multiplier.',
+  });
   const { user } = useAuth();
   const nav = useNavigate();
   const [players, setPlayers] = useState(null);
   const [draftOrder, setDraftOrder] = useState([]);
   const [settings, setSettings] = useState(null);
   const [picks, setPicks] = useState({});
+  // Confidence picks — a Set of pick_number. Max 3 per mock. Toggling is
+  // additive; clearing a slot also clears its confidence flag.
+  const [confidentSlots, setConfidentSlots] = useState(() => new Set());
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [activeDragId, setActiveDragId] = useState(null);
   const [search, setSearch] = useState('');
@@ -147,8 +161,13 @@ export default function Draft() {
         try {
           const m = await api.getMock(user.id);
           const map = {};
-          m.picks.forEach((pk) => (map[pk.pick_number] = pk.player_id));
+          const conf = new Set();
+          m.picks.forEach((pk) => {
+            map[pk.pick_number] = pk.player_id;
+            if (pk.is_confident) conf.add(pk.pick_number);
+          });
           setPicks(map);
+          setConfidentSlots(conf);
           setSubmitted(true);
         } catch { /* no existing mock */ }
       } catch (e) {
@@ -257,6 +276,14 @@ export default function Draft() {
 
   const clearSlot = useCallback((slot) => {
     setPicks((prev) => { const next = { ...prev }; delete next[slot]; return next; });
+    // Clearing a slot also clears its confidence flag — a confidence pick
+    // without a player selected would be nonsensical on submit.
+    setConfidentSlots((prev) => {
+      if (!prev.has(slot)) return prev;
+      const next = new Set(prev);
+      next.delete(slot);
+      return next;
+    });
     setSubmitted(false);
   }, []);
 
@@ -268,6 +295,38 @@ export default function Draft() {
       if (bv) next[a] = bv; else delete next[a];
       return next;
     });
+    // Swapping two slots carries the confidence flag with the player — the
+    // user flagged the PLAYER's expected pick, so when the slot number
+    // changes, the flag should move with the pick to match expectation.
+    setConfidentSlots((prev) => {
+      const hasA = prev.has(a);
+      const hasB = prev.has(b);
+      if (hasA === hasB) return prev;
+      const next = new Set(prev);
+      if (hasA) { next.delete(a); next.add(b); }
+      else      { next.delete(b); next.add(a); }
+      return next;
+    });
+  }, []);
+
+  // Toggle a slot's confidence flag. Caps at MAX_CONFIDENCE_PICKS (3) —
+  // attempts beyond the cap show a toast so the user understands why.
+  const toggleConfidence = useCallback((slot) => {
+    if (latestRef.current.locked) return;
+    setConfidentSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(slot)) {
+        next.delete(slot);
+        return next;
+      }
+      if (next.size >= MAX_CONFIDENCE_PICKS) {
+        toast.error(`Max ${MAX_CONFIDENCE_PICKS} confidence picks`);
+        return prev;
+      }
+      next.add(slot);
+      return next;
+    });
+    setSubmitted(false);
   }, []);
 
   // Apply an accepted trade: swap team ownership on the affected pick numbers.
@@ -415,7 +474,9 @@ export default function Draft() {
     setBusy(true);
     try {
       const payload = Object.entries(picks).map(([pn, pid]) => ({
-        pick_number: Number(pn), player_id: pid,
+        pick_number: Number(pn),
+        player_id: pid,
+        is_confident: confidentSlots.has(Number(pn)),
       }));
       await api.submitMock(user.id, payload);
       toast.success('Mock submitted!');
@@ -478,6 +539,13 @@ export default function Draft() {
               </Button>
             )}
             <div className="text-right">
+              <div className="caption text-[10px]">Confidence</div>
+              <div className="font-mono font-bold text-[22px] tabular leading-none mt-1 text-gold">
+                {confidentSlots.size}<span className="text-text-muted">/{MAX_CONFIDENCE_PICKS}</span>
+                <span className="ml-1 text-gold text-base">★</span>
+              </div>
+            </div>
+            <div className="text-right">
               <div className="caption text-[10px]">Progress</div>
               <div className="font-mono font-bold text-4xl tabular leading-none mt-1">
                 <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
@@ -489,6 +557,19 @@ export default function Draft() {
         <div className="mt-3">
           <ProgressBar picks={picks} playerById={playerById} />
         </div>
+        {!locked && (
+          <div className="mt-4">
+            <Card className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <div className="caption text-[10px]">Submission deadline</div>
+                <div className="text-text-secondary text-[12px] mt-0.5">
+                  Lock your picks before Round 1 kicks off.
+                </div>
+              </div>
+              <CountdownTimer target={DRAFT_START_2026} compact />
+            </Card>
+          </div>
+        )}
       </div>
 
       {locked && (
@@ -539,6 +620,11 @@ export default function Draft() {
                   <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
                   <span>/32</span>
                 </span>
+                {confidentSlots.size > 0 && (
+                  <span className="font-mono text-[10px] text-gold tabular">
+                    ★ {confidentSlots.size}/{MAX_CONFIDENCE_PICKS}
+                  </span>
+                )}
               </div>
               <svg
                 viewBox="0 0 24 24"
@@ -609,6 +695,21 @@ export default function Draft() {
                           {isActive ? 'On the clock — pick a player below' : (team?.team_name || 'Empty')}
                         </div>
                       </div>
+                    )}
+                    {player && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleConfidence(slot); }}
+                        className={`rounded-full w-7 h-7 flex items-center justify-center shrink-0 transition-all ${
+                          confidentSlots.has(slot)
+                            ? 'text-gold shadow-glow-gold bg-gold/10 ring-1 ring-gold/50'
+                            : 'text-text-muted hover:text-gold hover:bg-gold/5 opacity-60'
+                        }`}
+                        aria-label={confidentSlots.has(slot) ? `Remove confidence pick ${slot}` : `Mark pick ${slot} as confidence`}
+                        title="Confidence pick (1.5× on exact match)"
+                      >
+                        <span className="font-display text-[14px] leading-none">★</span>
+                      </button>
                     )}
                     {isActive && player && (
                       <button
@@ -732,6 +833,8 @@ export default function Draft() {
                     onClear={clearSlot}
                     onClick={handleSlotClick}
                     isActive={selectedPlayer != null}
+                    isConfident={confidentSlots.has(slot)}
+                    onToggleConfident={toggleConfidence}
                   />
                 ))
               )}

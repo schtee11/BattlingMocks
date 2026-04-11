@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /auth/
+
+Sitemap: https://mockdraftshowdown.com/sitemap.xml

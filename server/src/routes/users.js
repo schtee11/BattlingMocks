@@ -48,6 +48,81 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/users/:id/profile — user profile with mock stats (total mocks,
+// best/avg score, team mock count, exact-match count on their R1 mock if any).
+// Must come BEFORE /:id so the literal '/profile' doesn't get mistaken for a
+// UUID in the /:id route.
+router.get('/:id/profile', async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const { rows: userRows } = await pool.query(
+      'SELECT id, display_name, avatar_url, created_at FROM users WHERE id = $1',
+      [userId]
+    );
+    if (!userRows.length) return res.status(404).json({ error: 'not found' });
+    const user = userRows[0];
+
+    // R1 mock stats (there's at most 1 per user).
+    const { rows: r1Rows } = await pool.query(
+      `SELECT m.id, m.total_score, m.submitted_at,
+              COUNT(mp.*) FILTER (WHERE ap.pick_number = mp.pick_number) AS exact_picks,
+              COUNT(mp.*) FILTER (WHERE ap.player_id IS NOT NULL) AS correct_picks
+       FROM mocks m
+       LEFT JOIN mock_picks mp ON mp.mock_id = m.id
+       LEFT JOIN actual_picks ap ON ap.player_id = mp.player_id
+       WHERE m.user_id = $1 AND m.mock_type = 'round1'
+       GROUP BY m.id`,
+      [userId]
+    );
+    const r1Mock = r1Rows[0] || null;
+
+    // Team mock counts (unlimited per user).
+    const { rows: tmRows } = await pool.query(
+      `SELECT COUNT(*)::int AS total_team_mocks
+       FROM mocks WHERE user_id = $1 AND mock_type = 'team'`,
+      [userId]
+    );
+
+    // Rank within the R1 leaderboard (only if they have an R1 mock).
+    let rank = null;
+    let percentile = null;
+    if (r1Mock) {
+      const { rows: rankRows } = await pool.query(
+        `WITH ranked AS (
+           SELECT id,
+                  RANK() OVER (ORDER BY total_score DESC, submitted_at ASC) AS rank,
+                  PERCENT_RANK() OVER (ORDER BY total_score ASC) AS pct,
+                  COUNT(*) OVER () AS total
+           FROM mocks WHERE mock_type = 'round1'
+         )
+         SELECT rank::int, pct, total::int FROM ranked WHERE id = $1`,
+        [r1Mock.id]
+      );
+      if (rankRows.length) {
+        rank = rankRows[0].rank;
+        percentile =
+          rankRows[0].total <= 1 ? 100 : Math.round(Number(rankRows[0].pct) * 100);
+      }
+    }
+
+    res.json({
+      user,
+      stats: {
+        r1_submitted: !!r1Mock,
+        r1_score: r1Mock?.total_score ?? null,
+        r1_exact_picks: r1Mock ? Number(r1Mock.exact_picks) : null,
+        r1_correct_picks: r1Mock ? Number(r1Mock.correct_picks) : null,
+        r1_rank: rank,
+        r1_percentile: percentile,
+        total_team_mocks: tmRows[0].total_team_mocks,
+      },
+    });
+  } catch (e) {
+    console.error('[profile]', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   const { rows } = await pool.query(
     'SELECT id, display_name, avatar_url, created_at FROM users WHERE id = $1',

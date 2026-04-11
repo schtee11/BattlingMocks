@@ -13,6 +13,7 @@ import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TradeModal } from '../components/TradeModal.jsx';
+import { usePageMeta } from '../hooks/usePageMeta.js';
 
 // ─── NFL Teams ────────────────────────────────────────────────────────────────
 const NFL_TEAMS = [
@@ -1015,6 +1016,120 @@ const ExportCard = forwardRef(function ExportCard(
 // Shown right after the draft finishes. Shows only the user's picks (not the
 // full 262-pick board), any trades made during the mock, and save/share CTAs.
 // Share produces the same PNG image as SavedView via ExportCard.
+// Convert a 0..100 combined grade into a letter (A+ to F).
+// Mapping is slightly generous in the B/C range so most users get an
+// encouraging grade on their first sim, but S-tier drafts still stand out.
+function letterFromScore(score) {
+  if (score >= 95) return 'A+';
+  if (score >= 90) return 'A';
+  if (score >= 85) return 'A-';
+  if (score >= 80) return 'B+';
+  if (score >= 75) return 'B';
+  if (score >= 70) return 'B-';
+  if (score >= 65) return 'C+';
+  if (score >= 58) return 'C';
+  if (score >= 52) return 'C-';
+  if (score >= 45) return 'D';
+  return 'F';
+}
+
+// Color paired with letter grades.
+function gradeColor(letter) {
+  if (!letter) return '#94a3b8';
+  if (letter.startsWith('A')) return '#34d399';
+  if (letter.startsWith('B')) return '#fbbf24';
+  if (letter.startsWith('C')) return '#f97316';
+  return '#ef4444';
+}
+
+// Compute the draft grade for a team mock.
+//
+// Value score (50%) — did you steal or reach?
+//   For each user pick, compare player's consensus_rank to pick_number.
+//   delta = pick_number - consensus_rank  (positive = steal, negative = reach)
+//   Per-pick score = clamp(50 + delta * 2, 0, 100).
+//   When a player's consensus_rank is missing (unseeded prospect), fall back
+//   to neutral 50.
+//
+// Need score (50%) — did you fill your top team needs?
+//   Walk the team's team_needs array (admin-ordered top-to-bottom). For each
+//   user pick, if the player's position is in the needs list, award points
+//   based on where it sits in the list (first = 100, second ~ 80, etc.) and
+//   mark the need as addressed so we don't double-count. Position that's not
+//   a listed need still gets 35 as a participation floor; non-need picks
+//   (positions the team doesn't need) get 20.
+//
+// Final: grade = 0.5 * value + 0.5 * need, rounded.
+function computeTeamMockGrade({ myPicks, byId, teamNeeds = [] }) {
+  if (!myPicks || myPicks.length === 0) {
+    return { value: 0, need: 0, total: 0, letter: null, pickBreakdown: [] };
+  }
+
+  const needList = (Array.isArray(teamNeeds) ? teamNeeds : []).map((n) => String(n).toUpperCase());
+  const addressed = new Set();
+
+  const pickBreakdown = [];
+  let valueSum = 0;
+  let needSum = 0;
+  let valueCount = 0;
+  let needCount = 0;
+
+  for (const pick of myPicks) {
+    const player = byId.get(pick.player_id);
+    if (!player) continue;
+
+    // Value component
+    const rank = Number(player.consensus_rank);
+    let valueScore;
+    if (!Number.isFinite(rank) || rank <= 0) {
+      valueScore = 50; // neutral fallback
+    } else {
+      const delta = pick.pick_number - rank;
+      valueScore = Math.max(0, Math.min(100, 50 + delta * 2));
+    }
+    valueSum += valueScore;
+    valueCount++;
+
+    // Need component
+    let needScore;
+    const pos = player.position?.toUpperCase();
+    if (needList.length === 0) {
+      needScore = 50; // no needs data → neutral
+    } else {
+      const idx = needList.indexOf(pos);
+      if (idx === -1) {
+        needScore = 20; // not a listed need
+      } else if (addressed.has(pos)) {
+        needScore = 35; // already addressed this need — participation floor
+      } else {
+        addressed.add(pos);
+        // First listed need = 100, linearly scaled down to 60 for the last listed need.
+        const penalty = (idx / Math.max(1, needList.length - 1)) * 40;
+        needScore = Math.round(100 - penalty);
+      }
+    }
+    needSum += needScore;
+    needCount++;
+
+    pickBreakdown.push({
+      pick_number: pick.pick_number,
+      round: pick.round,
+      player_name: player.name,
+      position: pos,
+      value_score: Math.round(valueScore),
+      need_score: Math.round(needScore),
+      is_reach: valueScore < 40,
+      is_steal: valueScore > 65,
+      hits_need: needList.includes(pos),
+    });
+  }
+
+  const value = valueCount ? Math.round(valueSum / valueCount) : 0;
+  const need = needCount ? Math.round(needSum / needCount) : 0;
+  const total = Math.round(value * 0.5 + need * 0.5);
+  return { value, need, total, letter: letterFromScore(total), pickBreakdown };
+}
+
 function ResultsView({
   team,
   picks,
@@ -1023,6 +1138,7 @@ function ResultsView({
   userSlotCount,
   saving,
   trades = [],
+  draftOrder = [],
   onSave,
   onRestart,
   onChangeTeam,
@@ -1032,6 +1148,19 @@ function ResultsView({
   );
 
   const myPicksOnly = useMemo(() => picks.filter((p) => p.is_user), [picks]);
+
+  // Pull team_needs for the user's team off the draft_order (any row for
+  // this team carries the same team_needs array). Fallback to an empty list
+  // so the grader can still compute a value-only score.
+  const teamNeeds = useMemo(() => {
+    const row = draftOrder.find((r) => r.team === team && Array.isArray(r.team_needs) && r.team_needs.length);
+    return row?.team_needs || [];
+  }, [draftOrder, team]);
+
+  const draftGrade = useMemo(
+    () => computeTeamMockGrade({ myPicks: myPicksOnly, byId, teamNeeds }),
+    [myPicksOnly, byId, teamNeeds]
+  );
 
   const myPicksByRound = useMemo(() => {
     const map = {};
@@ -1334,6 +1463,63 @@ function ResultsView({
             </button>
           </div>
         </div>
+
+        {/* ── Draft Grade ── */}
+        {draftGrade.letter && (
+          <div
+            className="mt-4 p-4 rounded-xl border flex items-center gap-5"
+            style={{
+              borderColor: `${gradeColor(draftGrade.letter)}55`,
+              background: `${gradeColor(draftGrade.letter)}0d`,
+            }}
+          >
+            <div
+              className="shrink-0 flex items-center justify-center rounded-xl font-display font-bold"
+              style={{
+                width: 78,
+                height: 78,
+                background: `${gradeColor(draftGrade.letter)}18`,
+                color: gradeColor(draftGrade.letter),
+                fontSize: draftGrade.letter.length > 1 ? 38 : 48,
+                lineHeight: 1,
+                textShadow: `0 0 24px ${gradeColor(draftGrade.letter)}66`,
+                border: `1px solid ${gradeColor(draftGrade.letter)}40`,
+              }}
+            >
+              {draftGrade.letter}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                Draft Grade
+              </div>
+              <div className="font-display font-bold uppercase tracking-wide text-text-primary text-[18px] mt-0.5">
+                {draftGrade.total} / 100
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <div className="font-display text-[9.5px] font-semibold uppercase tracking-[0.14em] text-text-muted">Value</div>
+                  <div className="font-mono font-bold tabular text-text-primary text-[14px]">{draftGrade.value}</div>
+                  <div className="h-1.5 mt-1 rounded-full bg-white/5 overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${draftGrade.value}%`, background: gradeColor(draftGrade.letter) }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="font-display text-[9.5px] font-semibold uppercase tracking-[0.14em] text-text-muted">Need fit</div>
+                  <div className="font-mono font-bold tabular text-text-primary text-[14px]">{draftGrade.need}</div>
+                  <div className="h-1.5 mt-1 rounded-full bg-white/5 overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${draftGrade.need}%`, background: gradeColor(draftGrade.letter) }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── User Picks by round ── */}
         <div className="mt-6 space-y-6">
@@ -2009,6 +2195,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         userSlotCount={userSlotCount}
         saving={saving}
         trades={trades}
+        draftOrder={draftOrder}
         onSave={handleSave}
         onRestart={restart}
         onChangeTeam={onChangeTeam}
@@ -2457,6 +2644,11 @@ function SavedMocksList({ mocks, onOpen, onDelete, onNew }) {
 
 // ─── Page Shell ───────────────────────────────────────────────────────────────
 export default function TeamMock() {
+  usePageMeta({
+    title: 'Team Mock Draft',
+    description:
+      "GM your favorite NFL team through all 7 rounds of the 2026 Draft. Trade up, trade down, and get a full draft grade on value and need fit.",
+  });
   const { user } = useAuth();
   const nav = useNavigate();
   const location = useLocation();

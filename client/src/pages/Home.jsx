@@ -4,6 +4,8 @@ import { api } from '../lib/api.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { useCountUp } from '../hooks/useCountUp.js';
+import { CountdownTimer, DRAFT_START_2026 } from '../components/ui/CountdownTimer.jsx';
+import { usePageMeta } from '../hooks/usePageMeta.js';
 
 function Stat({ label, value }) {
   const n = useCountUp(value ?? 0);
@@ -16,6 +18,12 @@ function Stat({ label, value }) {
 }
 
 export default function Home() {
+  usePageMeta({
+    title: 'MockDraft Showdown · 2026 NFL Draft',
+    description:
+      "Predict the 2026 NFL Draft and prove you're right. Live draft-night scoring, full 7-round team mocks, and a public leaderboard. 100% free.",
+    suffix: false,
+  });
   const [stats, setStats] = useState(null);
   useEffect(() => { api.getStats().then(setStats).catch(() => {}); }, []);
 
@@ -23,63 +31,114 @@ export default function Home() {
     <div className="route-fade">
       {/* Hero */}
       <div className="relative">
-        <div className="max-w-5xl mx-auto px-4 pt-20 md:pt-28 pb-14 text-center">
-          <div className="caption text-accent mb-4">April 23 · Pittsburgh, PA</div>
+        <div className="max-w-5xl mx-auto px-4 pt-16 md:pt-24 pb-10 text-center">
+          <div className="caption text-accent mb-4">Thursday, April 23, 2026 · Pittsburgh, PA</div>
           <h1 className="font-display display-xl text-hero text-text-primary">
-            Can You Call<br />
+            Predict The Draft.<br />
             <span style={{ backgroundImage: 'var(--gradient-accent)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>
-              The 2026 Draft?
+              Prove You're Right.
             </span>
           </h1>
           <p className="mt-6 text-[15px] md:text-[16px] text-text-secondary max-w-xl mx-auto">
-            Build your 32-pick mock. Score against the real results. Prove you're the best scout.
+            Build a 32-pick predictive mock and climb the public leaderboard when the real draft starts.
+            Or GM your favorite franchise through all 7 rounds in team mock mode.
           </p>
           <div className="mt-8 flex justify-center gap-3 flex-wrap">
-            <Link to="/join"><Button size="xl" className="animate-pulse-glow">Build Your Mock →</Button></Link>
-            <Link to="/leaderboard">
-              <span className="inline-flex items-center gap-1.5 text-text-secondary hover:text-text-primary text-[13px] font-display uppercase tracking-[0.14em] py-4 transition">
-                View Leaderboard →
-              </span>
-            </Link>
+            <Link to="/draft"><Button size="xl" className="animate-pulse-glow">Predictive Draft →</Button></Link>
+            <Link to="/team-mock"><Button size="xl" variant="secondary">Team Mock Draft →</Button></Link>
           </div>
         </div>
       </div>
 
+      {/* Countdown */}
+      <div className="max-w-4xl mx-auto px-4 mb-14">
+        <Card glass className="px-6 py-8">
+          <CountdownTimer target={DRAFT_START_2026} label="Round 1 Kickoff" />
+          {stats?.is_locked && (
+            <div className="mt-4 text-center caption text-amber-300">
+              Submissions locked · Draft in progress
+            </div>
+          )}
+        </Card>
+      </div>
+
       {/* Stats bar */}
-      <div className="max-w-4xl mx-auto px-4 -mt-4 mb-16">
+      <div className="max-w-4xl mx-auto px-4 mb-16">
         <Card glass className="px-6 py-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
           <Stat label="Mocks Submitted" value={stats?.total_mocks} />
           <Stat label="Scouts Competing" value={stats?.total_users} />
           <Stat label="Average Score" value={stats?.avg_score} />
           <Stat label="Top Score" value={stats?.highest_score} />
         </Card>
-        {stats?.is_locked && (
-          <div className="mt-3 text-center caption text-amber-300">
-            Submissions locked · Draft in progress
-          </div>
-        )}
       </div>
 
-      {/* Team Mock promo */}
-      <div className="max-w-4xl mx-auto px-4 mb-16">
-        <Card glass className="px-6 py-8 text-center">
-          <div className="caption text-accent mb-2">New Feature</div>
+      {/* Feature highlights — two modes */}
+      <div className="max-w-5xl mx-auto px-4 mb-16">
+        <div className="text-center mb-8">
+          <div className="caption text-accent">Two Ways To Play</div>
           <h2 className="font-display display-xl text-display text-text-primary mt-1">
-            Team Mock Draft
+            Pick Your Mode
           </h2>
-          <p className="mt-3 text-[14px] text-text-secondary max-w-lg mx-auto">
-            Pick your favorite team and draft all 7 rounds. Bots handle every other team using BPA + team needs. Trade up, trade down — it's your sandbox.
-          </p>
-          <div className="mt-5">
-            <Link to="/team-mock">
-              <Button size="lg">Try Team Mock →</Button>
-            </Link>
-          </div>
-        </Card>
+        </div>
+        <div className="grid md:grid-cols-2 gap-4 stagger">
+          {/* Predictive mode card */}
+          <Card className="p-6 md:p-7 flex flex-col">
+            <div className="caption text-accent mb-2">Predictive · Free · Ranked</div>
+            <h3 className="font-display font-bold uppercase tracking-wide text-[22px] text-text-primary">
+              Predictive Draft
+            </h3>
+            <p className="text-text-secondary text-[13px] mt-2 flex-1">
+              Predict who every team <em>actually</em> drafts in Round 1. Lock your picks before the real draft
+              starts, then watch them score in real-time on draft night. Nail exact matches, earn confidence
+              bonuses, climb the public leaderboard. Nobody else runs this contest.
+            </p>
+            <ul className="mt-4 space-y-1.5 text-[12px] text-text-secondary">
+              <li className="flex items-start gap-2">
+                <span className="text-accent">•</span> 32 first-round picks, scored against reality
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-accent">•</span> Mark up to 3 confidence picks for a 1.5× multiplier
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-accent">•</span> Live draft-night leaderboard + percentile rank
+              </li>
+            </ul>
+            <div className="mt-5">
+              <Link to="/draft"><Button size="lg">Start Predicting →</Button></Link>
+            </div>
+          </Card>
+
+          {/* Team mock mode card */}
+          <Card className="p-6 md:p-7 flex flex-col">
+            <div className="caption text-accent mb-2">Team Mock · Free · Unlimited</div>
+            <h3 className="font-display font-bold uppercase tracking-wide text-[22px] text-text-primary">
+              Team Mock Draft
+            </h3>
+            <p className="text-text-secondary text-[13px] mt-2 flex-1">
+              Pick a team and GM them through all 7 rounds. CPU teams draft on a BPA + team-needs engine with
+              trade logic. Propose trades up or down, get a fairness read, and collect a full draft grade when
+              you're done.
+            </p>
+            <ul className="mt-4 space-y-1.5 text-[12px] text-text-secondary">
+              <li className="flex items-start gap-2">
+                <span className="text-accent">•</span> All 32 teams, all 7 rounds, unlimited saves
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-accent">•</span> Rich Hill trade value chart + fairness meter
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-accent">•</span> Post-draft grade on value and need fit
+              </li>
+            </ul>
+            <div className="mt-5">
+              <Link to="/team-mock"><Button size="lg" variant="secondary">Run A Sim →</Button></Link>
+            </div>
+          </Card>
+        </div>
       </div>
 
       {/* How it works */}
-      <div className="max-w-4xl mx-auto px-4 pb-24">
+      <div className="max-w-4xl mx-auto px-4 pb-16">
         <div className="text-center mb-8">
           <div className="caption text-accent">Three steps</div>
           <h2 className="font-display display-xl text-display text-text-primary mt-1">How It Works</h2>
@@ -87,8 +146,8 @@ export default function Home() {
         <div className="grid md:grid-cols-3 gap-4 stagger">
           {[
             { n: 1, t: 'Make your picks', d: 'Drag prospects into all 32 first-round slots.' },
-            { n: 2, t: 'Lock it in', d: 'Submit before the real draft begins.' },
-            { n: 3, t: 'See how you scored', d: 'Pick-by-pick breakdown and public leaderboard.' },
+            { n: 2, t: 'Draft night scores it', d: 'We grade every pick the moment it happens.' },
+            { n: 3, t: 'Climb the leaderboard', d: 'See your rank, share your card, come back next year.' },
           ].map((s) => (
             <Card key={s.n} className="p-6">
               <div
@@ -104,8 +163,41 @@ export default function Home() {
         </div>
       </div>
 
-      <footer className="max-w-5xl mx-auto px-4 pb-10 text-center caption">
-        MockDraft Showdown · {stats?.draft_year ?? 2026} NFL Draft
+      {/* Footer */}
+      <footer className="border-t border-border-subtle mt-10">
+        <div className="max-w-5xl mx-auto px-4 py-10 grid gap-8 md:grid-cols-3 text-[13px]">
+          <div>
+            <div className="font-display font-bold uppercase tracking-[0.14em] text-text-primary">
+              MockDraft Showdown
+            </div>
+            <p className="text-text-secondary mt-2 text-[12px] leading-relaxed">
+              The only mock draft platform built around a predictive contest. 100% free, no paywall. Live draft-night
+              scoring and an unlimited team mock sandbox — all in one place.
+            </p>
+          </div>
+          <div>
+            <div className="caption mb-3">Play</div>
+            <ul className="space-y-1.5">
+              <li><Link className="text-text-secondary hover:text-accent transition" to="/draft">Predictive Draft</Link></li>
+              <li><Link className="text-text-secondary hover:text-accent transition" to="/team-mock">Team Mock Draft</Link></li>
+              <li><Link className="text-text-secondary hover:text-accent transition" to="/leaderboard">Leaderboard</Link></li>
+              <li><Link className="text-text-secondary hover:text-accent transition" to="/my-mock">My Mock</Link></li>
+            </ul>
+          </div>
+          <div>
+            <div className="caption mb-3">About</div>
+            <ul className="space-y-1.5 text-text-secondary">
+              <li>2026 NFL Draft coverage</li>
+              <li>Free forever · No paywall</li>
+              <li>Built for draft obsessives</li>
+            </ul>
+          </div>
+        </div>
+        <div className="border-t border-border-subtle">
+          <div className="max-w-5xl mx-auto px-4 py-4 text-center caption">
+            MockDraft Showdown · {stats?.draft_year ?? 2026} NFL Draft
+          </div>
+        </div>
       </footer>
     </div>
   );
