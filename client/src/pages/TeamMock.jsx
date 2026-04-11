@@ -1048,8 +1048,10 @@ function gradeColor(letter) {
 //   For each user pick, compare player's consensus_rank to pick_number.
 //   delta = pick_number - consensus_rank  (positive = steal, negative = reach)
 //   Per-pick score = clamp(50 + delta * 2, 0, 100).
-//   When a player's consensus_rank is missing (unseeded prospect), fall back
-//   to neutral 50.
+//   Until consensus_rank is backfilled in the players table, we fall back
+//   to the player's seeded rank (player.rank, which the /api/players query
+//   computes via ROW_NUMBER() over consensus_rank/id). When BOTH are
+//   missing (unseeded prospect), default to neutral 50.
 //
 // Need score (50%) — did you fill your top team needs?
 //   Walk the team's team_needs array (admin-ordered top-to-bottom). For each
@@ -1078,8 +1080,10 @@ function computeTeamMockGrade({ myPicks, byId, teamNeeds = [] }) {
     const player = byId.get(pick.player_id);
     if (!player) continue;
 
-    // Value component
-    const rank = Number(player.consensus_rank);
+    // Value component. Prefer consensus_rank when populated; otherwise fall
+    // back to the player's seeded rank from the /api/players response. Both
+    // are nullable so we default to neutral 50 if neither is present.
+    const rank = Number(player.consensus_rank ?? player.rank);
     let valueScore;
     if (!Number.isFinite(rank) || rank <= 0) {
       valueScore = 50; // neutral fallback
