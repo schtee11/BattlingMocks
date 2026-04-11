@@ -1017,19 +1017,19 @@ const ExportCard = forwardRef(function ExportCard(
 // full 262-pick board), any trades made during the mock, and save/share CTAs.
 // Share produces the same PNG image as SavedView via ExportCard.
 // Convert a 0..100 combined grade into a letter (A+ to F).
-// Mapping is slightly generous in the B/C range so most users get an
-// encouraging grade on their first sim, but S-tier drafts still stand out.
+// Tuned so that a "decent" mock (fair-value picks + addressing top needs)
+// lands in the B range, while genuinely bad drafts still drop to D/F.
 function letterFromScore(score) {
-  if (score >= 95) return 'A+';
-  if (score >= 90) return 'A';
-  if (score >= 85) return 'A-';
-  if (score >= 80) return 'B+';
-  if (score >= 75) return 'B';
-  if (score >= 70) return 'B-';
-  if (score >= 65) return 'C+';
-  if (score >= 58) return 'C';
-  if (score >= 52) return 'C-';
-  if (score >= 45) return 'D';
+  if (score >= 93) return 'A+';
+  if (score >= 88) return 'A';
+  if (score >= 83) return 'A-';
+  if (score >= 78) return 'B+';
+  if (score >= 73) return 'B';
+  if (score >= 68) return 'B-';
+  if (score >= 63) return 'C+';
+  if (score >= 57) return 'C';
+  if (score >= 51) return 'C-';
+  if (score >= 44) return 'D';
   return 'F';
 }
 
@@ -1047,21 +1047,33 @@ function gradeColor(letter) {
 // Value score (50%) — did you steal or reach?
 //   For each user pick, compare player's consensus_rank to pick_number.
 //   delta = pick_number - consensus_rank  (positive = steal, negative = reach)
-//   Per-pick score = clamp(50 + delta * 2, 0, 100).
-//   Until consensus_rank is backfilled in the players table, we fall back
-//   to the player's seeded rank (player.rank, which the /api/players query
-//   computes via ROW_NUMBER() over consensus_rank/id). When BOTH are
-//   missing (unseeded prospect), default to neutral 50.
+//   Per-pick score = clamp(80 + delta * 1.5, 0, 100).
+//   This recenters "fair value" (delta = 0) at 80 (B+) — getting expected
+//   value isn't a C, it's a good pick. A 13-spot reach drops you a full
+//   letter grade; a 13-spot steal pushes you to A+. Until consensus_rank is
+//   backfilled, we fall back to the player's seeded rank (player.rank,
+//   which the /api/players query computes via ROW_NUMBER over
+//   COALESCE(consensus_rank, 9999), id). When BOTH are missing (unseeded
+//   prospect), default to a neutral 75.
 //
 // Need score (50%) — did you fill your top team needs?
 //   Walk the team's team_needs array (admin-ordered top-to-bottom). For each
-//   user pick, if the player's position is in the needs list, award points
-//   based on where it sits in the list (first = 100, second ~ 80, etc.) and
-//   mark the need as addressed so we don't double-count. Position that's not
-//   a listed need still gets 35 as a participation floor; non-need picks
-//   (positions the team doesn't need) get 20.
+//   user pick:
+//     - First time addressing a listed need: 100 (top need) sliding to 75
+//       (last listed need)
+//     - Second pick at a need you already covered: 65 (depth pick — not
+//       punished, just below first-hit credit)
+//     - Position that isn't on the team's needs list at all: 55 (BPA / depth,
+//       still useful, not a wasted pick)
+//     - No needs data on the team at all: 75 (mildly positive default)
 //
 // Final: grade = 0.5 * value + 0.5 * need, rounded.
+//
+// Tuning notes: with these defaults, an honest 7-round mock that addresses
+// 3-4 top needs and gets fair value should land around 75-80 (B/B+), while a
+// genuinely bad mock (huge reaches, ignoring all needs) drops into D/F. F is
+// reserved for combined scores under ~44, which is hard to hit without
+// reaching 30+ spots on multiple picks AND ignoring every team need.
 function computeTeamMockGrade({ myPicks, byId, teamNeeds = [] }) {
   if (!myPicks || myPicks.length === 0) {
     return { value: 0, need: 0, total: 0, letter: null, pickBreakdown: [] };
@@ -1080,35 +1092,36 @@ function computeTeamMockGrade({ myPicks, byId, teamNeeds = [] }) {
     const player = byId.get(pick.player_id);
     if (!player) continue;
 
-    // Value component. Prefer consensus_rank when populated; otherwise fall
-    // back to the player's seeded rank from the /api/players response. Both
-    // are nullable so we default to neutral 50 if neither is present.
+    // Value component. Centered at 80 (B+) for fair value (delta = 0).
+    // Each 1-spot delta moves the score by 1.5 points, so a 13-spot reach
+    // drops you a full letter grade.
     const rank = Number(player.consensus_rank ?? player.rank);
     let valueScore;
     if (!Number.isFinite(rank) || rank <= 0) {
-      valueScore = 50; // neutral fallback
+      valueScore = 75; // neutral fallback for unranked players
     } else {
       const delta = pick.pick_number - rank;
-      valueScore = Math.max(0, Math.min(100, 50 + delta * 2));
+      valueScore = Math.max(0, Math.min(100, 80 + delta * 1.5));
     }
     valueSum += valueScore;
     valueCount++;
 
-    // Need component
+    // Need component. Generous on the floor — depth picks and BPA aren't
+    // bad, they just don't earn the "addressed a top need" bonus.
     let needScore;
     const pos = player.position?.toUpperCase();
     if (needList.length === 0) {
-      needScore = 50; // no needs data → neutral
+      needScore = 75; // no needs data → mildly positive default
     } else {
       const idx = needList.indexOf(pos);
       if (idx === -1) {
-        needScore = 20; // not a listed need
+        needScore = 55; // not a listed need but not punished
       } else if (addressed.has(pos)) {
-        needScore = 35; // already addressed this need — participation floor
+        needScore = 65; // depth pick at a need you already covered
       } else {
         addressed.add(pos);
-        // First listed need = 100, linearly scaled down to 60 for the last listed need.
-        const penalty = (idx / Math.max(1, needList.length - 1)) * 40;
+        // First listed need = 100, linearly scaled to 75 for the last listed need.
+        const penalty = (idx / Math.max(1, needList.length - 1)) * 25;
         needScore = Math.round(100 - penalty);
       }
     }
@@ -1122,8 +1135,8 @@ function computeTeamMockGrade({ myPicks, byId, teamNeeds = [] }) {
       position: pos,
       value_score: Math.round(valueScore),
       need_score: Math.round(needScore),
-      is_reach: valueScore < 40,
-      is_steal: valueScore > 65,
+      is_reach: valueScore < 60,
+      is_steal: valueScore > 90,
       hits_need: needList.includes(pos),
     });
   }
