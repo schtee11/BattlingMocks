@@ -25,6 +25,31 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_id VARCHAR(32) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
+-- Multi-provider auth: each row is one external identity (Discord, Google, etc.)
+-- linked to a user. Primary key is (provider, provider_account_id) so a given
+-- external account maps to exactly one user. Users can have multiple identities
+-- linked to them, which is the hook for future account-linking. The legacy
+-- users.discord_id column is preserved and backfilled below, but new code
+-- reads/writes exclusively through user_identities.
+CREATE TABLE IF NOT EXISTS user_identities (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider VARCHAR(32) NOT NULL,
+  provider_account_id VARCHAR(255) NOT NULL,
+  email VARCHAR(255),
+  avatar_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (provider, provider_account_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user_id ON user_identities(user_id);
+
+-- Backfill existing Discord accounts into user_identities. Idempotent thanks
+-- to the ON CONFLICT clause — safe to run on every deploy.
+INSERT INTO user_identities (user_id, provider, provider_account_id, avatar_url)
+SELECT id, 'discord', discord_id, avatar_url
+FROM users
+WHERE discord_id IS NOT NULL
+ON CONFLICT (provider, provider_account_id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS mocks (
   id SERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -2,6 +2,7 @@ const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001';
 
 export const API_BASE = BASE;
 export const DISCORD_AUTH_URL = `${BASE}/api/auth/discord`;
+export const GOOGLE_AUTH_URL = `${BASE}/api/auth/google`;
 
 // Routes an ESPN CDN image URL through our server-side proxy so html-to-image
 // can read it into a canvas. Without this, cross-origin images taint the
