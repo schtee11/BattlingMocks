@@ -12,12 +12,17 @@ function ProspectCardInner({ player, used, selected, onClick, onDraft, onClockSl
 
   const color = posHex(player.position);
 
-  const base = 'relative p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 touch-pan-y md:touch-none border will-anim';
+  const base = 'relative p-2.5 rounded-lg transition-[transform,border-color,background-color,box-shadow] duration-150 touch-pan-y md:touch-none border will-anim focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-0';
+  const cursor = used
+    ? 'cursor-not-allowed'
+    : isDragging
+    ? 'cursor-grabbing'
+    : 'cursor-grab';
   const state = selected
     ? 'border-accent bg-accent/[0.07] shadow-glow'
     : used
-    ? 'border-white/5 opacity-40 hover:border-white/5 cursor-not-allowed'
-    : 'border-border-subtle bg-bg-surface/40 hover:border-border-focus hover:-translate-y-[1px] hover:bg-white/[0.03]';
+    ? 'border-white/5 opacity-40 hover:border-white/5'
+    : 'border-border-subtle bg-bg-surface/40 hover:border-border-focus hover:-translate-y-[1px] hover:bg-white/[0.03] active:translate-y-0';
   const dragging = isDragging ? 'opacity-50 rotate-1' : '';
 
   function handleRowClick() { onClick?.(player); }
@@ -30,7 +35,7 @@ function ProspectCardInner({ player, used, selected, onClick, onDraft, onClockSl
       {...listeners}
       {...attributes}
       onClick={handleRowClick}
-      className={`group ${base} ${state} ${dragging}`}
+      className={`group ${base} ${cursor} ${state} ${dragging}`}
       style={
         !used && !selected
           ? { borderLeft: `3px solid transparent` }

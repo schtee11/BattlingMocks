@@ -6,6 +6,7 @@ import { usePolling } from '../hooks/usePolling.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
+import { EmptyState } from '../components/ui/EmptyState.jsx';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
@@ -52,12 +53,15 @@ export default function Live() {
       ]);
       setData(live);
       if (!players.length) setPlayers(p);
+      setErr('');
     } catch (e) {
       setErr(e.message);
     }
   }
 
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    refresh(); /* eslint-disable-next-line */
+  }, []);
   usePolling(() => refresh({ fresh: true }), 12_000);
 
   const playerById = useMemo(() => {
@@ -77,12 +81,27 @@ export default function Live() {
     return m;
   }, [data]);
 
-  if (err) {
+  if (err && !data) {
     return (
-      <div className="max-w-md mx-auto px-4 py-20 text-center">
-        <Card glass className="p-7">
-          <p className="text-red-300 text-[13px] mb-4">Live mode unavailable: {err}</p>
-          <Link to="/"><Button variant="secondary">Home</Button></Link>
+      <div className="max-w-md mx-auto px-4 py-20 route-fade">
+        <Card className="banner-error p-5">
+          <div
+            className="font-display font-bold uppercase tracking-[0.12em] text-[12px]"
+            style={{ color: 'var(--error-text)' }}
+          >
+            Live mode unavailable
+          </div>
+          <p className="text-[13px] mt-2 opacity-85">{err}</p>
+          <div className="mt-4 flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant="secondary" onClick={() => refresh({ fresh: true })}>
+              Retry
+            </Button>
+            <Link to="/">
+              <Button size="sm" variant="ghost">
+                Back to home
+              </Button>
+            </Link>
+          </div>
         </Card>
       </div>
     );
@@ -93,7 +112,9 @@ export default function Live() {
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-3">
         <Skeleton className="h-14 w-72" />
         <Skeleton className="h-24 w-full" />
-        {Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+        {Array.from({ length: 10 }, (_, i) => (
+          <Skeleton key={i} className="h-14 w-full" />
+        ))}
       </div>
     );
   }
@@ -113,11 +134,35 @@ export default function Live() {
           {!isLive && (
             <div className="text-right">
               <div className="caption text-[10px]">Kickoff in</div>
-              <div className="mt-1"><CountdownTimer target={DRAFT_START_2026} compact /></div>
+              <div className="mt-1">
+                <CountdownTimer target={DRAFT_START_2026} compact />
+              </div>
+            </div>
+          )}
+          {isLive && (
+            <div
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border"
+              style={{
+                background: 'rgba(52, 211, 153, 0.08)',
+                borderColor: 'rgba(52, 211, 153, 0.35)',
+              }}
+              aria-live="polite"
+            >
+              <span
+                className="w-2 h-2 rounded-full animate-pulse"
+                style={{ background: '#34d399' }}
+                aria-hidden="true"
+              />
+              <span
+                className="font-display font-semibold uppercase tracking-[0.14em] text-[11px]"
+                style={{ color: '#34d399' }}
+              >
+                Live
+              </span>
             </div>
           )}
         </div>
-        <p className="text-text-secondary text-[13px] mt-2">
+        <p className="text-text-secondary text-[13.5px] mt-2 max-w-2xl leading-relaxed">
           {isLive
             ? 'Picks are updating live. Your predictions light up green for exact matches and yellow when the right player lands on a different team.'
             : 'This page goes live when Round 1 kicks off. Your predictions will score in real time as each pick comes in.'}
@@ -139,11 +184,29 @@ export default function Live() {
         </Card>
       )}
 
+      {/* No-mock prompt for signed-in users who haven't submitted */}
+      {user && !myMock && (
+        <Card glass className="mb-5">
+          <EmptyState
+            compact
+            title="You didn't submit a mock"
+            description="You can still watch the draft unfold live, but you won't appear on the leaderboard."
+            action={
+              <Link to="/draft">
+                <Button size="sm">Build One Now</Button>
+              </Link>
+            }
+          />
+        </Card>
+      )}
+
       {/* Live board */}
       <Card glass className="p-4 mb-5">
         <div className="flex items-center justify-between mb-3">
           <div className="caption">Round 1 Live Board</div>
-          <div className="text-text-muted text-[11px] font-mono tabular">updates every 12s</div>
+          <div className="text-text-muted text-[11px] font-mono tabular">
+            updates every 12s
+          </div>
         </div>
         <ul className="space-y-1.5">
           {Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => {
@@ -153,10 +216,13 @@ export default function Live() {
               ? computeMatchState(actual, yourPicks)
               : { slotState: 'pending' };
             const color =
-              match.slotState === 'exact' ? '#34d399'
-              : match.slotState === 'close' ? '#fbbf24'
-              : match.slotState === 'miss' ? '#ef4444'
-              : null;
+              match.slotState === 'exact'
+                ? '#34d399'
+                : match.slotState === 'close'
+                ? '#fbbf24'
+                : match.slotState === 'miss'
+                ? '#ef4444'
+                : null;
             const yourPick = yourPicks.find((p) => p.pick_number === slot);
             const yourPlayer = yourPick ? playerById.get(yourPick.player_id) : null;
             return (
@@ -164,11 +230,11 @@ export default function Live() {
                 key={slot}
                 className="flex items-center gap-3 p-2.5 rounded-lg border transition-all"
                 style={{
-                  background: actual
-                    ? `${color}0d`
-                    : 'var(--bg-surface)',
+                  background: actual ? `${color}0d` : 'var(--bg-surface)',
                   borderColor: actual ? `${color}44` : 'var(--border-subtle)',
-                  borderLeft: actual ? `4px solid ${color}` : `3px solid var(--border-subtle)`,
+                  borderLeft: actual
+                    ? `4px solid ${color}`
+                    : `3px solid var(--border-subtle)`,
                 }}
               >
                 <div
@@ -212,16 +278,19 @@ export default function Live() {
                   </div>
                 ) : (
                   <div className="flex-1 text-[12px] text-text-muted">
-                    {yourPlayer ? `Your call: ${yourPlayer.name} · ${yourPlayer.position}` : 'On deck…'}
+                    {yourPlayer
+                      ? `Your call: ${yourPlayer.name} · ${yourPlayer.position}`
+                      : 'On deck…'}
                   </div>
                 )}
                 {actual && match.slotState !== 'pending' && (
                   <div className="shrink-0 text-right">
-                    <div
-                      className="caption text-[9px]"
-                      style={{ color }}
-                    >
-                      {match.slotState === 'exact' ? 'Exact' : match.slotState === 'close' ? 'Close' : 'Miss'}
+                    <div className="caption text-[9px]" style={{ color }}>
+                      {match.slotState === 'exact'
+                        ? 'Exact'
+                        : match.slotState === 'close'
+                        ? 'Close'
+                        : 'Miss'}
                     </div>
                   </div>
                 )}
@@ -235,23 +304,33 @@ export default function Live() {
       <Card glass className="p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="caption">Live Leaderboard</div>
-          <Link to="/leaderboard" className="caption text-accent hover:underline">View full →</Link>
+          <Link to="/leaderboard" className="caption text-accent hover:underline">
+            View full →
+          </Link>
         </div>
         {data.leaderboard.length === 0 ? (
-          <div className="text-text-muted text-[12px] text-center py-4">No mocks submitted yet.</div>
+          <EmptyState
+            compact
+            title="No mocks submitted yet"
+            description="As soon as the first mock lands it'll show up here."
+          />
         ) : (
           <ol className="space-y-1">
             {data.leaderboard.slice(0, 10).map((row) => (
               <li
                 key={row.id}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg ${
-                  user && row.user_id === user.id ? 'bg-accent/5 border border-accent/25' : ''
+                  user && row.user_id === user.id
+                    ? 'bg-accent/5 border border-accent/25'
+                    : ''
                 }`}
               >
                 <div className="font-mono font-bold text-[13px] tabular w-8 text-text-muted">
                   #{row.rank}
                 </div>
-                <div className="flex-1 text-text-primary text-[13px] truncate">{row.display_name}</div>
+                <div className="flex-1 text-text-primary text-[13px] truncate">
+                  {row.display_name}
+                </div>
                 <div className="font-mono font-bold text-[16px] tabular text-gold">
                   {row.total_score}
                 </div>
@@ -264,7 +343,7 @@ export default function Live() {
       {!user && (
         <div className="mt-6 text-center">
           <Link to="/join">
-            <Button>Claim Your Name To Compete</Button>
+            <Button>Sign In To Compete</Button>
           </Link>
         </div>
       )}

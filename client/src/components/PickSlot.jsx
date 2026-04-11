@@ -42,11 +42,13 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfi
   const posColor = player ? posHex(player.position) : null;
 
   const baseCls =
-    'group relative flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 will-anim';
+    'group relative flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-[transform,border-color,background-color,box-shadow] duration-150 will-anim focus:outline-none focus-visible:ring-2 focus-visible:ring-accent';
   const filledCls = player
     ? 'bg-bg-elevated border border-border-subtle hover:border-border-focus'
     : 'bg-bg-surface/40 border border-dashed border-border-subtle hover:border-border-focus hover:bg-white/[0.02]';
-  const overCls = isOver ? 'ring-2 ring-accent shadow-glow scale-[1.01]' : '';
+  const overCls = isOver
+    ? 'ring-2 ring-accent shadow-glow scale-[1.02] bg-accent/[0.08] border-accent'
+    : '';
   const activeCls = isActive && !player ? 'border-accent/40 bg-accent/[0.04]' : '';
   const flashCls = flash ? 'animate-flash' : '';
 

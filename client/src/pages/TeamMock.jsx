@@ -13,6 +13,7 @@ import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TradeModal } from '../components/TradeModal.jsx';
+import { ConfirmModal } from '../components/ui/ConfirmModal.jsx';
 import { usePageMeta } from '../hooks/usePageMeta.js';
 
 // ─── NFL Teams ────────────────────────────────────────────────────────────────
@@ -1677,6 +1678,11 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [posFilter, setPosFilter] = useState('ALL');
   const [saving, setSaving] = useState(false);
   const [trades, setTrades] = useState([]); // record trades for the results view
+  // Confirmation state for destructive actions. We gate Restart and Change
+  // Team behind an explicit confirm as soon as the user has made any real
+  // progress — losing a half-finished mock would be a terrible surprise.
+  const [showRestart, setShowRestart] = useState(false);
+  const [showChangeTeam, setShowChangeTeam] = useState(false);
 
   // ── Draft-session telemetry (Phase 5) ───────────────────────────────────
   // Fire-and-forget logging of every pick (user + bot) into draft_sessions /
@@ -1932,6 +1938,21 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setTrades([]);
     setPhase(PHASE_READY);
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
+  }
+
+  // Wrap restart with a confirm dialog whenever the user has actually made
+  // progress. A bare Restart during PHASE_READY (no picks yet) just fires
+  // immediately — no point confirming an empty board.
+  function requestRestart() {
+    if (picks.length === 0) { restart(); return; }
+    setShowRestart(true);
+  }
+
+  // Change-team bailout — same idea. If they haven't made any picks yet we
+  // let them bounce back to the picker without a prompt.
+  function requestChangeTeam() {
+    if (picks.length === 0) { onChangeTeam(); return; }
+    setShowChangeTeam(true);
   }
 
   // Apply a trade: swap team ownership on the affected pick_numbers.
@@ -2243,7 +2264,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 {myPicks.length}/{userSlotCount}
               </span>
               <button
-                onClick={onChangeTeam}
+                onClick={requestChangeTeam}
                 className="text-[10px] font-display uppercase tracking-wider text-text-muted hover:text-text-primary transition"
               >
                 Change
@@ -2335,7 +2356,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             </div>
             {phase !== PHASE_READY && (
               <button
-                onClick={restart}
+                onClick={requestRestart}
                 className="w-full font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-muted hover:text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition"
               >
                 Restart
@@ -2351,10 +2372,14 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           </div>
           <div className="px-4 py-2 flex items-center gap-2 border-b border-border-subtle">
             <input
+              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={phase === PHASE_ON_CLOCK ? 'Search prospects…' : 'Prospects'}
               disabled={phase === PHASE_READY}
+              aria-label="Search prospects by name"
+              autoComplete="off"
+              spellCheck={false}
               className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-1.5 text-[12px] text-text-primary placeholder-text-muted focus:border-accent/60 outline-none transition disabled:opacity-50"
             />
             <label className="flex items-center gap-1.5 shrink-0 text-[10px] font-display uppercase tracking-[0.1em] text-text-muted cursor-pointer select-none">
@@ -2466,7 +2491,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                   className="flex-1 h-1 accent-accent cursor-pointer" />
                 <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
               </div>
-              <button onClick={restart}
+              <button onClick={requestRestart}
                 className="w-full font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-muted hover:text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition">
                 Restart Draft
               </button>
@@ -2511,10 +2536,14 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             <div className="h-full flex flex-col overflow-hidden">
               <div className="px-3 py-2 flex gap-2 border-b border-border-subtle shrink-0">
                 <input
+                  type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={phase === PHASE_ON_CLOCK ? 'Search prospects…' : 'Prospects'}
                   disabled={phase === PHASE_READY}
+                  aria-label="Search prospects by name"
+                  autoComplete="off"
+                  spellCheck={false}
                   className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-1.5 text-[12px] text-text-primary placeholder-text-muted focus:border-accent/60 outline-none transition disabled:opacity-50"
                 />
                 <label className="flex items-center gap-1 shrink-0 text-[10px] font-display uppercase tracking-[0.1em] text-text-muted cursor-pointer select-none">
@@ -2591,6 +2620,26 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           }}
         />
       )}
+
+      <ConfirmModal
+        open={showRestart}
+        onClose={() => setShowRestart(false)}
+        onConfirm={() => { restart(); setShowRestart(false); }}
+        title="Restart the draft?"
+        description={`This clears all ${picks.length} picks${trades.length ? ` and ${trades.length} trade${trades.length === 1 ? '' : 's'}` : ''}. You can't undo this.`}
+        confirmLabel="Restart"
+        confirmVariant="danger"
+      />
+
+      <ConfirmModal
+        open={showChangeTeam}
+        onClose={() => setShowChangeTeam(false)}
+        onConfirm={() => { setShowChangeTeam(false); onChangeTeam(); }}
+        title="Change teams?"
+        description={`Switching teams will throw out this in-progress mock (${picks.length} picks so far). Save it first if you want to keep it.`}
+        confirmLabel="Change team"
+        confirmVariant="danger"
+      />
     </div>
   );
 }
@@ -2686,9 +2735,10 @@ export default function TeamMock() {
         setPlayers(pl);
         setDraftOrder(order);
       })
-      .catch(() => {
+      .catch((e) => {
         setPlayers([]);
         setDraftOrder([]);
+        toast.error(`Couldn't load draft data: ${e?.message || 'unknown error'}`);
       });
   }
   useEffect(() => { loadData(); }, []);
@@ -2715,11 +2765,15 @@ export default function TeamMock() {
 
   async function handleOpen(mockSummary) {
     // Fetch full picks for the clicked mock
+    const loadToast = toast.loading('Loading mock…');
     try {
       const full = await api.getTeamMockById(mockSummary.id);
       setActiveMock(full);
+      toast.dismiss(loadToast);
     } catch (e) {
       console.error('[open team mock]', e);
+      toast.dismiss(loadToast);
+      toast.error(`Couldn't open mock: ${e?.message || 'unknown error'}`);
     }
   }
 
@@ -2728,10 +2782,12 @@ export default function TeamMock() {
     if (!ok) return;
     try {
       await api.deleteTeamMock(mockSummary.id);
+      toast.success('Mock deleted');
       loadSavedMocks();
       if (activeMock?.id === mockSummary.id) setActiveMock(null);
     } catch (e) {
       console.error('[delete team mock]', e);
+      toast.error(`Couldn't delete mock: ${e?.message || 'unknown error'}`);
     }
   }
 
