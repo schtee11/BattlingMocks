@@ -11,6 +11,7 @@ import stats from './routes/stats.js';
 import actuals from './routes/actuals.js';
 import auth from './routes/auth.js';
 import teamMocks from './routes/teamMocks.js';
+import draftSessions from './routes/draftSessions.js';
 import tradeValues from './routes/tradeValues.js';
 import imageProxy from './routes/imageProxy.js';
 import { pool } from './db/pool.js';
@@ -102,6 +103,7 @@ app.use('/api/stats', stats);
 app.use('/api/actual-picks', actuals);
 app.use('/api/auth', auth);
 app.use('/api/team-mocks', teamMocks);
+app.use('/api/draft-sessions', draftSessions);
 app.use('/api/trade-values', tradeValues);
 app.use('/api/proxy/image', imageProxy);
 

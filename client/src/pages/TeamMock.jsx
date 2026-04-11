@@ -6,7 +6,7 @@ const loadToPng = () => import('html-to-image').then((m) => m.toPng);
 import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam } from '../lib/botPicker.js';
-import { loadAlgoConfig } from '../lib/algoConfig.js';
+import { loadAlgoConfig, getAlgoConfig } from '../lib/algoConfig.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -1475,6 +1475,28 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [saving, setSaving] = useState(false);
   const [trades, setTrades] = useState([]); // record trades for the results view
 
+  // ── Draft-session telemetry (Phase 5) ───────────────────────────────────
+  // Fire-and-forget logging of every pick (user + bot) into draft_sessions /
+  // draft_session_picks. All state lives in refs because telemetry must
+  // never trigger re-renders or block the draft loop. All network calls
+  // are wrapped in .catch → console.warn so failures are silent.
+  //
+  //   telemetry.uuid        client-minted UUID; stable across retries so a
+  //                         network blip doesn't orphan the session
+  //   telemetry.sessionId   server-assigned id once /draft-sessions POST
+  //                         resolves; subsequent flushes target this id
+  //   telemetry.sentCount   number of picks already POSTed — flush only
+  //                         sends the slice picks.slice(sentCount)
+  //   telemetry.flushTimer  debounce handle so a rapid burst of bot picks
+  //                         batches into one POST instead of N
+  const telemetry = useRef({
+    uuid: null,
+    sessionId: null,
+    sentCount: 0,
+    flushTimer: null,
+    creating: null, // in-flight session-create promise (dedupe)
+  });
+
   // Lock page scroll while the in-draft layout is active. On iOS/Chrome
   // mobile, overflow:hidden on body alone isn't enough — momentum scroll
   // bleeds through inner containers and snaps the page. Setting both html
@@ -1555,6 +1577,107 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     if (phase === PHASE_ON_CLOCK) setMobileTab('prospects');
   }, [phase]);
 
+  // ── Telemetry: lazily create a session and flush picks in batches ────────
+  // Runs whenever picks.length changes. First call lazy-creates the session
+  // (uuid minted client-side, server returns id), then flushes everything
+  // between sentCount and picks.length. Subsequent picks during a debounce
+  // window are coalesced into a single POST.
+  useEffect(() => {
+    if (picks.length === 0) return;
+    const t = telemetry.current;
+
+    // Lazy session create — happens once per draft run. The uuid persists
+    // across retries so the ON CONFLICT DO UPDATE path on the server keeps
+    // us idempotent if the first POST partially fails.
+    async function ensureSession() {
+      if (t.sessionId) return t.sessionId;
+      if (t.creating) return t.creating;
+
+      if (!t.uuid) {
+        // crypto.randomUUID is supported in every modern browser; fall back
+        // to a timestamp+random string if unavailable (ancient iOS Safari).
+        t.uuid =
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `fallback-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+
+      t.creating = api
+        .createDraftSession({
+          session_uuid: t.uuid,
+          user_id: user?.id || null,
+          mock_type: 'team',
+          user_team: team,
+          randomness,
+          algo_config_snapshot: getAlgoConfig(),
+          draft_year: 2026,
+        })
+        .then((r) => {
+          t.sessionId = r?.session_id ?? null;
+          return t.sessionId;
+        })
+        .catch((e) => {
+          console.warn('[telemetry] createDraftSession failed:', e.message);
+          return null;
+        })
+        .finally(() => {
+          t.creating = null;
+        });
+      return t.creating;
+    }
+
+    // Debounced flush: batch rapid bot picks into one POST. 600ms matches
+    // the upper end of the current SPEED_STEPS so a "Fast" auto-run flushes
+    // every few picks, while a "Slow" run flushes each pick individually.
+    if (t.flushTimer) clearTimeout(t.flushTimer);
+    t.flushTimer = setTimeout(async () => {
+      t.flushTimer = null;
+      const sessionId = await ensureSession();
+      if (!sessionId) return; // session create failed — drop this flush
+
+      const startIdx = t.sentCount;
+      const batch = picks.slice(startIdx);
+      if (batch.length === 0) return;
+
+      // Optimistically advance sentCount so a concurrent effect run doesn't
+      // re-send the same picks. If the POST fails we roll back.
+      t.sentCount = picks.length;
+      try {
+        await api.logDraftSessionPicks(sessionId, batch);
+      } catch (e) {
+        console.warn('[telemetry] logDraftSessionPicks failed:', e.message);
+        t.sentCount = startIdx; // retry on next flush
+      }
+    }, 600);
+  }, [picks, team, randomness, user]);
+
+  // When the draft completes, flush any trailing picks immediately and mark
+  // the session complete so we can distinguish "finished" from "abandoned"
+  // in later analysis.
+  useEffect(() => {
+    if (phase !== PHASE_DONE) return;
+    const t = telemetry.current;
+    (async () => {
+      if (t.flushTimer) { clearTimeout(t.flushTimer); t.flushTimer = null; }
+      const sessionId = t.sessionId || (t.creating ? await t.creating : null);
+      if (!sessionId) return;
+      const trailing = picks.slice(t.sentCount);
+      if (trailing.length > 0) {
+        try {
+          await api.logDraftSessionPicks(sessionId, trailing);
+          t.sentCount = picks.length;
+        } catch (e) {
+          console.warn('[telemetry] final flush failed:', e.message);
+        }
+      }
+      try {
+        await api.completeDraftSession(sessionId);
+      } catch (e) {
+        console.warn('[telemetry] completeDraftSession failed:', e.message);
+      }
+    })();
+  }, [phase, picks]);
+
   // ── Actions ────────────────────────────────────────────────────────────────
   function start() { setPhase(PHASE_RUNNING); }
   function pause() { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); }
@@ -1577,6 +1700,16 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }
 
   function restart() {
+    // Clear telemetry state so the next run mints a fresh session uuid
+    // and starts its own row in draft_sessions — otherwise "restart" would
+    // silently append picks to the previous (already-completed) session.
+    const t = telemetry.current;
+    if (t.flushTimer) { clearTimeout(t.flushTimer); t.flushTimer = null; }
+    t.uuid = null;
+    t.sessionId = null;
+    t.sentCount = 0;
+    t.creating = null;
+
     setPicks([]);
     setTrades([]);
     setPhase(PHASE_READY);

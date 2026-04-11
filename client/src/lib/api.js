@@ -102,6 +102,19 @@ export const api = {
     }),
   deleteTeamMock: (id) => request(`/api/team-mocks/${id}`, { method: 'DELETE' }),
 
+  // Draft-session telemetry (Phase 5). Fire-and-forget from the caller —
+  // all telemetry failures are swallowed by the DraftSimulator wrapper so
+  // they never block the live draft flow.
+  createDraftSession: (payload) =>
+    request('/api/draft-sessions', { method: 'POST', body: payload }),
+  logDraftSessionPicks: (sessionId, picks) =>
+    request(`/api/draft-sessions/${sessionId}/picks`, {
+      method: 'POST',
+      body: { picks },
+    }),
+  completeDraftSession: (sessionId) =>
+    request(`/api/draft-sessions/${sessionId}`, { method: 'PATCH' }),
+
   // admin
   adminGetAlgoConfig: (key) => request('/api/admin/algo-config', { adminKey: key }),
   adminSaveAlgoConfig: (key, config) =>

@@ -116,6 +116,47 @@ INSERT INTO draft_settings (id, draft_year, is_locked)
 VALUES (1, 2026, FALSE)
 ON CONFLICT (id) DO NOTHING;
 
+-- Phase 5: draft-session telemetry. Every mock draft (saved or abandoned,
+-- authenticated or anonymous) creates a draft_sessions row, and every pick
+-- (user and bot) logs into draft_session_picks. This is an append-only log
+-- layer separate from mocks / mock_picks, which remain the explicitly
+-- curated save concept. Anonymous sessions are allowed (user_id NULLABLE)
+-- so we capture all traffic, not just logged-in users.
+CREATE TABLE IF NOT EXISTS draft_sessions (
+  id BIGSERIAL PRIMARY KEY,
+  session_uuid UUID NOT NULL UNIQUE,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  mock_type VARCHAR(20) NOT NULL,
+  user_team VARCHAR(5),
+  randomness REAL,
+  algo_config_snapshot JSONB DEFAULT '{}'::jsonb,
+  draft_year INTEGER,
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS draft_session_picks (
+  id BIGSERIAL PRIMARY KEY,
+  session_id BIGINT NOT NULL REFERENCES draft_sessions(id) ON DELETE CASCADE,
+  pick_number INTEGER NOT NULL CHECK (pick_number BETWEEN 1 AND 262),
+  round INTEGER NOT NULL,
+  team VARCHAR(5) NOT NULL,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+  is_user BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (session_id, pick_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_draft_sessions_started_at ON draft_sessions(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_draft_sessions_user_id ON draft_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_draft_sessions_mock_type ON draft_sessions(mock_type);
+CREATE INDEX IF NOT EXISTS idx_draft_session_picks_session ON draft_session_picks(session_id);
+CREATE INDEX IF NOT EXISTS idx_draft_session_picks_player ON draft_session_picks(player_id);
+-- Partial index: the hot path for consensus-board analysis is "at pick N,
+-- what have users picked?" — so index only user picks by (pick_number, player_id).
+CREATE INDEX IF NOT EXISTS idx_draft_session_picks_consensus
+  ON draft_session_picks(pick_number, player_id) WHERE is_user = TRUE;
+
 CREATE INDEX IF NOT EXISTS idx_mocks_user_id ON mocks(user_id);
 CREATE INDEX IF NOT EXISTS idx_mocks_total_score ON mocks(total_score DESC, submitted_at ASC);
 CREATE INDEX IF NOT EXISTS idx_mock_picks_mock_id ON mock_picks(mock_id);
