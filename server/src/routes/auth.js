@@ -6,7 +6,7 @@ const router = Router();
 
 // In-memory CSRF state store. Fine for single-instance server.
 // Entries older than 10 minutes are swept on each callback.
-// Value shape: { provider, createdAt }
+// Value shape: { provider, createdAt, intent?: 'link', linkingUserId?: string }
 const stateStore = new Map();
 
 // Per-provider OAuth config. Adding a new provider means adding an entry here
@@ -87,8 +87,16 @@ function redirectToFrontend(res, pathWithHash) {
   res.redirect(`${frontendUrl()}${pathWithHash}`);
 }
 
-// Kick off the OAuth flow for any configured provider.
-router.get('/:provider', (req, res, next) => {
+// Kick off the OAuth flow for any configured provider. Supports two modes:
+//   - Normal sign-in: GET /api/auth/:provider
+//   - Link intent:    GET /api/auth/:provider?link=1&user=<uuid>
+// Link intent attaches the resulting identity to an existing user instead of
+// creating a new one. The user id is stashed in the state token so the
+// callback knows who to link to. Security note: this trusts the client's
+// assertion of user id (same threat model as the rest of the app's
+// localStorage-based session). If the session model is upgraded later, this
+// should be replaced with a server-validated session.
+router.get('/:provider', async (req, res, next) => {
   const providerKey = req.params.provider;
   if (!PROVIDERS[providerKey]) return next();
 
@@ -97,8 +105,33 @@ router.get('/:provider', (req, res, next) => {
     return redirectToFrontend(res, '/auth/callback#error=not_configured');
   }
 
+  // Link-intent validation: the target user must exist.
+  const isLink = req.query.link === '1';
+  let linkingUserId = null;
+  if (isLink) {
+    const rawUser = typeof req.query.user === 'string' ? req.query.user : null;
+    if (!rawUser) {
+      return redirectToFrontend(res, '/auth/callback#error=link_user_missing');
+    }
+    try {
+      const { rows } = await pool.query('SELECT id FROM users WHERE id = $1', [rawUser]);
+      if (!rows.length) {
+        return redirectToFrontend(res, '/auth/callback#error=link_user_missing');
+      }
+      linkingUserId = rows[0].id;
+    } catch (e) {
+      console.error('[auth link init]', e);
+      return redirectToFrontend(res, '/auth/callback#error=auth_failed');
+    }
+  }
+
   const state = crypto.randomBytes(16).toString('hex');
-  stateStore.set(state, { provider: providerKey, createdAt: Date.now() });
+  const entry = { provider: providerKey, createdAt: Date.now() };
+  if (isLink) {
+    entry.intent = 'link';
+    entry.linkingUserId = linkingUserId;
+  }
+  stateStore.set(state, entry);
 
   const url = new URL(cfg.authUrl);
   url.searchParams.set('client_id', cfg.clientId);
@@ -180,6 +213,40 @@ router.get('/:provider/callback', async (req, res, next) => {
       [providerKey, profile.providerAccountId]
     );
 
+    // ---- Link intent branch -----------------------------------------------
+    // The user was already authenticated and initiated a link flow from
+    // /settings. Attach the new identity to that existing user instead of
+    // creating a new one.
+    if (entry.intent === 'link') {
+      const targetUserId = entry.linkingUserId;
+
+      if (existingIdentity.rows.length) {
+        const boundUserId = existingIdentity.rows[0].user_id;
+        if (boundUserId === targetUserId) {
+          // Idempotent: re-linking the same identity is a no-op success.
+          return redirectToFrontend(res, `/auth/callback#linked=already&provider=${providerKey}`);
+        }
+        // Already linked to a different user — refuse rather than overwrite.
+        return redirectToFrontend(
+          res,
+          `/auth/callback#error=already_linked_other&provider=${providerKey}`
+        );
+      }
+
+      // Not linked yet — attach to the target user.
+      await pool.query(
+        `INSERT INTO user_identities
+           (user_id, provider, provider_account_id, email, avatar_url)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [targetUserId, providerKey, profile.providerAccountId, profile.email, profile.avatarUrl]
+      );
+      return redirectToFrontend(
+        res,
+        `/auth/callback#linked=1&provider=${providerKey}&id=${targetUserId}`
+      );
+    }
+
+    // ---- Normal sign-in branch --------------------------------------------
     let user;
     if (existingIdentity.rows.length) {
       user = {
@@ -235,6 +302,73 @@ router.get('/:provider/callback', async (req, res, next) => {
   } catch (e) {
     console.error(`[${providerKey} auth]`, e);
     return redirectToFrontend(res, '/auth/callback#error=auth_failed');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Identity management — list + unlink linked providers for a user. Used by
+// the Account Settings page. These endpoints trust the caller's assertion
+// of user id (same session model as the rest of the app). When the session
+// model is hardened, add auth middleware here.
+// ---------------------------------------------------------------------------
+
+// List all linked providers for a user.
+router.get('/users/:userId/identities', async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const { rows: userRows } = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (!userRows.length) return res.status(404).json({ error: 'user not found' });
+
+    const { rows } = await pool.query(
+      `SELECT provider, provider_account_id, email, avatar_url, created_at
+       FROM user_identities
+       WHERE user_id = $1
+       ORDER BY created_at ASC`,
+      [userId]
+    );
+    // Return the full catalog of configured providers so the UI can render
+    // both "linked" and "available to link" states from one payload.
+    const configured = Object.keys(PROVIDERS).filter((k) => !!getProviderConfig(k));
+    res.json({
+      identities: rows,
+      available_providers: configured,
+    });
+  } catch (e) {
+    console.error('[auth identities list]', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+// Unlink a provider from a user. Refuses to remove the user's last
+// remaining identity (that would lock them out permanently).
+router.delete('/users/:userId/identities/:provider', async (req, res) => {
+  const { userId, provider } = req.params;
+  if (!PROVIDERS[provider]) return res.status(400).json({ error: 'unknown provider' });
+
+  try {
+    const { rows: userRows } = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (!userRows.length) return res.status(404).json({ error: 'user not found' });
+
+    const { rows: allIdents } = await pool.query(
+      'SELECT provider FROM user_identities WHERE user_id = $1',
+      [userId]
+    );
+    if (allIdents.length <= 1) {
+      return res.status(400).json({ error: 'cannot_unlink_last' });
+    }
+    const targetExists = allIdents.some((r) => r.provider === provider);
+    if (!targetExists) {
+      return res.status(404).json({ error: 'identity not linked' });
+    }
+
+    await pool.query(
+      'DELETE FROM user_identities WHERE user_id = $1 AND provider = $2',
+      [userId, provider]
+    );
+    res.status(204).end();
+  } catch (e) {
+    console.error('[auth identities unlink]', e);
+    res.status(500).json({ error: 'server error' });
   }
 });
 

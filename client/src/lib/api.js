@@ -4,6 +4,15 @@ export const API_BASE = BASE;
 export const DISCORD_AUTH_URL = `${BASE}/api/auth/discord`;
 export const GOOGLE_AUTH_URL = `${BASE}/api/auth/google`;
 
+// Build a link-intent OAuth URL for an already-authenticated user. The
+// server reads `link=1&user=<uuid>` to know this is a link flow, not a new
+// sign-in, and attaches the resulting identity to the given user instead
+// of creating a new account.
+export function linkProviderUrl(provider, userId) {
+  const qs = new URLSearchParams({ link: '1', user: userId });
+  return `${BASE}/api/auth/${provider}?${qs.toString()}`;
+}
+
 // Routes an ESPN CDN image URL through our server-side proxy so html-to-image
 // can read it into a canvas. Without this, cross-origin images taint the
 // canvas and the capture silently loses them.
@@ -93,6 +102,10 @@ export const api = {
   getUserByName: (name) => request(`/api/users/by-name?name=${encodeURIComponent(name)}`),
   createUser: (display_name) => request('/api/users', { method: 'POST', body: { display_name } }),
   getUser: (id) => request(`/api/users/${id}`),
+  // Linked-provider management (Account Settings page)
+  getUserIdentities: (userId) => request(`/api/auth/users/${userId}/identities`),
+  unlinkProvider: (userId, provider) =>
+    request(`/api/auth/users/${userId}/identities/${provider}`, { method: 'DELETE' }),
   submitMock: (user_id, picks) => {
     invalidateCache('stats');
     // picks may include { pick_number, player_id, is_confident? }

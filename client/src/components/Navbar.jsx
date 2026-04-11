@@ -119,10 +119,17 @@ export default function Navbar() {
           </div>
           {user ? (
             <div className="flex items-center gap-2.5 pl-3 ml-1 border-l border-border-subtle">
-              <Avatar url={user.avatar_url} name={user.display_name} size="xs" />
-              <span className="font-display uppercase tracking-[0.14em] text-[11px] text-text-secondary">
-                {prettyName(user.display_name)}
-              </span>
+              <Link
+                to="/settings"
+                className="flex items-center gap-2.5 group"
+                aria-label="Account settings"
+                title="Account settings"
+              >
+                <Avatar url={user.avatar_url} name={user.display_name} size="xs" />
+                <span className="font-display uppercase tracking-[0.14em] text-[11px] text-text-secondary group-hover:text-text-primary transition-colors">
+                  {prettyName(user.display_name)}
+                </span>
+              </Link>
               <button
                 onClick={signOut}
                 className="font-display uppercase tracking-[0.14em] text-[10px] text-text-muted hover:text-text-primary transition"
@@ -258,15 +265,20 @@ export default function Navbar() {
             <div className="max-w-6xl mx-auto px-4 py-4 border-t border-border-subtle">
               {user ? (
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
+                  <Link
+                    to="/settings"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex items-center gap-3 min-w-0 flex-1 group"
+                    aria-label="Account settings"
+                  >
                     <Avatar url={user.avatar_url} name={user.display_name} size="sm" />
                     <div className="min-w-0">
-                      <div className="font-display uppercase tracking-[0.12em] text-[12px] text-text-primary truncate">
+                      <div className="font-display uppercase tracking-[0.12em] text-[12px] text-text-primary truncate group-hover:text-accent transition-colors">
                         {prettyName(user.display_name)}
                       </div>
-                      <div className="text-[11px] text-text-muted">Signed in</div>
+                      <div className="text-[11px] text-text-muted">Account settings</div>
                     </div>
-                  </div>
+                  </Link>
                   <button
                     onClick={() => {
                       signOut();
@@ -287,7 +299,7 @@ export default function Navbar() {
                     boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)',
                   }}
                 >
-                  Sign in with Discord
+                  Sign in
                 </Link>
               )}
             </div>
