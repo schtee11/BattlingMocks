@@ -40,14 +40,39 @@ import { getAlgoConfig } from './algoConfig.js';
 // slider.
 
 const POS_ALIASES = {
-  DL: 'DT', DE: 'EDGE', OG: 'IOL', OC: 'IOL',
-  C: 'IOL', G: 'IOL', ILB: 'LB', OLB: 'LB',
+  // Defensive line
+  DL: 'DT', DE: 'EDGE', NT: 'DT',
+  // Offensive line (interior)
+  OG: 'IOL', OC: 'IOL', C: 'IOL', G: 'IOL', RG: 'IOL', LG: 'IOL',
+  // Offensive line (tackle)
+  T: 'OT', LT: 'OT', RT: 'OT',
+  // Linebackers
+  ILB: 'LB', OLB: 'LB', MLB: 'LB',
+  // Defensive backs
   FS: 'S', SS: 'S', DB: 'CB',
+  // Backs
+  HB: 'RB', FB: 'RB',
 };
 function normalizePos(pos) {
   if (!pos) return '';
   const up = String(pos).toUpperCase().trim();
   return POS_ALIASES[up] || up;
+}
+
+// Need-token expansions — tokens an admin may enter in the Team Needs UI
+// that should match MULTIPLE canonical player positions with the same
+// priority. "OL" in particular is commonly used to mean "any offensive
+// line help" (tackle OR interior), so it expands to both OT and IOL.
+const NEEDS_EXPANSIONS = {
+  OL: ['OT', 'IOL'],
+};
+
+function expandNeedToken(token) {
+  if (!token) return [];
+  const up = String(token).toUpperCase().trim();
+  if (NEEDS_EXPANSIONS[up]) return NEEDS_EXPANSIONS[up];
+  const norm = normalizePos(up);
+  return norm ? [norm] : [];
 }
 
 function positionTierMultiplier(canonicalPos, cfg) {
@@ -58,11 +83,21 @@ function positionTierMultiplier(canonicalPos, cfg) {
 export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pickNumber = 999 }) {
   if (!available || available.length === 0) return null;
 
-  const needs = (teamNeeds || []).map(normalizePos).filter(Boolean);
+  // Build a position → priority map. Each input token can expand to MULTIPLE
+  // canonical positions (e.g. "OL" → ["OT","IOL"]); all expanded positions
+  // from the same token share the same priority index, so an admin listing
+  // "OL" as their top need effectively boosts both tackles and interior
+  // linemen equally at priority 0.
   const needsPriority = new Map();
-  needs.forEach((pos, i) => {
-    if (!needsPriority.has(pos)) needsPriority.set(pos, i);
-  });
+  let priorityCounter = 0;
+  for (const token of teamNeeds || []) {
+    const positions = expandNeedToken(token);
+    if (positions.length === 0) continue;
+    for (const pos of positions) {
+      if (!needsPriority.has(pos)) needsPriority.set(pos, priorityCounter);
+    }
+    priorityCounter++;
+  }
 
   const cfg = getAlgoConfig();
 
