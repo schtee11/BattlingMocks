@@ -148,12 +148,13 @@ export function computePickValueScore(pick, player, roundNumber, needRank = -1) 
   else tierBonus = -3;
 
   // ── Need-awareness bonus ──
-  // Drafting to fill a team need reflects smart roster-building. Top-2 needs
-  // get a stronger bonus; remaining needs get a smaller bump. Only the first
-  // pick at each need position receives the bonus (tracked by caller).
-  // Picking the best available at a need should feel like "Great value".
-  const needBonus = needRank >= 0 && needRank <= 1 ? 8
-    : needRank >= 2 && needRank <= 4 ? 5
+  // Drafting to fill a team need is the core of smart roster-building.
+  // Top-2 needs: +15 so at-value pick at a top need → 95 (A).
+  // Needs 2-4: +10 so at-value pick at a lower need → 90 (A-).
+  // This lets users who draft best-available at needs hit mid/high 90s.
+  // Only the first pick at each need position receives the bonus.
+  const needBonus = needRank >= 0 && needRank <= 1 ? 15
+    : needRank >= 2 && needRank <= 4 ? 10
     : 0;
 
   const score = Math.max(0, Math.min(100, Math.round(adpScore + tierBonus + needBonus)));
