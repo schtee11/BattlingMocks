@@ -116,7 +116,7 @@ describe('computePickValueScore', () => {
     const pick = makePick({ pick_number: 15 });
     const player = makePlayer({ rank: 5, position: 'EDGE' });
     const result = computePickValueScore(pick, player, 1);
-    // delta = +10: base 75 + 8*3.75 + 2*1.5 = 108 (capped 100), tier bonus +3
+    // delta = +10: base 80 + 8*3.0 + 2*1.5 = 107 (capped 100), tier bonus +3
     expect(result.score).toBeGreaterThanOrEqual(95);
     expect(result.delta).toBe(10);
     expect(result.tag).toMatch(/steal|value/i);
@@ -133,13 +133,13 @@ describe('computePickValueScore', () => {
     expect(result.delta).toBe(-15);
   });
 
-  it('centers at-value picks around base 75 (Good value)', () => {
+  it('centers at-value picks around base 80 (Good value / B-)', () => {
     const pick = makePick({ pick_number: 10 });
     const player = makePlayer({ rank: 10, position: 'EDGE' });
     const result = computePickValueScore(pick, player, 1);
-    // delta = 0: base 75, tier bonus 0 (tier 1 at tier 1 slot), no need bonus
-    expect(result.score).toBeGreaterThanOrEqual(72);
-    expect(result.score).toBeLessThanOrEqual(78);
+    // delta = 0: base 80, tier bonus 0 (tier 1 at tier 1 slot), no need bonus
+    expect(result.score).toBeGreaterThanOrEqual(77);
+    expect(result.score).toBeLessThanOrEqual(83);
     expect(result.tag).toBe('Good value');
   });
 
@@ -198,8 +198,8 @@ describe('computePickValueScore', () => {
     const player = makePlayer({ rank: 26, position: 'DT' });
     // needRank 0 = top need → +5 bonus
     const result = computePickValueScore(pick, player, 1, 0);
-    // base 75 + 0 (delta) + 0 (tier) + 5 (need) = 80
-    expect(result.score).toBeGreaterThanOrEqual(78);
+    // base 80 + 0 (delta) + 0 (tier) + 5 (need) = 85
+    expect(result.score).toBeGreaterThanOrEqual(83);
     expect(result.tag).toBe('Good value');
   });
 
@@ -208,8 +208,8 @@ describe('computePickValueScore', () => {
     const player = makePlayer({ rank: 126, position: 'CB' });
     // needRank 3 = lower need → +3 bonus
     const result = computePickValueScore(pick, player, 4, 3);
-    // base 75 + 0 + 0 + 3 = 78
-    expect(result.score).toBeGreaterThanOrEqual(76);
+    // base 80 + 0 + 0 + 3 = 83
+    expect(result.score).toBeGreaterThanOrEqual(81);
     expect(result.tag).toBe('Good value');
   });
 
@@ -219,8 +219,8 @@ describe('computePickValueScore', () => {
     const withNeed = computePickValueScore(pick, player, 2, 0);
     const withoutNeed = computePickValueScore(pick, player, 2, -1);
     expect(withNeed.score).toBeGreaterThan(withoutNeed.score);
-    // Without need: base 75, at-value → "Good value" (need bonus adds on top)
-    expect(withoutNeed.score).toBe(75);
+    // Without need: base 80, at-value → "Good value" (need bonus adds on top)
+    expect(withoutNeed.score).toBe(80);
   });
 
   it('need bonus offsets slight reaches for need-filling picks', () => {
@@ -389,9 +389,9 @@ describe('computeTeamMockGrade', () => {
     );
     const result = computeTeamMockGrade(input);
     expect(result.relativeRank).not.toBeNull();
-    // total ≈ pickValue * 0.40 + rosterBuild * 0.35 + relativeRank * 0.25
+    // total ≈ pickValue * 0.50 + rosterBuild * 0.40 + relativeRank * 0.10
     const expected = Math.round(
-      result.pickValue * 0.40 + result.rosterBuild * 0.35 + result.relativeRank * 0.25
+      result.pickValue * 0.50 + result.rosterBuild * 0.40 + result.relativeRank * 0.10
     );
     expect(Math.abs(result.total - expected)).toBeLessThanOrEqual(1);
   });

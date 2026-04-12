@@ -1431,10 +1431,10 @@ function ResultsView({
             {/* Component breakdown */}
             <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
-                { label: 'Pick Value', score: draftGrade.pickValue, weight: '40%' },
-                { label: 'Roster Build', score: draftGrade.rosterBuild, weight: '35%' },
+                { label: 'Pick Value', score: draftGrade.pickValue, weight: '50%' },
+                { label: 'Roster Build', score: draftGrade.rosterBuild, weight: '40%' },
                 ...(draftGrade.relativeRank != null
-                  ? [{ label: 'vs League', score: draftGrade.relativeRank, weight: '25%' }]
+                  ? [{ label: 'vs League', score: draftGrade.relativeRank, weight: '10%' }]
                   : []),
               ].map(({ label, score, weight }) => (
                 <div key={label}>
