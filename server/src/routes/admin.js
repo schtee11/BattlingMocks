@@ -741,4 +741,89 @@ router.post('/score', async (_req, res) => {
   }
 });
 
+// ---------- Volume stats (data-set health dashboard) ----------
+router.get('/volume-stats', async (req, res) => {
+  const year = parseInt(req.query.year, 10) || 2026;
+  try {
+    // 1) High-level session counts
+    const { rows: [overview] } = await pool.query(`
+      SELECT
+        COUNT(*)::int                                           AS total_sessions,
+        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS completed,
+        SUM(CASE WHEN completed_at IS NULL THEN 1 ELSE 0 END)::int     AS abandoned,
+        COUNT(DISTINCT user_id)::int                            AS unique_users,
+        SUM(CASE WHEN user_id IS NULL THEN 1 ELSE 0 END)::int  AS anonymous_sessions,
+        ROUND(EXTRACT(EPOCH FROM AVG(
+          CASE WHEN completed_at IS NOT NULL THEN completed_at - started_at END
+        )))::int                                                AS avg_duration_sec,
+        MIN(started_at)                                         AS earliest_session,
+        MAX(started_at)                                         AS latest_session
+      FROM draft_sessions
+      WHERE draft_year = $1
+    `, [year]);
+
+    // 2) Breakdown by mock_type
+    const { rows: byType } = await pool.query(`
+      SELECT
+        mock_type,
+        COUNT(*)::int                                           AS total,
+        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS completed,
+        COUNT(DISTINCT user_id)::int                            AS unique_users
+      FROM draft_sessions
+      WHERE draft_year = $1
+      GROUP BY mock_type
+      ORDER BY mock_type
+    `, [year]);
+
+    // 3) Team mock breakdown by user_team (the money query)
+    const { rows: byTeam } = await pool.query(`
+      SELECT
+        user_team,
+        COUNT(*)::int                                           AS total,
+        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS completed,
+        COUNT(DISTINCT user_id)::int                            AS unique_users
+      FROM draft_sessions
+      WHERE draft_year = $1 AND mock_type = 'team'
+      GROUP BY user_team
+      ORDER BY completed DESC, user_team
+    `, [year]);
+
+    // 4) Daily volume over last 30 days
+    const { rows: daily } = await pool.query(`
+      SELECT
+        started_at::date                                        AS day,
+        COUNT(*)::int                                           AS total,
+        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS completed,
+        SUM(CASE WHEN mock_type = 'team' AND completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS team_completed
+      FROM draft_sessions
+      WHERE draft_year = $1
+        AND started_at >= NOW() - INTERVAL '30 days'
+      GROUP BY started_at::date
+      ORDER BY day DESC
+    `, [year]);
+
+    // 5) Top users by completed team mocks
+    const { rows: topUsers } = await pool.query(`
+      SELECT
+        ds.user_id,
+        u.display_name,
+        COUNT(*)::int AS completed_team_mocks
+      FROM draft_sessions ds
+      LEFT JOIN users u ON u.id = ds.user_id
+      WHERE ds.draft_year = $1
+        AND ds.mock_type = 'team'
+        AND ds.completed_at IS NOT NULL
+        AND ds.user_id IS NOT NULL
+      GROUP BY ds.user_id, u.display_name
+      ORDER BY completed_team_mocks DESC
+      LIMIT 15
+    `, [year]);
+
+    res.json({ year, overview, byType, byTeam, daily, topUsers });
+  } catch (e) {
+    console.error('[volume-stats]', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
 export default router;

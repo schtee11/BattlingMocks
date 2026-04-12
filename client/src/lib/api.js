@@ -227,4 +227,6 @@ export const api = {
   runScore: (key) => request('/api/admin/score', { method: 'POST', adminKey: key }),
   toggleLock: (key, is_locked) =>
     request('/api/admin/lock', { method: 'POST', body: { is_locked }, adminKey: key }),
+  volumeStats: (key, year = 2026) =>
+    request(`/api/admin/volume-stats?year=${year}`, { adminKey: key }),
 };
