@@ -7,6 +7,7 @@ import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam, normalizePos } from '../lib/botPicker.js';
 import { loadAlgoConfig, getAlgoConfig } from '../lib/algoConfig.js';
+import { computeTeamMockGrade, letterFromScore, gradeColor } from '../lib/draftGrader.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -1017,137 +1018,6 @@ const ExportCard = forwardRef(function ExportCard(
 // Shown right after the draft finishes. Shows only the user's picks (not the
 // full 262-pick board), any trades made during the mock, and save/share CTAs.
 // Share produces the same PNG image as SavedView via ExportCard.
-// Convert a 0..100 combined grade into a letter (A+ to F).
-// Tuned so that a "decent" mock (fair-value picks + addressing top needs)
-// lands in the B range, while genuinely bad drafts still drop to D/F.
-function letterFromScore(score) {
-  if (score >= 93) return 'A+';
-  if (score >= 88) return 'A';
-  if (score >= 83) return 'A-';
-  if (score >= 78) return 'B+';
-  if (score >= 73) return 'B';
-  if (score >= 68) return 'B-';
-  if (score >= 63) return 'C+';
-  if (score >= 57) return 'C';
-  if (score >= 51) return 'C-';
-  if (score >= 44) return 'D';
-  return 'F';
-}
-
-// Color paired with letter grades.
-function gradeColor(letter) {
-  if (!letter) return '#94a3b8';
-  if (letter.startsWith('A')) return '#34d399';
-  if (letter.startsWith('B')) return '#fbbf24';
-  if (letter.startsWith('C')) return '#f97316';
-  return '#ef4444';
-}
-
-// Compute the draft grade for a team mock.
-//
-// Value score (50%) — did you steal or reach?
-//   For each user pick, compare player's consensus_rank to pick_number.
-//   delta = pick_number - consensus_rank  (positive = steal, negative = reach)
-//   Per-pick score = clamp(80 + delta * 1.5, 0, 100).
-//   This recenters "fair value" (delta = 0) at 80 (B+) — getting expected
-//   value isn't a C, it's a good pick. A 13-spot reach drops you a full
-//   letter grade; a 13-spot steal pushes you to A+. Until consensus_rank is
-//   backfilled, we fall back to the player's seeded rank (player.rank,
-//   which the /api/players query computes via ROW_NUMBER over
-//   COALESCE(consensus_rank, 9999), id). When BOTH are missing (unseeded
-//   prospect), default to a neutral 75.
-//
-// Need score (50%) — did you fill your top team needs?
-//   Walk the team's team_needs array (admin-ordered top-to-bottom). For each
-//   user pick:
-//     - First time addressing a listed need: 100 (top need) sliding to 75
-//       (last listed need)
-//     - Second pick at a need you already covered: 65 (depth pick — not
-//       punished, just below first-hit credit)
-//     - Position that isn't on the team's needs list at all: 55 (BPA / depth,
-//       still useful, not a wasted pick)
-//     - No needs data on the team at all: 75 (mildly positive default)
-//
-// Final: grade = 0.5 * value + 0.5 * need, rounded.
-//
-// Tuning notes: with these defaults, an honest 7-round mock that addresses
-// 3-4 top needs and gets fair value should land around 75-80 (B/B+), while a
-// genuinely bad mock (huge reaches, ignoring all needs) drops into D/F. F is
-// reserved for combined scores under ~44, which is hard to hit without
-// reaching 30+ spots on multiple picks AND ignoring every team need.
-function computeTeamMockGrade({ myPicks, byId, teamNeeds = [] }) {
-  if (!myPicks || myPicks.length === 0) {
-    return { value: 0, need: 0, total: 0, letter: null, pickBreakdown: [] };
-  }
-
-  const needList = (Array.isArray(teamNeeds) ? teamNeeds : []).map((n) => String(n).toUpperCase());
-  const addressed = new Set();
-
-  const pickBreakdown = [];
-  let valueSum = 0;
-  let needSum = 0;
-  let valueCount = 0;
-  let needCount = 0;
-
-  for (const pick of myPicks) {
-    const player = byId.get(pick.player_id);
-    if (!player) continue;
-
-    // Value component. Centered at 80 (B+) for fair value (delta = 0).
-    // Each 1-spot delta moves the score by 1.5 points, so a 13-spot reach
-    // drops you a full letter grade.
-    const rank = Number(player.consensus_rank ?? player.rank);
-    let valueScore;
-    if (!Number.isFinite(rank) || rank <= 0) {
-      valueScore = 75; // neutral fallback for unranked players
-    } else {
-      const delta = pick.pick_number - rank;
-      valueScore = Math.max(0, Math.min(100, 80 + delta * 1.5));
-    }
-    valueSum += valueScore;
-    valueCount++;
-
-    // Need component. Generous on the floor — depth picks and BPA aren't
-    // bad, they just don't earn the "addressed a top need" bonus.
-    let needScore;
-    const pos = player.position?.toUpperCase();
-    if (needList.length === 0) {
-      needScore = 75; // no needs data → mildly positive default
-    } else {
-      const idx = needList.indexOf(pos);
-      if (idx === -1) {
-        needScore = 55; // not a listed need but not punished
-      } else if (addressed.has(pos)) {
-        needScore = 65; // depth pick at a need you already covered
-      } else {
-        addressed.add(pos);
-        // First listed need = 100, linearly scaled to 75 for the last listed need.
-        const penalty = (idx / Math.max(1, needList.length - 1)) * 25;
-        needScore = Math.round(100 - penalty);
-      }
-    }
-    needSum += needScore;
-    needCount++;
-
-    pickBreakdown.push({
-      pick_number: pick.pick_number,
-      round: pick.round,
-      player_name: player.name,
-      position: pos,
-      value_score: Math.round(valueScore),
-      need_score: Math.round(needScore),
-      is_reach: valueScore < 60,
-      is_steal: valueScore > 90,
-      hits_need: needList.includes(pos),
-    });
-  }
-
-  const value = valueCount ? Math.round(valueSum / valueCount) : 0;
-  const need = needCount ? Math.round(needSum / needCount) : 0;
-  const total = Math.round(value * 0.5 + need * 0.5);
-  return { value, need, total, letter: letterFromScore(total), pickBreakdown };
-}
-
 function ResultsView({
   team,
   picks,
@@ -1485,56 +1355,58 @@ function ResultsView({
         {/* ── Draft Grade ── */}
         {draftGrade.letter && (
           <div
-            className="mt-4 p-4 rounded-xl border flex items-center gap-5"
+            className="mt-4 p-4 rounded-xl border"
             style={{
               borderColor: `${gradeColor(draftGrade.letter)}55`,
               background: `${gradeColor(draftGrade.letter)}0d`,
             }}
           >
-            <div
-              className="shrink-0 flex items-center justify-center rounded-xl font-display font-bold"
-              style={{
-                width: 78,
-                height: 78,
-                background: `${gradeColor(draftGrade.letter)}18`,
-                color: gradeColor(draftGrade.letter),
-                fontSize: draftGrade.letter.length > 1 ? 38 : 48,
-                lineHeight: 1,
-                textShadow: `0 0 24px ${gradeColor(draftGrade.letter)}66`,
-                border: `1px solid ${gradeColor(draftGrade.letter)}40`,
-              }}
-            >
-              {draftGrade.letter}
+            <div className="flex items-center gap-5">
+              <div
+                className="shrink-0 flex items-center justify-center rounded-xl font-display font-bold"
+                style={{
+                  width: 78,
+                  height: 78,
+                  background: `${gradeColor(draftGrade.letter)}18`,
+                  color: gradeColor(draftGrade.letter),
+                  fontSize: draftGrade.letter.length > 1 ? 38 : 48,
+                  lineHeight: 1,
+                  textShadow: `0 0 24px ${gradeColor(draftGrade.letter)}66`,
+                  border: `1px solid ${gradeColor(draftGrade.letter)}40`,
+                }}
+              >
+                {draftGrade.letter}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                  Draft Grade
+                </div>
+                <div className="font-display font-bold uppercase tracking-wide text-text-primary text-[18px] mt-0.5">
+                  {draftGrade.total} / 100
+                </div>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                Draft Grade
-              </div>
-              <div className="font-display font-bold uppercase tracking-wide text-text-primary text-[18px] mt-0.5">
-                {draftGrade.total} / 100
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-                <div>
-                  <div className="font-display text-[9.5px] font-semibold uppercase tracking-[0.14em] text-text-muted">Value</div>
-                  <div className="font-mono font-bold tabular text-text-primary text-[14px]">{draftGrade.value}</div>
+            {/* 4-dimension breakdown */}
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: 'Value', score: draftGrade.value, weight: '35%' },
+                { label: 'Need Fit', score: draftGrade.needFit, weight: '30%' },
+                { label: 'Roster Build', score: draftGrade.rosterBuild, weight: '20%' },
+                { label: 'Strategy', score: draftGrade.strategy, weight: '15%' },
+              ].map(({ label, score, weight }) => (
+                <div key={label}>
+                  <div className="font-display text-[9px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                    {label} <span className="opacity-50">({weight})</span>
+                  </div>
+                  <div className="font-mono font-bold tabular text-text-primary text-[14px]">{score}</div>
                   <div className="h-1.5 mt-1 rounded-full bg-white/5 overflow-hidden">
                     <div
-                      className="h-full rounded-full"
-                      style={{ width: `${draftGrade.value}%`, background: gradeColor(draftGrade.letter) }}
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${score}%`, background: gradeColor(letterFromScore(score)) }}
                     />
                   </div>
                 </div>
-                <div>
-                  <div className="font-display text-[9.5px] font-semibold uppercase tracking-[0.14em] text-text-muted">Need fit</div>
-                  <div className="font-mono font-bold tabular text-text-primary text-[14px]">{draftGrade.need}</div>
-                  <div className="h-1.5 mt-1 rounded-full bg-white/5 overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${draftGrade.need}%`, background: gradeColor(draftGrade.letter) }}
-                    />
-                  </div>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         )}
@@ -1558,11 +1430,13 @@ function ResultsView({
                 </div>
                 <div className="flex-1 h-px bg-border-subtle" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 {myPicksByRound[r].map((pick) => {
                   const player = byId.get(pick.player_id);
                   if (!player) return null;
                   const color = posHex(player.position);
+                  const pb = draftGrade.pickBreakdown?.find((b) => b.pick_number === pick.pick_number);
+                  const pickLetterColor = pb ? gradeColor(pb.pick_grade) : '#94a3b8';
                   return (
                     <div
                       key={pick.pick_number}
@@ -1578,9 +1452,34 @@ function ResultsView({
                         <div className="text-[13px] font-semibold truncate text-text-primary">
                           {player.name}
                         </div>
-                        <div className="text-[10px] text-text-muted truncate">{player.school}</div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-text-muted truncate">{player.school}</span>
+                          {pb && (
+                            <span
+                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                              style={{ background: `${pickLetterColor}22`, color: pickLetterColor }}
+                            >
+                              {pb.value_tag}
+                            </span>
+                          )}
+                          {pb?.need_tag && pb.need_tag !== 'BPA / depth' && (
+                            <span className="text-[9px] font-semibold text-accent/80 uppercase">
+                              {pb.need_tag}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <PositionBadge position={player.position} />
+                      <div className="shrink-0 flex flex-col items-center">
+                        {pb && (
+                          <div
+                            className="font-display font-bold text-[14px]"
+                            style={{ color: pickLetterColor }}
+                          >
+                            {pb.pick_grade}
+                          </div>
+                        )}
+                        <PositionBadge position={player.position} />
+                      </div>
                     </div>
                   );
                 })}
