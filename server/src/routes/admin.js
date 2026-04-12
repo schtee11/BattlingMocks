@@ -762,20 +762,7 @@ router.get('/volume-stats', async (req, res) => {
       WHERE draft_year = $1
     `, [year]);
 
-    // 2) Breakdown by mock_type
-    const { rows: byType } = await pool.query(`
-      SELECT
-        mock_type,
-        COUNT(*)::int                                           AS total,
-        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS completed,
-        COUNT(DISTINCT user_id)::int                            AS unique_users
-      FROM draft_sessions
-      WHERE draft_year = $1
-      GROUP BY mock_type
-      ORDER BY mock_type
-    `, [year]);
-
-    // 3) Team mock breakdown by user_team (the money query)
+    // 2) Team mock breakdown by user_team (the money query)
     const { rows: byTeam } = await pool.query(`
       SELECT
         user_team,
@@ -818,7 +805,7 @@ router.get('/volume-stats', async (req, res) => {
       LIMIT 15
     `, [year]);
 
-    res.json({ year, overview, byType, byTeam, daily, topUsers });
+    res.json({ year, overview, byTeam, daily, topUsers });
   } catch (e) {
     console.error('[volume-stats]', e);
     res.status(500).json({ error: 'server error' });

@@ -1710,41 +1710,6 @@ export default function Admin() {
                 ))}
               </div>
 
-              {/* ── Breakdown by mock type ── */}
-              <Card className="p-5">
-                <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-3">
-                  By Mock Type
-                </h4>
-                {volumeStats.byType.length === 0 ? (
-                  <p className="text-text-muted text-xs">No sessions recorded yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {volumeStats.byType.map((row) => {
-                      const pct = row.total > 0 ? (row.completed / row.total) * 100 : 0;
-                      return (
-                        <div key={row.mock_type} className="flex items-center gap-3">
-                          <span className="font-mono text-[11px] text-text-primary w-16 shrink-0 uppercase font-bold">
-                            {row.mock_type}
-                          </span>
-                          <div className="flex-1 h-5 rounded-full bg-bg-deep overflow-hidden relative">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: row.mock_type === 'team' ? '#22c55e' : '#3b82f6',
-                              }}
-                            />
-                          </div>
-                          <span className="font-mono text-[11px] text-text-muted tabular-nums w-36 text-right shrink-0">
-                            {row.completed}/{row.total} completed · {row.unique_users} users
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-
               {/* ── Team mock breakdown (the money table) ── */}
               <Card className="p-5">
                 <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-1">
