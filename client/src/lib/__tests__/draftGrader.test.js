@@ -87,13 +87,18 @@ function buildFullDraftInput(userSpecs, cpuTeams, teamNeeds = ['EDGE', 'CB', 'WR
 
 // ─── letterFromScore ────────────────────────────────────────────────────────
 
-describe('letterFromScore', () => {
-  it('returns A+ for 90+', () => expect(letterFromScore(92)).toBe('A+'));
-  it('returns A for 83-89', () => expect(letterFromScore(85)).toBe('A'));
-  it('returns B+ for 73-77', () => expect(letterFromScore(74)).toBe('B+'));
-  it('returns B for 68-72', () => expect(letterFromScore(70)).toBe('B'));
-  it('returns C+ for 58-62', () => expect(letterFromScore(60)).toBe('C+'));
-  it('returns F for <35', () => expect(letterFromScore(20)).toBe('F'));
+describe('letterFromScore (academic scale)', () => {
+  it('returns A+ for 97+', () => expect(letterFromScore(98)).toBe('A+'));
+  it('returns A for 93-96', () => expect(letterFromScore(95)).toBe('A'));
+  it('returns A- for 90-92', () => expect(letterFromScore(91)).toBe('A-'));
+  it('returns B+ for 87-89', () => expect(letterFromScore(88)).toBe('B+'));
+  it('returns B for 83-86', () => expect(letterFromScore(85)).toBe('B'));
+  it('returns B- for 80-82', () => expect(letterFromScore(81)).toBe('B-'));
+  it('returns C+ for 77-79', () => expect(letterFromScore(78)).toBe('C+'));
+  it('returns C for 73-76', () => expect(letterFromScore(74)).toBe('C'));
+  it('returns C- for 70-72', () => expect(letterFromScore(71)).toBe('C-'));
+  it('returns D for 60-69', () => expect(letterFromScore(65)).toBe('D'));
+  it('returns F for <60', () => expect(letterFromScore(55)).toBe('F'));
 });
 
 describe('gradeColor', () => {

@@ -59,21 +59,20 @@ const STARTER_SLOTS = {
 const CRITICAL_POSITIONS = ['QB', 'WR', 'EDGE', 'OT', 'CB'];
 
 // ─── Letter grading ─────────────────────────────────────────────────────────
-// Thresholds tuned against Part 4 simulation runs so the user grade
-// distribution approximately matches:
-//   A/A+ ~10%,  A- ~15%,  B+ ~20%,  B ~20%,  B- ~15%,  C+ ~10%,  C/below ~10%
+// Standard academic scale so grades feel familiar to users.
+//   A = 90s, B = 80s, C = 70s, D = 60s, F = below 60
 
 export function letterFromScore(score) {
-  if (score >= 90) return 'A+';
-  if (score >= 83) return 'A';
-  if (score >= 78) return 'A-';
-  if (score >= 73) return 'B+';
-  if (score >= 68) return 'B';
-  if (score >= 63) return 'B-';
-  if (score >= 58) return 'C+';
-  if (score >= 52) return 'C';
-  if (score >= 45) return 'C-';
-  if (score >= 35) return 'D';
+  if (score >= 97) return 'A+';
+  if (score >= 93) return 'A';
+  if (score >= 90) return 'A-';
+  if (score >= 87) return 'B+';
+  if (score >= 83) return 'B';
+  if (score >= 80) return 'B-';
+  if (score >= 77) return 'C+';
+  if (score >= 73) return 'C';
+  if (score >= 70) return 'C-';
+  if (score >= 60) return 'D';
   return 'F';
 }
 
