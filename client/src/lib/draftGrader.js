@@ -101,12 +101,13 @@ export function computePickValueScore(pick, player, roundNumber) {
   const premium = getPositionPremium(pos);
 
   // ── Recalibrated ADP delta score ──
-  // Base 70: at-value picks land in the B range per-pick. Steals push into
-  // A/A+ territory; reaches drop into C/D. Penalty per spot of reach is
-  // intentionally lower than the steal reward — good drafters should be
-  // rewarded more than bad drafters are punished, and late-round prospect
-  // rankings have wider uncertainty margins.
-  const BASE = 70;
+  // Base 75: at-value picks land in the "Good value" range so the grading
+  // tone feels positive for reasonable drafting. Steals push well into A+;
+  // reaches drop proportionally. Penalty per spot of reach is intentionally
+  // lower than the steal reward — good drafters should be rewarded more than
+  // mild reaches are penalized, and late-round prospect rankings have wider
+  // uncertainty margins.
+  const BASE = 75;
   let adpScore;
   if (delta >= 0) {
     // Steal: +3.5 per spot up to 8, then +1.5 (diminishing returns on giant steals)
@@ -145,12 +146,12 @@ export function computePickValueScore(pick, player, roundNumber) {
   const score = Math.max(0, Math.min(100, Math.round(adpScore + tierBonus)));
 
   let tag;
-  if (score >= 95) tag = 'Elite steal';
-  else if (score >= 85) tag = 'Great value';
-  else if (score >= 75) tag = 'Good value';
-  else if (score >= 60) tag = 'Fair pick';
-  else if (score >= 47) tag = 'Slight reach';
-  else if (score >= 33) tag = 'Reach';
+  if (score >= 96) tag = 'Elite steal';
+  else if (score >= 86) tag = 'Great value';
+  else if (score >= 72) tag = 'Good value';
+  else if (score >= 58) tag = 'Fair pick';
+  else if (score >= 44) tag = 'Slight reach';
+  else if (score >= 30) tag = 'Reach';
   else tag = 'Big reach';
 
   return { score, delta, tag };

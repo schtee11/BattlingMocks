@@ -127,14 +127,14 @@ describe('computePickValueScore', () => {
     expect(result.tag).toMatch(/reach/i);
   });
 
-  it('centers at-value picks around base 70 (B range)', () => {
+  it('centers at-value picks around base 75 (Good value)', () => {
     const pick = makePick({ pick_number: 10 });
     const player = makePlayer({ rank: 10, position: 'EDGE' });
     const result = computePickValueScore(pick, player, 1);
-    // delta = 0: base 70, tier bonus 0 (tier 1 at tier 1 slot)
-    expect(result.score).toBeGreaterThanOrEqual(67);
-    expect(result.score).toBeLessThanOrEqual(75);
-    expect(result.tag).toBe('Fair pick');
+    // delta = 0: base 75, tier bonus 0 (tier 1 at tier 1 slot)
+    expect(result.score).toBeGreaterThanOrEqual(72);
+    expect(result.score).toBeLessThanOrEqual(78);
+    expect(result.tag).toBe('Good value');
   });
 
   it('applies tier bonus when player is from a better tier than expected', () => {
