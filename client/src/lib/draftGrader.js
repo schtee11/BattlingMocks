@@ -102,15 +102,17 @@ export function computePickValueScore(pick, player, roundNumber) {
 
   // ── Recalibrated ADP delta score ──
   // Base 70: at-value picks land in the B range per-pick. Steals push into
-  // A/A+ territory; reaches drop into C/D. Calibrated so elite drafters
-  // (avg delta +3-5) can hit 90+ total scores.
+  // A/A+ territory; reaches drop into C/D. Penalty per spot of reach is
+  // intentionally lower than the steal reward — good drafters should be
+  // rewarded more than bad drafters are punished, and late-round prospect
+  // rankings have wider uncertainty margins.
   const BASE = 70;
   let adpScore;
   if (delta >= 0) {
     // Steal: +3.5 per spot up to 8, then +1.5 (diminishing returns on giant steals)
     adpScore = BASE + Math.min(delta, 8) * 3.5 + Math.max(0, delta - 8) * 1.5;
   } else {
-    // Reach: -2.8 per spot, amplified in early rounds, discounted in late rounds.
+    // Reach: -2.0 per spot, amplified in early rounds, discounted in late rounds.
     // R1-2 are high-capital picks where reaches hurt most; R5-R7 are where
     // teams take fliers on developmental players and specialists.
     const roundMult = roundNumber <= 2 ? 1.3
@@ -123,7 +125,7 @@ export function computePickValueScore(pick, player, roundNumber) {
     // reaching for one is expected, not a mistake.
     const isSpecialist = pos === 'K' || pos === 'P' || pos === 'LS';
     const specialistDiscount = isSpecialist ? 0.20 : 1.0;
-    adpScore = BASE + delta * 2.8 * roundMult * premDiscount * specialistDiscount;
+    adpScore = BASE + delta * 2.0 * roundMult * premDiscount * specialistDiscount;
   }
 
   // ── Tier overlay ──
@@ -146,9 +148,9 @@ export function computePickValueScore(pick, player, roundNumber) {
   if (score >= 95) tag = 'Elite steal';
   else if (score >= 85) tag = 'Great value';
   else if (score >= 75) tag = 'Good value';
-  else if (score >= 65) tag = 'Fair pick';
-  else if (score >= 52) tag = 'Slight reach';
-  else if (score >= 38) tag = 'Reach';
+  else if (score >= 60) tag = 'Fair pick';
+  else if (score >= 47) tag = 'Slight reach';
+  else if (score >= 33) tag = 'Reach';
   else tag = 'Big reach';
 
   return { score, delta, tag };
