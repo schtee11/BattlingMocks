@@ -4,7 +4,8 @@ import { pool } from '../db/pool.js';
 const router = Router();
 
 // GET /api/analytics/r1-consensus
-// Most-picked players across all saved team mocks, with frequency + avg slot.
+// Most-picked players across all saved team mocks — USER picks only.
+// mp.team = m.team_abbr filters out bot picks (other teams' picks in a simulation).
 router.get('/r1-consensus', async (_req, res) => {
   try {
     const [playersResult, countResult] = await Promise.all([
@@ -24,6 +25,7 @@ router.get('/r1-consensus', async (_req, res) => {
         JOIN mock_picks mp ON mp.player_id = p.id
         JOIN mocks m ON m.id = mp.mock_id
         WHERE m.mock_type = 'team'
+          AND mp.team = m.team_abbr
         GROUP BY p.id
         ORDER BY pick_count DESC, avg_pick ASC
         LIMIT 50
@@ -44,8 +46,9 @@ router.get('/r1-consensus', async (_req, res) => {
 
 // GET /api/analytics/team-pick-breakdown/:team
 // For a team, returns every pick slot they own (across all 7 rounds) with the
-// top-3 player choices at each slot and pick percentages, sourced from all
-// saved team mocks.
+// top-3 player choices at each slot and pick percentages — USER picks only.
+// mp.team = m.team_abbr ensures we only count picks made by the user
+// simulating as this team, not bot picks for this team in someone else's sim.
 router.get('/team-pick-breakdown/:team', async (req, res) => {
   const team = (req.params.team || '').toUpperCase();
   if (!/^[A-Z0-9]{2,5}$/.test(team)) {
@@ -69,6 +72,7 @@ router.get('/team-pick-breakdown/:team', async (req, res) => {
           JOIN mocks m   ON m.id = mp.mock_id
           WHERE m.mock_type = 'team'
             AND mp.team = $1
+            AND m.team_abbr = $1
           GROUP BY mp.pick_number, mp.round, p.id, p.name, p.position, p.school, p.headshot_url
         ),
         slot_totals AS (
@@ -92,9 +96,8 @@ router.get('/team-pick-breakdown/:team', async (req, res) => {
       `, [team]),
       pool.query(`
         SELECT COUNT(DISTINCT m.id)::int AS total
-        FROM mock_picks mp
-        JOIN mocks m ON m.id = mp.mock_id
-        WHERE m.mock_type = 'team' AND mp.team = $1
+        FROM mocks m
+        WHERE m.mock_type = 'team' AND m.team_abbr = $1
       `, [team]),
     ]);
 
@@ -133,7 +136,7 @@ router.get('/team-pick-breakdown/:team', async (req, res) => {
 });
 
 // GET /api/analytics/positions
-// Position distribution across all saved team mocks.
+// Position distribution across all saved team mocks — USER picks only.
 router.get('/positions', async (_req, res) => {
   try {
     const [posResult, totalResult] = await Promise.all([
@@ -145,6 +148,7 @@ router.get('/positions', async (_req, res) => {
         JOIN mocks m ON m.id = mp.mock_id
         JOIN players p ON p.id = mp.player_id
         WHERE m.mock_type = 'team'
+          AND mp.team = m.team_abbr
         GROUP BY p.position
         ORDER BY pick_count DESC
       `),
@@ -153,6 +157,7 @@ router.get('/positions', async (_req, res) => {
         FROM mock_picks mp
         JOIN mocks m ON m.id = mp.mock_id
         WHERE m.mock_type = 'team'
+          AND mp.team = m.team_abbr
       `),
     ]);
 
