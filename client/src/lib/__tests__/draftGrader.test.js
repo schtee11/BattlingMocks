@@ -382,17 +382,15 @@ describe('computeTeamMockGrade', () => {
     expect(Math.abs(result.total - expected)).toBeLessThanOrEqual(1);
   });
 
-  it('uses 3-component scoring when allPicks is provided (user mode)', () => {
+  it('uses 2-component scoring even when allPicks is provided (user mode)', () => {
     const input = buildFullDraftInput(
       [{ rank: 5, position: 'EDGE', pick_number: 5 }],
       [{ team: 'NYJ', picks: [{ rank: 30, position: 'WR', pick_number: 2 }] }],
     );
     const result = computeTeamMockGrade(input);
-    expect(result.relativeRank).not.toBeNull();
-    // total ≈ pickValue * 0.50 + rosterBuild * 0.40 + relativeRank * 0.10
-    const expected = Math.round(
-      result.pickValue * 0.50 + result.rosterBuild * 0.40 + result.relativeRank * 0.10
-    );
+    expect(result.relativeRank).not.toBeNull(); // still computed, just not used in grade
+    // total = pickValue * 0.55 + rosterBuild * 0.45 (relativeRank excluded from grade)
+    const expected = Math.round(result.pickValue * 0.55 + result.rosterBuild * 0.45);
     expect(Math.abs(result.total - expected)).toBeLessThanOrEqual(1);
   });
 
@@ -484,32 +482,7 @@ describe('computeTeamMockGrade', () => {
       expect(['C+', 'C', 'C-', 'D', 'F']).toContain(result.letter);
     });
 
-    it('user grade is boosted by high relative rank', () => {
-      // User gets great players, CPU gets bad ones
-      const input = buildFullDraftInput(
-        [
-          { rank: 1, position: 'EDGE', pick_number: 5 },
-          { rank: 3, position: 'CB', pick_number: 15 },
-          { rank: 5, position: 'WR', pick_number: 25 },
-        ],
-        [
-          { team: 'NYJ', picks: [
-            { rank: 50, position: 'RB', pick_number: 2 },
-            { rank: 80, position: 'S', pick_number: 12 },
-            { rank: 100, position: 'LB', pick_number: 22 },
-          ]},
-        ],
-      );
-      const result = computeTeamMockGrade(input);
-      expect(result.relativeRank).toBe(100); // #1 team
-      // 3-component total should meet or exceed 2-component (CPU) scoring
-      // (when all components are near-max, rounding can make them equal)
-      const cpuTotal = Math.round(result.pickValue * 0.55 + result.rosterBuild * 0.45);
-      expect(result.total).toBeGreaterThanOrEqual(cpuTotal);
-    });
-
-    it('user grade is hurt by low relative rank', () => {
-      // User gets bad players, CPU gets great ones
+    it('relativeRank is still computed but does not affect total', () => {
       const input = buildFullDraftInput(
         [
           { rank: 80, position: 'RB', pick_number: 5 },
@@ -523,7 +496,10 @@ describe('computeTeamMockGrade', () => {
         ],
       );
       const result = computeTeamMockGrade(input);
-      expect(result.relativeRank).toBe(30); // Last place
+      expect(result.relativeRank).toBe(30); // still computed
+      // total uses only PV and RB — relativeRank excluded
+      const expected = Math.round(result.pickValue * 0.55 + result.rosterBuild * 0.45);
+      expect(Math.abs(result.total - expected)).toBeLessThanOrEqual(1);
     });
   });
 });
