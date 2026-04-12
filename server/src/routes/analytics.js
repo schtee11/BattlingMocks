@@ -42,38 +42,92 @@ router.get('/r1-consensus', async (_req, res) => {
   }
 });
 
-// GET /api/analytics/team-consensus/:team
-// Top players drafted in R1 by a given team across all saved team mocks.
-router.get('/team-consensus/:team', async (req, res) => {
+// GET /api/analytics/team-pick-breakdown/:team
+// For a team, returns every pick slot they own (across all 7 rounds) with the
+// top-3 player choices at each slot and pick percentages, sourced from all
+// saved team mocks.
+router.get('/team-pick-breakdown/:team', async (req, res) => {
   const team = (req.params.team || '').toUpperCase();
   if (!/^[A-Z0-9]{2,5}$/.test(team)) {
     return res.status(400).json({ error: 'invalid team abbreviation' });
   }
   try {
-    const { rows } = await pool.query(`
-      SELECT
-        p.id,
-        p.name,
-        p.position,
-        p.school,
-        p.headshot_url,
-        COUNT(mp.id)::int                       AS pick_count,
-        ROUND(AVG(mp.pick_number)::numeric, 1)  AS avg_pick
-      FROM mock_picks mp
-      JOIN players p ON p.id = mp.player_id
-      JOIN mocks m ON m.id = mp.mock_id
-      WHERE m.mock_type = 'team'
-        AND mp.team = $1
-        AND mp.round = 1
-      GROUP BY p.id
-      ORDER BY pick_count DESC
-      LIMIT 10
-    `, [team]);
+    const [rowsResult, totalResult] = await Promise.all([
+      pool.query(`
+        WITH slot_picks AS (
+          SELECT
+            mp.pick_number,
+            mp.round,
+            p.id          AS player_id,
+            p.name,
+            p.position,
+            p.school,
+            p.headshot_url,
+            COUNT(*)::int AS pick_count
+          FROM mock_picks mp
+          JOIN players p ON p.id = mp.player_id
+          JOIN mocks m   ON m.id = mp.mock_id
+          WHERE m.mock_type = 'team'
+            AND mp.team = $1
+          GROUP BY mp.pick_number, mp.round, p.id, p.name, p.position, p.school, p.headshot_url
+        ),
+        slot_totals AS (
+          SELECT pick_number, SUM(pick_count)::int AS slot_total
+          FROM slot_picks
+          GROUP BY pick_number
+        ),
+        ranked AS (
+          SELECT
+            sp.*,
+            st.slot_total,
+            ROUND((sp.pick_count::numeric / st.slot_total) * 100, 1)::float AS pct,
+            ROW_NUMBER() OVER (PARTITION BY sp.pick_number ORDER BY sp.pick_count DESC) AS slot_rank
+          FROM slot_picks sp
+          JOIN slot_totals st ON st.pick_number = sp.pick_number
+        )
+        SELECT *
+        FROM ranked
+        WHERE slot_rank <= 3
+        ORDER BY pick_number ASC, slot_rank ASC
+      `, [team]),
+      pool.query(`
+        SELECT COUNT(DISTINCT m.id)::int AS total
+        FROM mock_picks mp
+        JOIN mocks m ON m.id = mp.mock_id
+        WHERE m.mock_type = 'team' AND mp.team = $1
+      `, [team]),
+    ]);
+
+    // Group flat rows into nested picks → options structure
+    const picksMap = new Map();
+    for (const row of rowsResult.rows) {
+      if (!picksMap.has(row.pick_number)) {
+        picksMap.set(row.pick_number, {
+          pick_number: row.pick_number,
+          round: row.round,
+          slot_total: row.slot_total,
+          options: [],
+        });
+      }
+      picksMap.get(row.pick_number).options.push({
+        player_id: row.player_id,
+        name: row.name,
+        position: row.position,
+        school: row.school,
+        headshot_url: row.headshot_url,
+        pick_count: row.pick_count,
+        pct: parseFloat(row.pct),
+      });
+    }
 
     res.set('Cache-Control', 'public, max-age=120');
-    res.json({ team, players: rows });
+    res.json({
+      team,
+      total_team_mocks: totalResult.rows[0].total,
+      picks: Array.from(picksMap.values()),
+    });
   } catch (e) {
-    console.error('[analytics/team-consensus]', e);
+    console.error('[analytics/team-pick-breakdown]', e);
     res.status(500).json({ error: 'server error' });
   }
 });
