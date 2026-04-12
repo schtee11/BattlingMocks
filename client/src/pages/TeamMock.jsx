@@ -1564,9 +1564,9 @@ const PHASE_PAUSED = 'paused';
 const PHASE_ON_CLOCK = 'on_clock';
 const PHASE_DONE = 'done';
 
-// Speed slider tick → ms per bot pick. Index 0 = instant, higher = slower.
-const SPEED_STEPS = [0, 150, 400, 800, 1500, 2500];
-const SPEED_LABELS = ['Instant', 'Fast', 'Normal', 'Slow', 'Slower', 'Max 2.5s'];
+// Speed slider tick → ms per bot pick. Index 0 = slowest, higher = faster (right = faster).
+const SPEED_STEPS = [2500, 1500, 800, 400, 150, 0];
+const SPEED_LABELS = ['Slowest', 'Slower', 'Slow', 'Normal', 'Fast', 'Instant'];
 
 function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const { user } = useAuth();
@@ -1591,7 +1591,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [picks, setPicks] = useState([]); // sequential: [{pick_number, team, player_id, round, is_user}]
   const [phase, setPhase] = useState(PHASE_READY);
   const [randomness, setRandomness] = useState(0.25);
-  const [speedIdx, setSpeedIdx] = useState(1); // default "Fast"
+  const [speedIdx, setSpeedIdx] = useState(4); // default "Fast"
   const [showUsed, setShowUsed] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [search, setSearch] = useState('');
