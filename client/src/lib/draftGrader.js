@@ -42,6 +42,7 @@ function getExpectedTier(pickNumber) {
 const POSITION_PREMIUM = {
   QB: 1.0, EDGE: 0.85, OT: 0.80, WR: 0.75, CB: 0.70,
   TE: 0.55, DT: 0.50, IOL: 0.50, S: 0.45, LB: 0.40, RB: 0.35,
+  K: 0.15, P: 0.15, LS: 0.10,
 };
 function getPositionPremium(pos) {
   return POSITION_PREMIUM[normalizePos(pos)] ?? 0.40;
@@ -51,6 +52,7 @@ function getPositionPremium(pos) {
 const STARTER_SLOTS = {
   QB: 1, RB: 1, WR: 3, TE: 1, OT: 2, IOL: 3,
   EDGE: 2, DT: 2, LB: 2, CB: 2, S: 2,
+  K: 1, P: 1, LS: 1,
 };
 
 // Key positions that should be addressed during a 7-round draft.
@@ -108,10 +110,20 @@ export function computePickValueScore(pick, player, roundNumber) {
     // Steal: +3.5 per spot up to 8, then +1.5 (diminishing returns on giant steals)
     adpScore = BASE + Math.min(delta, 8) * 3.5 + Math.max(0, delta - 8) * 1.5;
   } else {
-    // Reach: -2.8 per spot, amplified in early rounds, reduced for premium positions
-    const roundMult = roundNumber <= 2 ? 1.3 : roundNumber <= 4 ? 1.15 : 1.0;
+    // Reach: -2.8 per spot, amplified in early rounds, discounted in late rounds.
+    // R1-2 are high-capital picks where reaches hurt most; R5-R7 are where
+    // teams take fliers on developmental players and specialists.
+    const roundMult = roundNumber <= 2 ? 1.3
+      : roundNumber <= 4 ? 1.15
+      : roundNumber === 5 ? 0.85
+      : roundNumber === 6 ? 0.70
+      : 0.55; // R7
     const premDiscount = 1 - premium * 0.3;
-    adpScore = BASE + delta * 2.8 * roundMult * premDiscount;
+    // Specialists (K, P, LS) are always ranked far below where they're drafted;
+    // reaching for one is expected, not a mistake.
+    const isSpecialist = pos === 'K' || pos === 'P' || pos === 'LS';
+    const specialistDiscount = isSpecialist ? 0.20 : 1.0;
+    adpScore = BASE + delta * 2.8 * roundMult * premDiscount * specialistDiscount;
   }
 
   // ── Tier overlay ──
