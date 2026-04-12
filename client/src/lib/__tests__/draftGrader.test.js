@@ -39,10 +39,11 @@ function buildGradeInput(specs, teamNeeds = ['EDGE', 'CB', 'WR', 'OT', 'IOL']) {
 // ─── letterFromScore ────────────────────────────────────────────────────────
 
 describe('letterFromScore', () => {
-  it('returns A+ for 94+', () => expect(letterFromScore(94)).toBe('A+'));
-  it('returns A for 89-93', () => expect(letterFromScore(90)).toBe('A'));
-  it('returns B+ for 79-83', () => expect(letterFromScore(80)).toBe('B+'));
-  it('returns F for <45', () => expect(letterFromScore(30)).toBe('F'));
+  it('returns A+ for 97+', () => expect(letterFromScore(97)).toBe('A+'));
+  it('returns A for 93-96', () => expect(letterFromScore(94)).toBe('A'));
+  it('returns B+ for 87-89', () => expect(letterFromScore(88)).toBe('B+'));
+  it('returns C+ for 77-79', () => expect(letterFromScore(78)).toBe('C+'));
+  it('returns F for <60', () => expect(letterFromScore(30)).toBe('F'));
 });
 
 describe('gradeColor', () => {

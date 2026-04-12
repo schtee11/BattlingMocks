@@ -31,16 +31,16 @@ const STARTER_SLOTS = {
 // ─── Letter grading ─────────────────────────────────────────────────────────
 
 export function letterFromScore(score) {
-  if (score >= 94) return 'A+';
-  if (score >= 89) return 'A';
-  if (score >= 84) return 'A-';
-  if (score >= 79) return 'B+';
-  if (score >= 74) return 'B';
-  if (score >= 69) return 'B-';
-  if (score >= 64) return 'C+';
-  if (score >= 58) return 'C';
-  if (score >= 52) return 'C-';
-  if (score >= 45) return 'D';
+  if (score >= 97) return 'A+';
+  if (score >= 93) return 'A';
+  if (score >= 90) return 'A-';
+  if (score >= 87) return 'B+';
+  if (score >= 83) return 'B';
+  if (score >= 80) return 'B-';
+  if (score >= 77) return 'C+';
+  if (score >= 73) return 'C';
+  if (score >= 70) return 'C-';
+  if (score >= 60) return 'D';
   return 'F';
 }
 
