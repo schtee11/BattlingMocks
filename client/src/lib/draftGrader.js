@@ -1,7 +1,7 @@
 // Draft grade engine — rebuilt to produce meaningful variance.
 //
 // Three scoring components:
-//   1. Per-Pick Value (40%)  — Tier-based value + recalibrated ADP delta.
+//   1. Per-Pick Value (40%)  — Tier-based value + recalibrated ADP delta + need bonus.
 //   2. Roster Construction (35%) — Positional balance, need coverage, round-appropriate picks.
 //   3. Relative Rank (25%, user only) — User roster value vs all CPU teams.
 //
@@ -86,13 +86,15 @@ export function gradeColor(letter) {
 }
 
 // ─── Component 1: Per-Pick Value Score ──────────────────────────────────────
-// Combines recalibrated ADP delta with a tier-based overlay.
+// Combines recalibrated ADP delta with a tier-based overlay and a need bonus.
 //
 // Calibrated to the sim engine's realistic delta range:
 //   P5/P95 = ±7, max ≈ ±12-15, stddev ≈ 4.6
 // A +7 steal should read as "great value", not "meh".
+// Drafting to fill a team need is rewarded — the best available need player
+// at ADP should grade as "Good value", not just "Fair pick".
 
-export function computePickValueScore(pick, player, roundNumber) {
+export function computePickValueScore(pick, player, roundNumber, needRank = -1) {
   const rank = Number(player.consensus_rank ?? player.rank);
   if (!Number.isFinite(rank) || rank <= 0) return { score: 60, delta: 0, tag: 'Unranked' };
 
@@ -109,8 +111,8 @@ export function computePickValueScore(pick, player, roundNumber) {
   const BASE = 75;
   let adpScore;
   if (delta >= 0) {
-    // Steal: +3.5 per spot up to 8, then +1.5 (diminishing returns on giant steals)
-    adpScore = BASE + Math.min(delta, 8) * 3.5 + Math.max(0, delta - 8) * 1.5;
+    // Steal: +3.75 per spot up to 8, then +1.5 (diminishing returns on giant steals)
+    adpScore = BASE + Math.min(delta, 8) * 3.75 + Math.max(0, delta - 8) * 1.5;
   } else {
     // Progressive reach penalty with breakpoints at 8 and 16.
     // 0-8 spots: 0.2/spot (barely noticeable — normal draft variance)
@@ -147,7 +149,15 @@ export function computePickValueScore(pick, player, roundNumber) {
   else if (tierDiff === -1) tierBonus = -1;
   else tierBonus = -3;
 
-  const score = Math.max(0, Math.min(100, Math.round(adpScore + tierBonus)));
+  // ── Need-awareness bonus ──
+  // Drafting to fill a team need reflects smart roster-building. Top-2 needs
+  // get a stronger bonus; remaining needs get a smaller bump. Only the first
+  // pick at each need position receives the bonus (tracked by caller).
+  const needBonus = needRank >= 0 && needRank <= 1 ? 5
+    : needRank >= 2 && needRank <= 4 ? 3
+    : 0;
+
+  const score = Math.max(0, Math.min(100, Math.round(adpScore + tierBonus + needBonus)));
 
   let tag;
   if (score >= 96) tag = 'Elite steal';
@@ -338,9 +348,24 @@ export function computeTeamMockGrade({ myPicks, byId, teamNeeds = [], allPicks =
 
   const needList = (Array.isArray(teamNeeds) ? teamNeeds : []).map((n) => String(n).toUpperCase());
 
-  // Per-pick scoring
+  // Normalize and expand need tokens for per-pick matching.
+  // "OL" expands to both OT and IOL at the same priority.
+  const expandedNeeds = []; // { pos, priority } — priority = original need index
+  for (let idx = 0; idx < needList.length; idx++) {
+    const raw = needList[idx].trim();
+    if (raw === 'OL') {
+      expandedNeeds.push({ pos: 'OT', priority: idx }, { pos: 'IOL', priority: idx });
+    } else {
+      const norm = normalizePos(raw);
+      if (norm) expandedNeeds.push({ pos: norm, priority: idx });
+    }
+  }
+
+  // Per-pick scoring — track which need positions have been addressed so
+  // only the first pick at each need gets the need bonus.
   const pickBreakdown = [];
   let valueSum = 0;
+  const addressedNeedPositions = new Set();
 
   for (let i = 0; i < myPicks.length; i++) {
     const pick = myPicks[i];
@@ -350,8 +375,18 @@ export function computeTeamMockGrade({ myPicks, byId, teamNeeds = [], allPicks =
     const roundNumber = pick.round || 1;
     const pos = normalizePos(player.position);
 
-    // Component 1 per-pick
-    const valueResult = computePickValueScore(pick, player, roundNumber);
+    // Determine need rank: find the first unaddressed need matching this position
+    let needRank = -1;
+    if (!addressedNeedPositions.has(pos)) {
+      const match = expandedNeeds.find((n) => n.pos === pos);
+      if (match) {
+        needRank = match.priority;
+        addressedNeedPositions.add(pos);
+      }
+    }
+
+    // Component 1 per-pick (with need awareness)
+    const valueResult = computePickValueScore(pick, player, roundNumber, needRank);
     valueSum += valueResult.score;
 
     pickBreakdown.push({
