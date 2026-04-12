@@ -107,12 +107,12 @@ describe('gradeColor', () => {
 // ─── Component 1: Per-Pick Value Score ──────────────────────────────────────
 
 describe('computePickValueScore', () => {
-  it('rewards steals with recalibrated thresholds (3 pts/spot)', () => {
+  it('rewards steals with recalibrated thresholds (3.5 pts/spot)', () => {
     const pick = makePick({ pick_number: 15 });
     const player = makePlayer({ rank: 5, position: 'EDGE' });
     const result = computePickValueScore(pick, player, 1);
-    // delta = +10: base 65 + 8*3.0 + 2*1.5 = 92, tier bonus +3 (tier 1 player at tier 2 slot)
-    expect(result.score).toBeGreaterThanOrEqual(88);
+    // delta = +10: base 70 + 8*3.5 + 2*1.5 = 101 (capped 100), tier bonus +3
+    expect(result.score).toBeGreaterThanOrEqual(95);
     expect(result.delta).toBe(10);
     expect(result.tag).toMatch(/steal|value/i);
   });
@@ -127,13 +127,13 @@ describe('computePickValueScore', () => {
     expect(result.tag).toMatch(/reach/i);
   });
 
-  it('centers at-value picks around base 65 (B- range)', () => {
+  it('centers at-value picks around base 70 (B range)', () => {
     const pick = makePick({ pick_number: 10 });
     const player = makePlayer({ rank: 10, position: 'EDGE' });
     const result = computePickValueScore(pick, player, 1);
-    // delta = 0: base 65, tier bonus 0 (tier 1 at tier 1 slot)
-    expect(result.score).toBeGreaterThanOrEqual(62);
-    expect(result.score).toBeLessThanOrEqual(72);
+    // delta = 0: base 70, tier bonus 0 (tier 1 at tier 1 slot)
+    expect(result.score).toBeGreaterThanOrEqual(67);
+    expect(result.score).toBeLessThanOrEqual(75);
     expect(result.tag).toBe('Fair pick');
   });
 

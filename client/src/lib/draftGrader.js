@@ -99,18 +99,19 @@ export function computePickValueScore(pick, player, roundNumber) {
   const premium = getPositionPremium(pos);
 
   // ── Recalibrated ADP delta score ──
-  // Base 65: at-value picks land in the B- range per-pick, leaving room for
-  // steals to push into A territory and reaches to drop into C/D.
-  const BASE = 65;
+  // Base 70: at-value picks land in the B range per-pick. Steals push into
+  // A/A+ territory; reaches drop into C/D. Calibrated so elite drafters
+  // (avg delta +3-5) can hit 90+ total scores.
+  const BASE = 70;
   let adpScore;
   if (delta >= 0) {
-    // Steal: +3.0 per spot up to 8, then +1.5 (diminishing returns on giant steals)
-    adpScore = BASE + Math.min(delta, 8) * 3.0 + Math.max(0, delta - 8) * 1.5;
+    // Steal: +3.5 per spot up to 8, then +1.5 (diminishing returns on giant steals)
+    adpScore = BASE + Math.min(delta, 8) * 3.5 + Math.max(0, delta - 8) * 1.5;
   } else {
-    // Reach: -2.5 per spot, amplified in early rounds, reduced for premium positions
+    // Reach: -2.8 per spot, amplified in early rounds, reduced for premium positions
     const roundMult = roundNumber <= 2 ? 1.3 : roundNumber <= 4 ? 1.15 : 1.0;
     const premDiscount = 1 - premium * 0.3;
-    adpScore = BASE + delta * 2.5 * roundMult * premDiscount;
+    adpScore = BASE + delta * 2.8 * roundMult * premDiscount;
   }
 
   // ── Tier overlay ──
@@ -130,11 +131,11 @@ export function computePickValueScore(pick, player, roundNumber) {
   const score = Math.max(0, Math.min(100, Math.round(adpScore + tierBonus)));
 
   let tag;
-  if (score >= 92) tag = 'Elite steal';
-  else if (score >= 82) tag = 'Great value';
-  else if (score >= 72) tag = 'Good value';
-  else if (score >= 62) tag = 'Fair pick';
-  else if (score >= 50) tag = 'Slight reach';
+  if (score >= 95) tag = 'Elite steal';
+  else if (score >= 85) tag = 'Great value';
+  else if (score >= 75) tag = 'Good value';
+  else if (score >= 65) tag = 'Fair pick';
+  else if (score >= 52) tag = 'Slight reach';
   else if (score >= 38) tag = 'Reach';
   else tag = 'Big reach';
 
@@ -143,14 +144,15 @@ export function computePickValueScore(pick, player, roundNumber) {
 
 // ─── Component 2: Roster Construction Score ─────────────────────────────────
 // Evaluates the full draft as a roster:
-//   A. Positional breadth (up to +12)
-//   B. Critical position coverage (up to +10)
-//   C. Catastrophic neglect penalty (up to -15)
-//   D. Need coverage (up to +15)
-//   E. Round-appropriate picking (up to +12 / -8)
-//   F. Over-investment penalty (up to -12)
+//   A. Draft capital efficiency (up to +12 / -3)
+//   B. Positional breadth (up to +12)
+//   C. Critical position coverage (up to +10)
+//   D. Catastrophic neglect penalty (up to -10 / -6 needs)
+//   E. Need coverage (up to +15)
+//   F. Round-appropriate picking (up to +12 / -8)
+//   G. Over-investment penalty (up to -8)
 
-export function computeRosterConstructionScore(picks, byId, teamNeeds) {
+export function computeRosterConstructionScore(picks, byId, teamNeeds, avgPickValue = null) {
   if (!picks || picks.length === 0) return 0;
 
   const needList = (Array.isArray(teamNeeds) ? teamNeeds : []).map((n) => normalizePos(String(n)));
@@ -165,32 +167,43 @@ export function computeRosterConstructionScore(picks, byId, teamNeeds) {
     draftedPositions.push({ pos, round: pick.round || 1 });
   }
 
-  let score = 55; // baseline — room to grow in either direction
+  let score = 65; // baseline — neutral starting point
 
-  // A. Positional breadth
+  // A. Draft capital efficiency: getting elite talent IS good roster
+  // construction.  High per-pick value means the team used its draft
+  // capital wisely, which is a roster-building signal independent of
+  // positional balance.
+  if (avgPickValue != null) {
+    if (avgPickValue >= 85) score += 12;
+    else if (avgPickValue >= 78) score += 7;
+    else if (avgPickValue >= 70) score += 3;
+    else if (avgPickValue < 60) score -= 3;
+  }
+
+  // B. Positional breadth
   const uniquePositions = positionCounts.size;
   if (uniquePositions >= 6) score += 12;
   else if (uniquePositions >= 5) score += 8;
   else if (uniquePositions >= 4) score += 5;
   else if (uniquePositions <= 2) score -= 8;
 
-  // B. Critical position coverage
+  // C. Critical position coverage
   for (const critPos of CRITICAL_POSITIONS) {
     if (positionCounts.has(critPos)) score += 2;
   }
 
-  // C. Catastrophic neglect penalty
+  // D. Catastrophic neglect penalty
   for (const critPos of CRITICAL_POSITIONS) {
-    if (!positionCounts.has(critPos)) score -= 3;
+    if (!positionCounts.has(critPos)) score -= 2;
   }
   if (needList.length > 0) {
     const topNeeds = needList.slice(0, 2);
     for (const need of topNeeds) {
-      if (!positionCounts.has(need)) score -= 4;
+      if (!positionCounts.has(need)) score -= 3;
     }
   }
 
-  // D. Need coverage
+  // E. Need coverage
   if (needList.length > 0) {
     const needsAddressed = new Set(draftedPositions.map((d) => d.pos).filter((p) => needList.includes(p)));
     const coverageRatio = needsAddressed.size / Math.min(needList.length, 5);
@@ -201,7 +214,7 @@ export function computeRosterConstructionScore(picks, byId, teamNeeds) {
     score += 8; // no needs data — partial credit
   }
 
-  // E. Round-appropriate picking
+  // F. Round-appropriate picking
   // R1-3: reward premium positions early (BPA era), penalize low-value picks
   // R4-7: reward addressing remaining needs, penalize ignoring them
   const earlyPicks = [];
@@ -236,10 +249,10 @@ export function computeRosterConstructionScore(picks, byId, teamNeeds) {
   }
   score += Math.max(-4, Math.min(6, lateAdj));
 
-  // F. Over-investment penalty
+  // G. Over-investment penalty
   for (const [pos, count] of positionCounts) {
     const slots = STARTER_SLOTS[pos] || 1;
-    if (count > slots) score -= (count - slots) * 3;
+    if (count > slots) score -= (count - slots) * 2;
   }
 
   return Math.max(0, Math.min(100, Math.round(score)));
@@ -338,8 +351,8 @@ export function computeTeamMockGrade({ myPicks, byId, teamNeeds = [], allPicks =
   const validPicks = pickBreakdown.length || 1;
   const pickValue = Math.round(valueSum / validPicks);
 
-  // Component 2: Roster Construction
-  const rosterBuild = computeRosterConstructionScore(myPicks, byId, teamNeeds);
+  // Component 2: Roster Construction (informed by per-pick quality)
+  const rosterBuild = computeRosterConstructionScore(myPicks, byId, teamNeeds, pickValue);
 
   // Component 3: Relative Rank (user team only, requires allPicks)
   const team = userTeam || myPicks[0]?.team;
