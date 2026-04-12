@@ -1,9 +1,9 @@
 // Draft grade engine — rebuilt to produce meaningful variance.
 //
 // Three scoring components:
-//   1. Per-Pick Value (40%)  — Tier-based value + recalibrated ADP delta + need bonus.
-//   2. Roster Construction (35%) — Positional balance, need coverage, round-appropriate picks.
-//   3. Relative Rank (25%, user only) — User roster value vs all CPU teams.
+//   1. Per-Pick Value (50%)  — Tier-based value + recalibrated ADP delta + need bonus.
+//   2. Roster Construction (40%) — Positional balance, need coverage, round-appropriate picks.
+//   3. Relative Rank (10%, user only) — Small tiebreaker from league standing.
 //
 // CPU teams receive Components 1 + 2 only (rebalanced to 55% / 45%).
 // Per-pick grades: each pick gets its own letter grade + narrative tag.
@@ -102,21 +102,20 @@ export function computePickValueScore(pick, player, roundNumber, needRank = -1) 
   const premium = getPositionPremium(pos);
 
   // ── Recalibrated ADP delta score ──
-  // Base 75: at-value picks land in the "Good value" range so the grading
-  // tone feels positive for reasonable drafting. Steals push well into A+;
-  // reaches use a progressive penalty that's gentle for small reaches and
-  // escalates for large ones. Calibrated so delta -16 ≈ 65, delta -25 ≈ 45
-  // at neutral round multiplier.
-  const BASE = 75;
+  // Base 80: at-value picks land solidly in the "Good value" range (B- on
+  // academic scale). Steals push into A territory; reaches drop into C/D.
+  // Progressive reach penalty still calibrated so delta -16 ≈ 65 and
+  // delta -25 ≈ 45 at neutral round multiplier.
+  const BASE = 80;
   let adpScore;
   if (delta >= 0) {
-    // Steal: +3.75 per spot up to 8, then +1.5 (diminishing returns on giant steals)
-    adpScore = BASE + Math.min(delta, 8) * 3.75 + Math.max(0, delta - 8) * 1.5;
+    // Steal: +3.0 per spot up to 8, then +1.5 (diminishing returns on giant steals)
+    adpScore = BASE + Math.min(delta, 8) * 3.0 + Math.max(0, delta - 8) * 1.5;
   } else {
     // Progressive reach penalty with breakpoints at 8 and 16.
-    // 0-8 spots: 0.2/spot (barely noticeable — normal draft variance)
-    // 9-16 spots: 0.9/spot (moderate — clear reach territory)
-    // 17+ spots: 2.2/spot (steep — big reach, heavily penalized)
+    // 0-8 spots: 0.25/spot (barely noticeable — normal draft variance)
+    // 9-16 spots: 1.5/spot (moderate — clear reach territory)
+    // 17+ spots: 2.3/spot (steep — big reach, heavily penalized)
     // Amplified in early rounds (R1-2), discounted in late rounds (R5-7).
     const roundMult = roundNumber <= 2 ? 1.3
       : roundNumber <= 4 ? 1.0
@@ -128,9 +127,9 @@ export function computePickValueScore(pick, player, roundNumber, needRank = -1) 
     const isSpecialist = pos === 'K' || pos === 'P' || pos === 'LS';
     const specialistDiscount = isSpecialist ? 0.20 : 1.0;
     const absDelta = -delta;
-    const rawPenalty = Math.min(absDelta, 8) * 0.2
-      + Math.max(0, Math.min(absDelta - 8, 8)) * 0.9
-      + Math.max(0, absDelta - 16) * 2.2;
+    const rawPenalty = Math.min(absDelta, 8) * 0.25
+      + Math.max(0, Math.min(absDelta - 8, 8)) * 1.5
+      + Math.max(0, absDelta - 16) * 2.3;
     adpScore = BASE - rawPenalty * roundMult * specialistDiscount;
   }
 
@@ -160,11 +159,11 @@ export function computePickValueScore(pick, player, roundNumber, needRank = -1) 
 
   let tag;
   if (score >= 96) tag = 'Elite steal';
-  else if (score >= 86) tag = 'Great value';
-  else if (score >= 72) tag = 'Good value';
-  else if (score >= 58) tag = 'Fair pick';
-  else if (score >= 44) tag = 'Slight reach';
-  else if (score >= 30) tag = 'Reach';
+  else if (score >= 88) tag = 'Great value';
+  else if (score >= 76) tag = 'Good value';
+  else if (score >= 62) tag = 'Fair pick';
+  else if (score >= 48) tag = 'Slight reach';
+  else if (score >= 34) tag = 'Reach';
   else tag = 'Big reach';
 
   return { score, delta, tag };
@@ -416,8 +415,9 @@ export function computeTeamMockGrade({ myPicks, byId, teamNeeds = [], allPicks =
   // Final weighted composite
   let total;
   if (relativeRank !== null) {
-    // User team: 3-component scoring
-    total = Math.round(pickValue * 0.40 + rosterBuild * 0.35 + relativeRank * 0.25);
+    // User team: 3-component scoring — PV and RB dominate, league rank is
+    // a small tiebreaker so it can't tank an otherwise excellent draft.
+    total = Math.round(pickValue * 0.50 + rosterBuild * 0.40 + relativeRank * 0.10);
   } else {
     // CPU team or no all-draft data: 2-component scoring
     total = Math.round(pickValue * 0.55 + rosterBuild * 0.45);
