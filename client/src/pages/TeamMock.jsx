@@ -1048,33 +1048,31 @@ function gradeColor(letter) {
 // Value score (50%) — did you steal or reach?
 //   For each user pick, compare player's consensus_rank to pick_number.
 //   delta = pick_number - consensus_rank  (positive = steal, negative = reach)
-//   Per-pick score = clamp(80 + delta * 1.5, 0, 100).
-//   This recenters "fair value" (delta = 0) at 80 (B+) — getting expected
-//   value isn't a C, it's a good pick. A 13-spot reach drops you a full
-//   letter grade; a 13-spot steal pushes you to A+. Until consensus_rank is
-//   backfilled, we fall back to the player's seeded rank (player.rank,
-//   which the /api/players query computes via ROW_NUMBER over
-//   COALESCE(consensus_rank, 9999), id). When BOTH are missing (unseeded
-//   prospect), default to a neutral 75.
+//   Per-pick score = clamp(73 + delta * 2.0, 0, 100).
+//   Fair value (delta = 0) lands at 73 (B-) — you have to earn better.
+//   A 10-spot steal pushes to 93 (A+); a 10-spot reach drops to 53 (C-).
+//   Until consensus_rank is backfilled, we fall back to the player's seeded
+//   rank (player.rank, which the /api/players query computes via ROW_NUMBER
+//   over COALESCE(consensus_rank, 9999), id). When BOTH are missing (unseeded
+//   prospect), default to a neutral 73.
 //
 // Need score (50%) — did you fill your top team needs?
 //   Walk the team's team_needs array (admin-ordered top-to-bottom). For each
 //   user pick:
-//     - First time addressing a listed need: 100 (top need) sliding to 75
-//       (last listed need)
-//     - Second pick at a need you already covered: 65 (depth pick — not
-//       punished, just below first-hit credit)
-//     - Position that isn't on the team's needs list at all: 55 (BPA / depth,
-//       still useful, not a wasted pick)
-//     - No needs data on the team at all: 75 (mildly positive default)
+//     - First time addressing a listed need: 100 (top need) sliding to 72
+//       (last listed need) — wider spread rewards prioritising correctly
+//     - Second pick at a need you already covered: 58 (depth pick — not
+//       punished, but below first-hit credit)
+//     - Position that isn't on the team's needs list at all: 48 (BPA / depth;
+//       counts as a pick but hurts need fit)
+//     - No needs data on the team at all: 73 (neutral default)
 //
 // Final: grade = 0.5 * value + 0.5 * need, rounded.
 //
-// Tuning notes: with these defaults, an honest 7-round mock that addresses
-// 3-4 top needs and gets fair value should land around 75-80 (B/B+), while a
-// genuinely bad mock (huge reaches, ignoring all needs) drops into D/F. F is
-// reserved for combined scores under ~44, which is hard to hit without
-// reaching 30+ spots on multiple picks AND ignoring every team need.
+// Tuning notes: an average mock (fair-value picks + addressing 3-4 top needs)
+// should land around 68-73 (B-/B). Reaching every pick AND ignoring all needs
+// drops into C/D territory. Stealing value AND hitting top needs pushes into
+// A-/A territory, creating meaningful variance across drafts.
 function computeTeamMockGrade({ myPicks, byId, teamNeeds = [] }) {
   if (!myPicks || myPicks.length === 0) {
     return { value: 0, need: 0, total: 0, letter: null, pickBreakdown: [] };
@@ -1093,36 +1091,36 @@ function computeTeamMockGrade({ myPicks, byId, teamNeeds = [] }) {
     const player = byId.get(pick.player_id);
     if (!player) continue;
 
-    // Value component. Centered at 80 (B+) for fair value (delta = 0).
-    // Each 1-spot delta moves the score by 1.5 points, so a 13-spot reach
-    // drops you a full letter grade.
+    // Value component. Centered at 73 (B-) for fair value (delta = 0).
+    // Each 1-spot delta moves the score by 2.0 points, so a 10-spot reach
+    // drops you ~2 letter grades; a 10-spot steal pushes to A+.
     const rank = Number(player.consensus_rank ?? player.rank);
     let valueScore;
     if (!Number.isFinite(rank) || rank <= 0) {
-      valueScore = 75; // neutral fallback for unranked players
+      valueScore = 73; // neutral fallback for unranked players
     } else {
       const delta = pick.pick_number - rank;
-      valueScore = Math.max(0, Math.min(100, 80 + delta * 1.5));
+      valueScore = Math.max(0, Math.min(100, 73 + delta * 2.0));
     }
     valueSum += valueScore;
     valueCount++;
 
-    // Need component. Generous on the floor — depth picks and BPA aren't
-    // bad, they just don't earn the "addressed a top need" bonus.
+    // Need component. Wider floor/ceiling spread creates meaningful variance.
     let needScore;
     const pos = player.position?.toUpperCase();
     if (needList.length === 0) {
-      needScore = 75; // no needs data → mildly positive default
+      needScore = 73; // no needs data → neutral default
     } else {
       const idx = needList.indexOf(pos);
       if (idx === -1) {
-        needScore = 55; // not a listed need but not punished
+        needScore = 48; // BPA / off-list — useful pick but hurts need fit
       } else if (addressed.has(pos)) {
-        needScore = 65; // depth pick at a need you already covered
+        needScore = 58; // depth pick at a need you already covered
       } else {
         addressed.add(pos);
-        // First listed need = 100, linearly scaled to 75 for the last listed need.
-        const penalty = (idx / Math.max(1, needList.length - 1)) * 25;
+        // First listed need = 100, linearly scaled to 72 for the last listed need.
+        // Wider 28-point penalty range rewards correct positional prioritisation.
+        const penalty = (idx / Math.max(1, needList.length - 1)) * 28;
         needScore = Math.round(100 - penalty);
       }
     }
