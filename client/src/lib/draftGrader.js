@@ -103,30 +103,34 @@ export function computePickValueScore(pick, player, roundNumber) {
   // ── Recalibrated ADP delta score ──
   // Base 75: at-value picks land in the "Good value" range so the grading
   // tone feels positive for reasonable drafting. Steals push well into A+;
-  // reaches drop proportionally. Penalty per spot of reach is intentionally
-  // lower than the steal reward — good drafters should be rewarded more than
-  // mild reaches are penalized, and late-round prospect rankings have wider
-  // uncertainty margins.
+  // reaches use a progressive penalty that's gentle for small reaches and
+  // escalates for large ones. Calibrated so delta -16 ≈ 65, delta -25 ≈ 45
+  // at neutral round multiplier.
   const BASE = 75;
   let adpScore;
   if (delta >= 0) {
     // Steal: +3.5 per spot up to 8, then +1.5 (diminishing returns on giant steals)
     adpScore = BASE + Math.min(delta, 8) * 3.5 + Math.max(0, delta - 8) * 1.5;
   } else {
-    // Reach: -2.0 per spot, amplified in early rounds, discounted in late rounds.
-    // R1-2 are high-capital picks where reaches hurt most; R5-R7 are where
-    // teams take fliers on developmental players and specialists.
+    // Progressive reach penalty with breakpoints at 8 and 16.
+    // 0-8 spots: 0.2/spot (barely noticeable — normal draft variance)
+    // 9-16 spots: 0.9/spot (moderate — clear reach territory)
+    // 17+ spots: 2.2/spot (steep — big reach, heavily penalized)
+    // Amplified in early rounds (R1-2), discounted in late rounds (R5-7).
     const roundMult = roundNumber <= 2 ? 1.3
-      : roundNumber <= 4 ? 1.15
+      : roundNumber <= 4 ? 1.0
       : roundNumber === 5 ? 0.85
       : roundNumber === 6 ? 0.70
       : 0.55; // R7
-    const premDiscount = 1 - premium * 0.3;
     // Specialists (K, P, LS) are always ranked far below where they're drafted;
     // reaching for one is expected, not a mistake.
     const isSpecialist = pos === 'K' || pos === 'P' || pos === 'LS';
     const specialistDiscount = isSpecialist ? 0.20 : 1.0;
-    adpScore = BASE + delta * 2.0 * roundMult * premDiscount * specialistDiscount;
+    const absDelta = -delta;
+    const rawPenalty = Math.min(absDelta, 8) * 0.2
+      + Math.max(0, Math.min(absDelta - 8, 8)) * 0.9
+      + Math.max(0, absDelta - 16) * 2.2;
+    adpScore = BASE - rawPenalty * roundMult * specialistDiscount;
   }
 
   // ── Tier overlay ──
@@ -140,8 +144,8 @@ export function computePickValueScore(pick, player, roundNumber) {
   if (tierDiff >= 2) tierBonus = 6;
   else if (tierDiff === 1) tierBonus = 3;
   else if (tierDiff === 0) tierBonus = 0;
-  else if (tierDiff === -1) tierBonus = -3;
-  else tierBonus = -5;
+  else if (tierDiff === -1) tierBonus = -1;
+  else tierBonus = -3;
 
   const score = Math.max(0, Math.min(100, Math.round(adpScore + tierBonus)));
 
