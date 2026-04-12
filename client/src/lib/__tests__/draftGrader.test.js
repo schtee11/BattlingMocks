@@ -107,11 +107,11 @@ describe('gradeColor', () => {
 // ─── Component 1: Per-Pick Value Score ──────────────────────────────────────
 
 describe('computePickValueScore', () => {
-  it('rewards steals with recalibrated thresholds (3.5 pts/spot)', () => {
+  it('rewards steals with recalibrated thresholds (3.75 pts/spot)', () => {
     const pick = makePick({ pick_number: 15 });
     const player = makePlayer({ rank: 5, position: 'EDGE' });
     const result = computePickValueScore(pick, player, 1);
-    // delta = +10: base 70 + 8*3.5 + 2*1.5 = 101 (capped 100), tier bonus +3
+    // delta = +10: base 72 + 8*3.75 + 2*1.5 = 105 (capped 100), tier bonus +3
     expect(result.score).toBeGreaterThanOrEqual(95);
     expect(result.delta).toBe(10);
     expect(result.tag).toMatch(/steal|value/i);
@@ -127,12 +127,12 @@ describe('computePickValueScore', () => {
     expect(result.tag).toMatch(/reach/i);
   });
 
-  it('centers at-value picks around base 70 (B range)', () => {
+  it('centers at-value picks around base 72', () => {
     const pick = makePick({ pick_number: 10 });
     const player = makePlayer({ rank: 10, position: 'EDGE' });
     const result = computePickValueScore(pick, player, 1);
-    // delta = 0: base 70, tier bonus 0 (tier 1 at tier 1 slot)
-    expect(result.score).toBeGreaterThanOrEqual(67);
+    // delta = 0: base 72, tier bonus 0 (tier 1 at tier 1 slot), no need bonus
+    expect(result.score).toBeGreaterThanOrEqual(69);
     expect(result.score).toBeLessThanOrEqual(75);
     expect(result.tag).toBe('Fair pick');
   });
@@ -141,8 +141,8 @@ describe('computePickValueScore', () => {
     const pick = makePick({ pick_number: 40 }); // Expected: Tier 3 (33-64)
     const player = makePlayer({ rank: 8, position: 'EDGE' }); // Tier 1 (1-12)
     const result = computePickValueScore(pick, player, 2);
-    // delta = +32: huge steal + tier bonus (expected tier 3, got tier 1 = +6)
-    expect(result.score).toBeGreaterThanOrEqual(95);
+    // delta = +32: huge steal + tier bonus (expected tier 3, got tier 1 = +6) → capped at 100
+    expect(result.score).toBeGreaterThanOrEqual(93);
     expect(result.tag).toBe('Elite steal');
   });
 
@@ -185,6 +185,47 @@ describe('computePickValueScore', () => {
     const wrResult = computePickValueScore(wrPick, wrPlayer, 7);
     // Specialist should score better than non-specialist at same delta
     expect(kResult.score).toBeGreaterThan(wrResult.score);
+  });
+
+  it('boosts at-value picks to "Good value" when filling a top-2 need', () => {
+    const pick = makePick({ pick_number: 26 });
+    const player = makePlayer({ rank: 26, position: 'DT' });
+    // needRank 0 = top need → +5 bonus
+    const result = computePickValueScore(pick, player, 1, 0);
+    // base 72 + 0 (delta) + 0 (tier) + 5 (need) = 77
+    expect(result.score).toBeGreaterThanOrEqual(73);
+    expect(result.tag).toBe('Good value');
+  });
+
+  it('gives smaller bonus for lower-priority needs (rank 2-4)', () => {
+    const pick = makePick({ pick_number: 126 });
+    const player = makePlayer({ rank: 126, position: 'CB' });
+    // needRank 3 = lower need → +3 bonus
+    const result = computePickValueScore(pick, player, 4, 3);
+    // base 72 + 0 + 0 + 3 = 75
+    expect(result.score).toBeGreaterThanOrEqual(73);
+    expect(result.tag).toBe('Good value');
+  });
+
+  it('gives no need bonus when needRank is -1 (not a need)', () => {
+    const pick = makePick({ pick_number: 50 });
+    const player = makePlayer({ rank: 50, position: 'RB' });
+    const withNeed = computePickValueScore(pick, player, 2, 0);
+    const withoutNeed = computePickValueScore(pick, player, 2, -1);
+    expect(withNeed.score).toBeGreaterThan(withoutNeed.score);
+    // Without need: base 72, at-value → "Fair pick"
+    expect(withoutNeed.score).toBeLessThan(73);
+  });
+
+  it('need bonus offsets slight reaches for need-filling picks', () => {
+    // Slight reach (-4) but filling top need
+    const pick = makePick({ pick_number: 91 });
+    const player = makePlayer({ rank: 95, position: 'WR' });
+    const withNeed = computePickValueScore(pick, player, 3, 1);
+    const withoutNeed = computePickValueScore(pick, player, 3, -1);
+    // With need bonus, should be at least "Fair pick", better than without
+    expect(withNeed.score).toBeGreaterThan(withoutNeed.score);
+    expect(withNeed.tag).not.toMatch(/reach/i);
   });
 });
 
@@ -370,6 +411,42 @@ describe('computeTeamMockGrade', () => {
       const result = computeTeamMockGrade(input);
       expect(result.pickBreakdown[0].value_tag).toMatch(/steal|value/i);
       expect(result.pickBreakdown[1].value_tag).toMatch(/reach/i);
+    });
+  });
+
+  describe('need-awareness in overall grade', () => {
+    it('pickValue is higher when picks address team needs', () => {
+      // Draft addressing needs: EDGE, CB, WR are top needs
+      const onNeed = buildGradeInput([
+        { rank: 10, position: 'EDGE', pick_number: 10 },
+        { rank: 20, position: 'CB', pick_number: 20 },
+        { rank: 40, position: 'WR', pick_number: 40, round: 2 },
+      ], ['EDGE', 'CB', 'WR', 'OT', 'IOL']);
+
+      // Draft ignoring needs: same ADP delta but non-need positions
+      const offNeed = buildGradeInput([
+        { rank: 10, position: 'RB', pick_number: 10 },
+        { rank: 20, position: 'S', pick_number: 20 },
+        { rank: 40, position: 'LB', pick_number: 40, round: 2 },
+      ], ['EDGE', 'CB', 'WR', 'OT', 'IOL']);
+
+      const onResult = computeTeamMockGrade(onNeed);
+      const offResult = computeTeamMockGrade(offNeed);
+
+      // On-need picks should have higher pickValue due to need bonus
+      expect(onResult.pickValue).toBeGreaterThan(offResult.pickValue);
+    });
+
+    it('second pick at same need position does not get need bonus', () => {
+      // Two DTs — only first should get need bonus
+      const input = buildGradeInput([
+        { rank: 26, position: 'DT', pick_number: 26 },
+        { rank: 80, position: 'DT', pick_number: 80, round: 3 },
+      ], ['DT', 'WR', 'CB']);
+
+      const result = computeTeamMockGrade(input);
+      // First DT gets need bonus (needRank 0 → +5), second does not
+      expect(result.pickBreakdown[0].value_score).toBeGreaterThan(result.pickBreakdown[1].value_score);
     });
   });
 
