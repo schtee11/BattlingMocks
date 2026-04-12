@@ -91,8 +91,12 @@ export default function AuthCallback() {
         const u = await api.getUser(id);
         setUser(u);
         toast.success(`Welcome, ${prettyName(u.display_name)}`);
-        window.history.replaceState(null, '', '/draft');
-        nav('/draft', { replace: true });
+        // If the user came from a guest team-mock session that stashed a
+        // pending mock, land them on /team-mock so it can be auto-saved.
+        const pendingMock = localStorage.getItem('mds_pending_team_mock');
+        const dest = pendingMock ? '/team-mock' : '/draft';
+        window.history.replaceState(null, '', dest);
+        nav(dest, { replace: true });
       } catch (e) {
         setError({
           title: 'Sign-in error',
