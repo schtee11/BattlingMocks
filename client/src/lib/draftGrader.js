@@ -151,8 +151,9 @@ export function computePickValueScore(pick, player, roundNumber, needRank = -1) 
   // Drafting to fill a team need reflects smart roster-building. Top-2 needs
   // get a stronger bonus; remaining needs get a smaller bump. Only the first
   // pick at each need position receives the bonus (tracked by caller).
-  const needBonus = needRank >= 0 && needRank <= 1 ? 5
-    : needRank >= 2 && needRank <= 4 ? 3
+  // Picking the best available at a need should feel like "Great value".
+  const needBonus = needRank >= 0 && needRank <= 1 ? 8
+    : needRank >= 2 && needRank <= 4 ? 5
     : 0;
 
   const score = Math.max(0, Math.min(100, Math.round(adpScore + tierBonus + needBonus)));
