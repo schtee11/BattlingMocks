@@ -775,31 +775,18 @@ router.get('/volume-stats', async (req, res) => {
       ORDER BY completed DESC, user_team
     `, [year]);
 
-    // 4) Daily volume over last 30 days — per-team breakdown for completed team mocks
+    // 4) Daily volume over last 30 days
     const { rows: daily } = await pool.query(`
       SELECT
         started_at::date                                        AS day,
         COUNT(*)::int                                           AS total,
-        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS completed
+        SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS completed,
+        COUNT(DISTINCT CASE WHEN completed_at IS NOT NULL AND mock_type = 'team' THEN user_team END)::int AS distinct_teams
       FROM draft_sessions
       WHERE draft_year = $1
         AND started_at >= NOW() - INTERVAL '30 days'
       GROUP BY started_at::date
       ORDER BY day DESC
-    `, [year]);
-
-    const { rows: dailyByTeam } = await pool.query(`
-      SELECT
-        started_at::date AS day,
-        user_team,
-        COUNT(*)::int    AS count
-      FROM draft_sessions
-      WHERE draft_year = $1
-        AND started_at >= NOW() - INTERVAL '30 days'
-        AND mock_type = 'team'
-        AND completed_at IS NOT NULL
-      GROUP BY started_at::date, user_team
-      ORDER BY day DESC, count DESC
     `, [year]);
 
     // 5) Top users by completed team mocks (guests lumped together)
@@ -818,7 +805,23 @@ router.get('/volume-stats', async (req, res) => {
       LIMIT 15
     `, [year]);
 
-    res.json({ year, overview, byTeam, daily, dailyByTeam, topUsers });
+    // 6) Latest 20 sessions
+    const { rows: recent } = await pool.query(`
+      SELECT
+        ds.id,
+        ds.user_team,
+        ds.started_at,
+        ds.completed_at,
+        CASE WHEN ds.user_id IS NULL THEN TRUE ELSE FALSE END AS is_guest,
+        COALESCE(u.display_name, 'Guest')                     AS display_name
+      FROM draft_sessions ds
+      LEFT JOIN users u ON u.id = ds.user_id
+      WHERE ds.draft_year = $1
+      ORDER BY ds.started_at DESC
+      LIMIT 20
+    `, [year]);
+
+    res.json({ year, overview, byTeam, daily, topUsers, recent });
   } catch (e) {
     console.error('[volume-stats]', e);
     res.status(500).json({ error: 'server error' });
