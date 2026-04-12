@@ -19,6 +19,8 @@ export const ALGO_DEFAULTS = {
   needsBoost1: 0.20,   // top need    → score × 1.20
   needsBoost2: 0.13,   // 2nd need    → score × 1.13
   needsBoost3: 0.07,   // 3rd need    → score × 1.07
+  needsBoost4: 0.04,   // 4th need    → score × 1.04
+  needsBoost5: 0.02,   // 5th need    → score × 1.02
 
   // Hard fall caps — if a player (in rank range) has fallen more than
   // maxFall picks past their rank, their score is multiplied by boost to
@@ -26,6 +28,34 @@ export const ALGO_DEFAULTS = {
   fallCap1MaxRank: 5,  fallCap1MaxFall: 5,  fallCap1Boost: 15,
   fallCap2MaxRank: 10, fallCap2MaxFall: 9,  fallCap2Boost: 8,
   fallCap3MaxRank: 20, fallCap3MaxFall: 13, fallCap3Boost: 4,
+
+  // Smooth fall cap — continuous curve replacing the cliff system above.
+  // When smoothFallEnabled is true the cliff params are ignored.
+  // allowedFall = fallAllowedBase + fallAllowedScale × (rank - 1).
+  // excessFall  = max(0, pickNumber - rank - allowedFall).
+  // fallBoost   = min(fallBoostMax, 1 + fallBoostRate × excessFall^1.5).
+  smoothFallEnabled: true,
+  fallAllowedBase: 3,
+  fallAllowedScale: 0.5,
+  fallBoostRate: 0.35,
+  fallBoostMax: 20,
+
+  // ── Context-aware features ───────────────────────────────────────────────
+  // Dynamic positional scarcity — boosts positions as they deplete off the board.
+  scarcityEnabled: true,
+  scarcityThreshold: 0.5,   // kicks in when ≤50% of a position remains
+  scarcityMaxBoost: 1.25,   // max multiplier at extreme depletion
+  scarcityCurve: 1.5,       // exponent controlling ramp-up speed
+
+  // Drafted-need decay — reduces need boost when team already picked that position.
+  draftedNeedDecay: 0.6,    // each prior pick at that pos multiplies boost by this
+  draftedNeedFloor: 0.3,    // boost never decays below 30% of original
+
+  // Position run detection — panic boost when 3+ of same position go in recent window.
+  runWindowSize: 8,
+  runThreshold: 3,
+  runBoostNeed: 0.20,       // +20% for teams that need the running position
+  runBoostAny: 0.05,        // +5% for all teams (BPA pull)
 
   // Positional value tiers — multiplier applied to baseScore so premium
   // positions command extra draft capital (QB especially). Keys are the
@@ -39,7 +69,9 @@ export const ALGO_DEFAULTS = {
     OT:   1.12, // Tier 2 — tackle premium (covers LT + RT)
     EDGE: 1.12, // Tier 2 — pass rusher premium
     WR:   1.12, // Tier 2 — receiver premium
-    // Tier 3 implicit 1.00: RB, TE, IOL (G/C), DT (IDL), CB, S, LB
+    CB:   1.08, // Tier 2B — modern passing-game CB premium
+    TE:   1.04, // Tier 2C — elite TE premium (Bowers effect)
+    // Tier 3 implicit 1.00: RB, IOL (G/C), DT (IDL), S, LB
   },
 
   // Selection sharpness — exponent applied to pool scores when doing the

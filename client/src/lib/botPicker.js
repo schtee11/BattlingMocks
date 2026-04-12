@@ -1,43 +1,27 @@
 import { getAlgoConfig } from './algoConfig.js';
 
-// Client-side bot picker — mirrors server/src/services/botPicker.js.
+// SYNC WARNING: This file must stay in sync with server/src/services/botPicker.js.
+// Last synced: 2026-04-12. If you modify one, update the other.
 //
-// Scoring: score = baseScore * needsMultiplier * tierMult * jitter.
+// Client-side bot picker.
 //
-//   baseScore      exponential decay off rank so top picks dominate but
-//                  mid-round picks are still competitive when needs intervene.
-//                  rank 1 = 1.00, rank 5 = 0.85, rank 10 = 0.70, rank 20 = 0.45
-//                  (decay = e^-0.04 per rank step). Steeper than the old -0.025
-//                  curve so a rank-8 player with top-need boost (×1.20) scores
-//                  0.91 — safely below rank-1's 1.0, preventing routine falls.
+// Scoring: score = baseScore * needsMultiplier * tierMult * scarcityMult * runMult * jitter
+// Then post-scoring: score *= fallBoost
 //
-//   needsMultiplier +20% for the team's top need position, +13% for second,
-//                  +7% for third, 1.0 otherwise. With the steeper base curve a
-//                  needs boost moves a player ~4-6 spots up, then BPA takes over.
+//   baseScore        exponential decay off rank (e^-0.04 per rank step).
+//   needsMultiplier  +20%/+13%/+7%/+4%/+2% for team's top-5 positional needs.
+//                    Decays when the team has already drafted that position
+//                    (draftedNeedDecay). Supports OL → OT+IOL expansion.
+//   tierMult         ×1.30 QB, ×1.12 OT/EDGE/WR, ×1.08 CB, ×1.04 TE, ×1.00 rest.
+//   scarcityMult     Boosts positions as they deplete off the board (threshold-based).
+//   runMult          Panic boost when 3+ of same position go in last 8 picks.
+//   jitter           multiplicative 1 ± randomness/2.
+//   fallBoost        Smooth continuous curve (or legacy cliff caps) preventing
+//                    unrealistic falls of consensus talents.
 //
-//   tierMult       ×1.30 for QB (Tier 1), ×1.12 for OT/EDGE/WR (Tier 2),
-//                  ×1.00 for everything else. Makes premium positions harder
-//                  to pass on; calibrated so a rank-7 QB still edges out a
-//                  rank-1 non-QB on tier alone but a rank-8 QB does not.
-//                  Tiers are sourced from cfg.positionTiers.
-//
-//   jitter         multiplicative 1 ± randomness/2. At default randomness 0.25
-//                  that's ±12.5%; at 1.0 (max chaos slider) it's ±50%.
-//
-//   Hard fall cap  After scoring, top-ranked players who have already fallen
-//                  "too far" relative to their rank get a large score multiplier
-//                  that forces them near the top of the pool. This prevents the
-//                  unrealistic scenario where a consensus top-5 talent slips to
-//                  pick 20+. Requires callers to pass pickNumber.
-//
-// Selection: instead of always picking the max-score player, scores are used
-// as weights in a weighted random draw from a top-N candidate pool. Pool
-// weights are score^cfg.scoreSharpness so the top scorer clearly dominates
-// without collapsing to deterministic max. Default sharpness=5 yields
-// ~62% rate for a consensus #1 talent on a top-need team (measured on
-// the 2026 board at randomness=0.25); bump to 7 for ~80% near-lock
-// behavior via admin override. The pool size scales with the randomness
-// slider.
+// Selection: weighted random draw from a top-N candidate pool.
+// All new features require an optional draftContext parameter; when absent
+// every new multiplier defaults to 1.0 (backward compatible).
 
 const POS_ALIASES = {
   // Defensive line
@@ -53,7 +37,7 @@ const POS_ALIASES = {
   // Backs
   HB: 'RB', FB: 'RB',
 };
-function normalizePos(pos) {
+export function normalizePos(pos) {
   if (!pos) return '';
   const up = String(pos).toUpperCase().trim();
   return POS_ALIASES[up] || up;
@@ -80,7 +64,10 @@ function positionTierMultiplier(canonicalPos, cfg) {
   return Number.isFinite(m) && m > 0 ? m : 1;
 }
 
-export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pickNumber = 999 }) {
+// Needs-boost keys ordered by priority index (0 = top need … 4 = 5th need).
+const NEEDS_BOOST_KEYS = ['needsBoost1', 'needsBoost2', 'needsBoost3', 'needsBoost4', 'needsBoost5'];
+
+export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pickNumber = 999, draftContext }) {
   if (!available || available.length === 0) return null;
 
   // Build a position → priority map. Each input token can expand to MULTIPLE
@@ -101,48 +88,125 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
 
   const cfg = getAlgoConfig();
 
+  // ── Feature 1: Positional scarcity pre-computation ──────────────────────
+  // When a position is depleted relative to the full pool, remaining players
+  // at that position become more attractive (scarcity premium).
+  let scarcityMap = null;
+  if (cfg.scarcityEnabled && draftContext?.allPlayers) {
+    const totalByPos = new Map();
+    for (const p of draftContext.allPlayers) {
+      const pos = normalizePos(p.position);
+      if (pos) totalByPos.set(pos, (totalByPos.get(pos) || 0) + 1);
+    }
+    const remainByPos = new Map();
+    for (const p of available) {
+      const pos = normalizePos(p.position);
+      if (pos) remainByPos.set(pos, (remainByPos.get(pos) || 0) + 1);
+    }
+    scarcityMap = { totalByPos, remainByPos };
+  }
+
+  // ── Feature 3: Position run pre-computation ─────────────────────────────
+  // When 3+ players at the same position go in the recent window, teams that
+  // need that position get a panic boost.
+  let positionRunCounts = null;
+  if (cfg.runWindowSize > 0 && draftContext?.recentPicks?.length > 0) {
+    positionRunCounts = new Map();
+    for (const rp of draftContext.recentPicks) {
+      const pos = normalizePos(rp.position);
+      if (pos) positionRunCounts.set(pos, (positionRunCounts.get(pos) || 0) + 1);
+    }
+  }
+
+  // ── Scoring loop ────────────────────────────────────────────────────────
   const scored = [];
   for (const p of available) {
     const rank = Number.isFinite(p.rank) ? p.rank : 500;
     const baseScore = Math.exp(-cfg.decayRate * (rank - 1));
 
     const pos = normalizePos(p.position);
+
+    // Needs multiplier (F6: supports all 5 priority levels, F2: roster decay).
     let needsMultiplier = 1;
     if (needsPriority.has(pos)) {
       const priority = needsPriority.get(pos);
-      needsMultiplier =
-        priority === 0 ? 1 + cfg.needsBoost1 :
-        priority === 1 ? 1 + cfg.needsBoost2 :
-                         1 + cfg.needsBoost3;
+      const boostKey = NEEDS_BOOST_KEYS[priority];
+      let boost = boostKey ? (cfg[boostKey] ?? 0) : 0;
+
+      // Feature 2: Drafted-need decay — reduce boost if team already drafted
+      // this position. Each prior pick multiplies the boost by decayFactor.
+      if (boost > 0 && draftContext?.teamDraftedPos) {
+        const priorCount = draftContext.teamDraftedPos.filter((p) => p === pos).length;
+        if (priorCount > 0) {
+          const decayFactor = Math.max(
+            cfg.draftedNeedFloor,
+            Math.pow(cfg.draftedNeedDecay, priorCount),
+          );
+          boost *= decayFactor;
+        }
+      }
+      needsMultiplier = 1 + boost;
     }
 
     const tierMult = positionTierMultiplier(pos, cfg);
 
+    // Feature 1: Scarcity multiplier.
+    let scarcityMult = 1;
+    if (scarcityMap && pos) {
+      const total = scarcityMap.totalByPos.get(pos) || 0;
+      const remain = scarcityMap.remainByPos.get(pos) || 0;
+      if (total > 0) {
+        const depletionPct = 1 - remain / total;
+        if (depletionPct > cfg.scarcityThreshold) {
+          const intensity = (depletionPct - cfg.scarcityThreshold) / (1 - cfg.scarcityThreshold);
+          scarcityMult = 1 + (cfg.scarcityMaxBoost - 1) * Math.pow(intensity, 1 / cfg.scarcityCurve);
+        }
+      }
+    }
+
+    // Feature 3: Run multiplier.
+    let runMult = 1;
+    if (positionRunCounts && pos) {
+      const runCount = positionRunCounts.get(pos) || 0;
+      if (runCount >= cfg.runThreshold) {
+        runMult = needsPriority.has(pos) ? 1 + cfg.runBoostNeed : 1 + cfg.runBoostAny;
+      }
+    }
+
     const jitter = 1 + (Math.random() - 0.5) * randomness;
 
-    let score = baseScore * needsMultiplier * tierMult * jitter;
+    let score = baseScore * needsMultiplier * tierMult * scarcityMult * runMult * jitter;
     scored.push({ player: p, rank, score });
   }
 
-  // Hard fall cap: boost top-ranked players who have fallen too far.
-  for (const entry of scored) {
-    const { rank } = entry;
-    const fall = pickNumber - rank;
-    if (rank <= cfg.fallCap1MaxRank && fall > cfg.fallCap1MaxFall) {
-      entry.score *= cfg.fallCap1Boost;
-    } else if (rank <= cfg.fallCap2MaxRank && fall > cfg.fallCap2MaxFall) {
-      entry.score *= cfg.fallCap2Boost;
-    } else if (rank <= cfg.fallCap3MaxRank && fall > cfg.fallCap3MaxFall) {
-      entry.score *= cfg.fallCap3Boost;
+  // ── Fall cap ────────────────────────────────────────────────────────────
+  if (cfg.smoothFallEnabled) {
+    // Feature 5: Smooth continuous fall cap.
+    for (const entry of scored) {
+      const { rank } = entry;
+      const fall = pickNumber - rank;
+      const allowedFall = cfg.fallAllowedBase + cfg.fallAllowedScale * (rank - 1);
+      const excess = Math.max(0, fall - allowedFall);
+      if (excess > 0) {
+        entry.score *= Math.min(cfg.fallBoostMax, 1 + cfg.fallBoostRate * Math.pow(excess, 1.5));
+      }
+    }
+  } else {
+    // Legacy cliff-based fall cap (admin can revert via smoothFallEnabled: false).
+    for (const entry of scored) {
+      const { rank } = entry;
+      const fall = pickNumber - rank;
+      if (rank <= cfg.fallCap1MaxRank && fall > cfg.fallCap1MaxFall) {
+        entry.score *= cfg.fallCap1Boost;
+      } else if (rank <= cfg.fallCap2MaxRank && fall > cfg.fallCap2MaxFall) {
+        entry.score *= cfg.fallCap2Boost;
+      } else if (rank <= cfg.fallCap3MaxRank && fall > cfg.fallCap3MaxFall) {
+        entry.score *= cfg.fallCap3Boost;
+      }
     }
   }
 
   // Weighted random selection from a top-N candidate pool.
-  // Pool size scales with the randomness slider:
-  //   randomness 0.15 → pool of ~7   (tight BPA, low variance)
-  //   randomness 0.50 → pool of ~10  (moderate variance)
-  //   randomness 1.00 → pool of ~15  (max chaos)
-  // This ensures the same board doesn't always produce identical picks.
   scored.sort((a, b) => b.score - a.score);
   const poolSize = Math.min(
     Math.max(3, Math.round(5 + randomness * 10)),
@@ -152,7 +216,7 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
 
   // Apply selection sharpness: weight = score^sharpness. Sharpness > 1
   // makes the top-scoring player clearly dominate the pool draw without
-  // collapsing to deterministic max. Ordering is unchanged.
+  // collapsing to deterministic max.
   const sharpness = Number.isFinite(cfg.scoreSharpness) && cfg.scoreSharpness > 0
     ? cfg.scoreSharpness
     : 1;
