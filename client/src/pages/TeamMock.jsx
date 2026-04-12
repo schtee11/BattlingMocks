@@ -2035,6 +2035,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // ── Status banner (on the clock) ───────────────────────────────────────────
   function StatusBanner({ compact = false }) {
     if (phase === PHASE_READY) {
+      const userSlots = liveOrder.filter((s) => s.team === team);
       return (
         <div className={`${compact ? 'px-3 py-2' : 'px-4 py-3'} flex items-center gap-3`}>
           <TeamLogo abbr={team} size={compact ? 'sm' : 'md'} />
@@ -2042,8 +2043,23 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             <div className="font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">
               Drafting for
             </div>
-            <div className={`font-display font-bold ${compact ? 'text-[13px]' : 'text-[16px]'} text-text-primary truncate`}>
-              {team} · {userSlotCount} picks
+            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+              {userSlots.map((slot) => (
+                <span
+                  key={slot.pick_number}
+                  className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] rounded font-mono shrink-0"
+                  style={{
+                    backgroundColor: 'rgba(0,229,255,0.10)',
+                    color: 'var(--accent)',
+                    boxShadow: 'inset 0 0 0 1px rgba(0,229,255,0.22)',
+                  }}
+                >
+                  R{slot.round}
+                </span>
+              ))}
+              <span className={`font-display font-bold ${compact ? 'text-[13px]' : 'text-[16px]'} text-text-primary`}>
+                {team} · {userSlotCount} picks
+              </span>
             </div>
           </div>
           <button
