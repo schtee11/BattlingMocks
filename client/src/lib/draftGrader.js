@@ -288,9 +288,11 @@ export function computeRosterConstructionScore(picks, byId, teamNeeds, avgPickVa
 }
 
 // ─── Component 3: Relative Rank Score (user team only) ──────────────────────
-// Compares the user's roster projected value against all CPU teams.
-// Uses the same exponential-decay value model as the bot picker
-// (rank 1 = 1.0, rank 10 ≈ 0.70).  1st-place team = 100, last = 30, linear.
+// Compares the user's draft efficiency against all CPU teams by average
+// delta (pick_number - consensus_rank).  Positive delta = steals, negative =
+// reaches.  This is draft-position-independent: a team picking at #26 that
+// steals 3 spots per pick ranks the same as a team at #1 that steals 3 spots.
+// 1st-place team = 100, last = 30, linear.
 
 export function computeRelativeRankScore(userTeam, allPicks, byId) {
   if (!allPicks || allPicks.length === 0) return null;
@@ -306,23 +308,25 @@ export function computeRelativeRankScore(userTeam, allPicks, byId) {
 
   if (!teamPicks.has(userTeam) || teamPicks.size < 2) return null;
 
-  // Compute roster value using the exponential-decay model
-  function rosterValue(picks) {
+  // Average delta per team — measures draft efficiency, not draft capital
+  function avgDelta(picks) {
     let total = 0;
+    let count = 0;
     for (const pick of picks) {
       const player = byId.get(pick.player_id);
       if (!player) continue;
       const rank = Number(player.consensus_rank ?? player.rank);
       if (Number.isFinite(rank) && rank > 0) {
-        total += Math.exp(-0.04 * (rank - 1));
+        total += pick.pick_number - rank;
+        count++;
       }
     }
-    return total;
+    return count > 0 ? total / count : 0;
   }
 
   const teamValues = [];
   for (const [team, picks] of teamPicks) {
-    teamValues.push({ team, value: rosterValue(picks) });
+    teamValues.push({ team, value: avgDelta(picks) });
   }
   teamValues.sort((a, b) => b.value - a.value);
 
