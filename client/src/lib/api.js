@@ -98,6 +98,13 @@ export const api = {
     if (fresh) invalidateCache('predictive-live');
     return cached('predictive-live', 8_000, () => request('/api/predictive/live'));
   },
+  getR1Consensus: () => cached('analytics-r1', 2 * 60_000, () => request('/api/analytics/r1-consensus')),
+  getTeamConsensus: (team) =>
+    cached(`analytics-team-${team}`, 2 * 60_000, () =>
+      request(`/api/analytics/team-consensus/${encodeURIComponent(team)}`)
+    ),
+  getPositionConsensus: () =>
+    cached('analytics-positions', 2 * 60_000, () => request('/api/analytics/positions')),
   checkName: (name) => request(`/api/users/check?name=${encodeURIComponent(name)}`),
   getUserByName: (name) => request(`/api/users/by-name?name=${encodeURIComponent(name)}`),
   createUser: (display_name) => request('/api/users', { method: 'POST', body: { display_name } }),
