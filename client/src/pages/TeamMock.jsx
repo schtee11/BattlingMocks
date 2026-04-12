@@ -2034,8 +2034,19 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
   // ── Status banner (on the clock) ───────────────────────────────────────────
   function StatusBanner({ compact = false }) {
+    // Remaining user pick slots — filters out each pick as it's made
+    const madeUserPickNumbers = new Set(picks.filter((p) => p.is_user).map((p) => p.pick_number));
+    const remainingUserSlots = liveOrder.filter(
+      (s) => s.team === team && !madeUserPickNumbers.has(s.pick_number)
+    );
+
+    const pickPillStyle = {
+      backgroundColor: 'rgba(0,229,255,0.10)',
+      color: 'var(--accent)',
+      boxShadow: 'inset 0 0 0 1px rgba(0,229,255,0.22)',
+    };
+
     if (phase === PHASE_READY) {
-      const userSlots = liveOrder.filter((s) => s.team === team);
       return (
         <div className={`${compact ? 'px-3 py-2' : 'px-4 py-3'} flex items-center gap-3`}>
           <TeamLogo abbr={team} size={compact ? 'sm' : 'md'} />
@@ -2044,22 +2055,18 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               Drafting for
             </div>
             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-              {userSlots.map((slot) => (
-                <span
-                  key={slot.pick_number}
-                  className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] rounded font-mono shrink-0"
-                  style={{
-                    backgroundColor: 'rgba(0,229,255,0.10)',
-                    color: 'var(--accent)',
-                    boxShadow: 'inset 0 0 0 1px rgba(0,229,255,0.22)',
-                  }}
-                >
-                  R{slot.round}
-                </span>
-              ))}
-              <span className={`font-display font-bold ${compact ? 'text-[13px]' : 'text-[16px]'} text-text-primary`}>
+              <span className={`font-display font-bold ${compact ? 'text-[13px]' : 'text-[16px]'} text-text-primary shrink-0`}>
                 {team} · {userSlotCount} picks
               </span>
+              {remainingUserSlots.map((slot) => (
+                <span
+                  key={slot.pick_number}
+                  className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold rounded font-mono shrink-0"
+                  style={pickPillStyle}
+                >
+                  {slot.pick_number}
+                </span>
+              ))}
             </div>
           </div>
           <button
@@ -2126,12 +2133,20 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             </div>
           )}
         </div>
-        <div className="text-right shrink-0">
+        <div className="shrink-0 text-right">
           <div className="text-[10px] font-mono text-text-muted">
             {picks.length}/{liveOrder.length}
           </div>
-          <div className="text-[10px] font-mono text-accent">
-            You: {userPicksMade}/{userSlotCount}
+          <div className="flex items-center justify-end gap-1 flex-wrap mt-0.5">
+            {remainingUserSlots.map((slot) => (
+              <span
+                key={slot.pick_number}
+                className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold rounded font-mono"
+                style={pickPillStyle}
+              >
+                {slot.pick_number}
+              </span>
+            ))}
           </div>
         </div>
       </div>
