@@ -1158,6 +1158,7 @@ function ResultsView({
   onSave,
   onRestart,
   onChangeTeam,
+  isGuest,
 }) {
   const [title, setTitle] = useState(
     `${team} · ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
@@ -1461,7 +1462,7 @@ function ResultsView({
               className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 disabled:opacity-50"
               style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
             >
-              {saving ? 'Saving…' : 'Save Mock'}
+              {isGuest ? 'Sign in to Save' : saving ? 'Saving…' : 'Save Mock'}
             </button>
           </div>
           <div className="flex gap-3 mt-3">
@@ -1644,6 +1645,7 @@ const SPEED_LABELS = ['Instant', 'Fast', 'Normal', 'Slow', 'Slower', 'Max 2.5s']
 
 function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const { user } = useAuth();
+  const nav = useNavigate();
 
   // Live draft order — initialized from props but mutable so trades can swap
   // team ownership mid-draft without losing simulation state.
@@ -1997,12 +1999,28 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }
 
   async function handleSave(customTitle) {
-    if (!user) { toast.error('Sign in to save'); return; }
     if (phase !== PHASE_DONE) return;
     const defaultTitle = `${team} · ${new Date().toLocaleDateString(undefined, {
       month: 'short', day: 'numeric',
     })}`;
     const title = (typeof customTitle === 'string' && customTitle.trim()) || defaultTitle;
+
+    // Guest: stash the completed mock in localStorage so it can be auto-saved
+    // after sign-in, then send the user to the join page.
+    if (!user) {
+      const payload = picks.map((p) => ({
+        pick_number: p.pick_number,
+        player_id: p.player_id,
+        round: p.round,
+        team: p.team,
+      }));
+      try {
+        localStorage.setItem('mds_pending_team_mock', JSON.stringify({ team, title, picks: payload, trades }));
+      } catch {}
+      nav('/join');
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = picks.map((p) => ({
@@ -2117,7 +2135,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             className="shrink-0 font-display font-bold uppercase tracking-[0.14em] text-[11px] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 disabled:opacity-50"
             style={{ background: 'var(--gradient-accent)' }}
           >
-            {saving ? 'Saving…' : 'Save Mock'}
+            {!user ? 'Sign in to Save' : saving ? 'Saving…' : 'Save Mock'}
           </button>
         </div>
       );
@@ -2296,6 +2314,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         onSave={handleSave}
         onRestart={restart}
         onChangeTeam={onChangeTeam}
+        isGuest={!user}
       />
       {/* Generous bottom padding so Chrome keeps the scroll container tall
           even during re-renders when data URLs load and content height
@@ -2811,8 +2830,33 @@ export default function TeamMock() {
   }
   useEffect(() => { loadSavedMocks(); }, [user]);
 
+  // Auto-save a pending guest mock after the user signs in.
+  // The pending mock is stashed in localStorage by DraftSimulator.handleSave
+  // when a guest clicks "Sign in to Save".
+  useEffect(() => {
+    if (!user) return;
+    const raw = localStorage.getItem('mds_pending_team_mock');
+    if (!raw) return;
+    localStorage.removeItem('mds_pending_team_mock');
+    try {
+      const pending = JSON.parse(raw);
+      api.submitTeamMock(user.id, pending.team, pending.picks, pending.title, pending.trades)
+        .then(() => {
+          toast.success('Team mock saved!');
+          loadSavedMocks();
+        })
+        .catch((e) => toast.error(e?.message || 'Could not save your mock'));
+    } catch {
+      // Invalid stored data — ignore
+    }
+  }, [user]);
+
+  // Guest prompt — shown when an unauthenticated user picks a team.
+  // "Sign in" sends them to /join; "Continue as Guest" lets them draft.
+  const [guestPromptTeam, setGuestPromptTeam] = useState(null);
+
   function handleTeamSelect(abbr) {
-    if (!user) { nav('/join'); return; }
+    if (!user) { setGuestPromptTeam(abbr); return; }
     setTeam(abbr);
   }
 
@@ -2928,6 +2972,15 @@ export default function TeamMock() {
           </div>
         )}
         <TeamPicker onSelect={handleTeamSelect} draftOrder={draftOrder} onRefresh={loadData} />
+        <ConfirmModal
+          open={!!guestPromptTeam}
+          onClose={() => { const t = guestPromptTeam; setGuestPromptTeam(null); setTeam(t); }}
+          onConfirm={() => { setGuestPromptTeam(null); nav('/join'); }}
+          title="Create an account?"
+          description="Sign in to save your mocks and track them over time. You can still share mock screenshots as a guest."
+          confirmLabel="Sign in"
+          cancelLabel="Continue as Guest"
+        />
       </div>
     );
   }
