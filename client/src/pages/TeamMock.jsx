@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 const loadToPng = () => import('html-to-image').then((m) => m.toPng);
 import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
-import { pickForTeam } from '../lib/botPicker.js';
+import { pickForTeam, normalizePos } from '../lib/botPicker.js';
 import { loadAlgoConfig, getAlgoConfig } from '../lib/algoConfig.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
@@ -1760,11 +1760,21 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       // Compute the live pool right now, pick, then advance.
       const taken = new Set(picks.map((p) => p.player_id));
       const available = players.filter((p) => !taken.has(p.id));
+      const algoCfg = getAlgoConfig();
       const picked = pickForTeam({
         available,
         teamNeeds: currentSlot.team_needs || [],
         randomness,
         pickNumber: currentSlot.pick_number,
+        draftContext: {
+          allPlayers: players,
+          teamDraftedPos: picks
+            .filter((pk) => pk.team === currentSlot.team)
+            .map((pk) => normalizePos(byId.get(pk.player_id)?.position || '')),
+          recentPicks: picks
+            .slice(-(algoCfg.runWindowSize || 8))
+            .map((pk) => ({ position: normalizePos(byId.get(pk.player_id)?.position || '') })),
+        },
       });
       if (!picked) { setPhase(PHASE_DONE); return; }
       setPicks((prev) => [
