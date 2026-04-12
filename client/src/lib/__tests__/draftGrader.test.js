@@ -193,24 +193,24 @@ describe('computePickValueScore', () => {
     expect(kResult.score).toBeGreaterThan(wrResult.score);
   });
 
-  it('boosts at-value picks to "Good value" when filling a top-2 need', () => {
+  it('grades at-value picks at a top need as 95 (A)', () => {
     const pick = makePick({ pick_number: 26 });
     const player = makePlayer({ rank: 26, position: 'DT' });
-    // needRank 0 = top need → +5 bonus
+    // needRank 0 = top need → +15 bonus
     const result = computePickValueScore(pick, player, 1, 0);
-    // base 80 + 0 (delta) + 0 (tier) + 5 (need) = 85
-    expect(result.score).toBeGreaterThanOrEqual(83);
-    expect(result.tag).toBe('Good value');
+    // base 80 + 0 (delta) + 0 (tier) + 15 (need) = 95
+    expect(result.score).toBe(95);
+    expect(result.tag).toBe('Great value');
   });
 
-  it('gives smaller bonus for lower-priority needs (rank 2-4)', () => {
+  it('grades at-value picks at a lower need as 90 (A-)', () => {
     const pick = makePick({ pick_number: 126 });
     const player = makePlayer({ rank: 126, position: 'CB' });
-    // needRank 3 = lower need → +3 bonus
+    // needRank 3 = lower need → +10 bonus
     const result = computePickValueScore(pick, player, 4, 3);
-    // base 80 + 0 + 0 + 3 = 83
-    expect(result.score).toBeGreaterThanOrEqual(81);
-    expect(result.tag).toBe('Good value');
+    // base 80 + 0 + 0 + 10 = 90
+    expect(result.score).toBe(90);
+    expect(result.tag).toBe('Great value');
   });
 
   it('gives no need bonus when needRank is -1 (not a need)', () => {
