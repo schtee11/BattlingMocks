@@ -97,7 +97,7 @@ function TeamPicker({ onSelect, draftOrder, onRefresh }) {
 }
 
 // ─── Saved View ───────────────────────────────────────────────────────────────
-function SavedView({ savedMock, players, onRestart }) {
+function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
   const userTeam = savedMock.team_abbr;
   // Only show the user's own picks — the full 262-pick board is noise when
@@ -119,6 +119,16 @@ function SavedView({ savedMock, players, onRestart }) {
     return map;
   }, [myPicks]);
   const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
+
+  // Compute grade for saved mock header
+  const teamNeeds = useMemo(() => {
+    const row = draftOrder.find((r) => r.team === userTeam && Array.isArray(r.team_needs) && r.team_needs.length);
+    return row?.team_needs || [];
+  }, [draftOrder, userTeam]);
+  const savedGrade = useMemo(
+    () => computeTeamMockGrade({ myPicks, byId, teamNeeds }),
+    [myPicks, byId, teamNeeds]
+  );
 
   // Export: renders the hidden ExportCard to a PNG blob, then either copies
   // to clipboard (desktop) or opens the native share sheet (mobile). One
@@ -425,7 +435,34 @@ function SavedView({ savedMock, players, onRestart }) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          {savedGrade.letter && (
+            <div
+              className="flex items-center gap-2.5 px-3 py-2 rounded-xl border"
+              style={{
+                borderColor: `${gradeColor(savedGrade.letter)}55`,
+                background: `${gradeColor(savedGrade.letter)}0d`,
+              }}
+            >
+              <div
+                className="font-display font-bold leading-none"
+                style={{
+                  color: gradeColor(savedGrade.letter),
+                  fontSize: savedGrade.letter.length > 1 ? 26 : 32,
+                }}
+              >
+                {savedGrade.letter}
+              </div>
+              <div>
+                <div className="font-display text-[9px] font-semibold uppercase tracking-[0.12em] text-text-muted">
+                  Grade
+                </div>
+                <div className="font-mono text-[13px] font-bold text-text-primary leading-tight">
+                  {savedGrade.total}
+                </div>
+              </div>
+            </div>
+          )}
           <button
             onClick={handleShare}
             disabled={exporting}
@@ -1431,7 +1468,7 @@ function ResultsView({
                 </div>
                 <div className="flex-1 h-px bg-border-subtle" />
               </div>
-              <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {myPicksByRound[r].map((pick) => {
                   const player = byId.get(pick.player_id);
                   if (!player) return null;
@@ -1453,33 +1490,18 @@ function ResultsView({
                         <div className="text-[13px] font-semibold truncate text-text-primary">
                           {player.name}
                         </div>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <PositionBadge position={player.position} />
                           <span className="text-[10px] text-text-muted truncate">{player.school}</span>
                           {pb && (
                             <span
-                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0"
                               style={{ background: `${pickLetterColor}22`, color: pickLetterColor }}
                             >
                               {pb.value_tag}
                             </span>
                           )}
-                          {pb?.need_tag && pb.need_tag !== 'BPA / depth' && (
-                            <span className="text-[9px] font-semibold text-accent/80 uppercase">
-                              {pb.need_tag}
-                            </span>
-                          )}
                         </div>
-                      </div>
-                      <div className="shrink-0 flex flex-col items-center">
-                        {pb && (
-                          <div
-                            className="font-display font-bold text-[14px]"
-                            style={{ color: pickLetterColor }}
-                          >
-                            {pb.pick_grade}
-                          </div>
-                        )}
-                        <PositionBadge position={player.position} />
                       </div>
                     </div>
                   );
@@ -2853,6 +2875,7 @@ export default function TeamMock() {
       <SavedView
         savedMock={activeMock}
         players={players}
+        draftOrder={draftOrder}
         onRestart={() => setActiveMock(null)}
       />
     );
