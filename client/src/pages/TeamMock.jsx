@@ -7,7 +7,7 @@ import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam, normalizePos } from '../lib/botPicker.js';
 import { loadAlgoConfig, getAlgoConfig } from '../lib/algoConfig.js';
-import { computeTeamMockGrade, computeAllTeamGrades, letterFromScore, gradeColor } from '../lib/draftGrader.js';
+import { computeTeamMockGrade, letterFromScore, gradeColor } from '../lib/draftGrader.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -132,16 +132,6 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
       userTeam,
     }),
     [myPicks, byId, teamNeeds, savedMock.picks, userTeam]
-  );
-
-  const leagueGrades = useMemo(
-    () => computeAllTeamGrades({
-      allPicks: savedMock.picks || [],
-      byId,
-      draftOrder,
-      userTeam,
-    }),
-    [savedMock.picks, byId, draftOrder, userTeam]
   );
 
   // Export: renders the hidden ExportCard to a PNG blob, then either copies
@@ -553,34 +543,6 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
           </div>
         ))}
       </div>
-
-      {/* ── League Draft Rankings ── */}
-      {leagueGrades.length > 1 && (
-        <div className="mt-10">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="font-display text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-              League Draft Rankings
-            </div>
-            <div className="flex-1 h-px bg-border-subtle" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-            {leagueGrades.map((g, idx) => (
-              <div
-                key={g.team}
-                className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-[12px] ${
-                  g.isUser ? 'border-accent/50 bg-accent/[0.08]' : 'border-border-subtle bg-bg-surface/40'
-                }`}
-              >
-                <span className="font-mono text-[10px] text-text-muted w-4 text-right">{idx + 1}</span>
-                <TeamLogo abbr={g.team} size="xs" />
-                <span className={`font-display font-bold ${g.isUser ? 'text-accent' : 'text-text-primary'}`}>
-                  {g.letter}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ── Trades made during the mock ── */}
       {Array.isArray(savedMock.trades) && savedMock.trades.length > 0 && (
@@ -1130,11 +1092,6 @@ function ResultsView({
     [myPicksOnly, byId, teamNeeds, picks, team]
   );
 
-  const leagueGrades = useMemo(
-    () => computeAllTeamGrades({ allPicks: picks, byId, draftOrder, userTeam: team }),
-    [picks, byId, draftOrder, team]
-  );
-
   const myPicksByRound = useMemo(() => {
     const map = {};
     for (const p of myPicksOnly) {
@@ -1558,34 +1515,6 @@ function ResultsView({
             </div>
           ))}
         </div>
-
-        {/* ── League Draft Rankings ── */}
-        {leagueGrades.length > 1 && (
-          <div className="mt-8">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="font-display text-[11px] font-semibold uppercase tracking-[0.16em] text-text-muted">
-                League Draft Rankings
-              </div>
-              <div className="flex-1 h-px bg-border-subtle" />
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-              {leagueGrades.map((g, idx) => (
-                <div
-                  key={g.team}
-                  className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-[12px] ${
-                    g.isUser ? 'border-accent/50 bg-accent/[0.08]' : 'border-border-subtle bg-bg-surface/40'
-                  }`}
-                >
-                  <span className="font-mono text-[10px] text-text-muted w-4 text-right">{idx + 1}</span>
-                  <TeamLogo abbr={g.team} size="xs" />
-                  <span className={`font-display font-bold ${g.isUser ? 'text-accent' : 'text-text-primary'}`}>
-                    {g.letter}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* ── Trades made during the mock ── */}
         {trades.length > 0 && (
