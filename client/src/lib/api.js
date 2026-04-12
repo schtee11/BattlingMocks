@@ -103,6 +103,10 @@ export const api = {
     cached(`analytics-team-${team}`, 2 * 60_000, () =>
       request(`/api/analytics/team-consensus/${encodeURIComponent(team)}`)
     ),
+  getTeamPickBreakdown: (team) =>
+    cached(`analytics-breakdown-${team}`, 2 * 60_000, () =>
+      request(`/api/analytics/team-pick-breakdown/${encodeURIComponent(team)}`)
+    ),
   getPositionConsensus: () =>
     cached('analytics-positions', 2 * 60_000, () => request('/api/analytics/positions')),
   checkName: (name) => request(`/api/users/check?name=${encodeURIComponent(name)}`),
