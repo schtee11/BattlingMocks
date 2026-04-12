@@ -161,6 +161,31 @@ describe('computePickValueScore', () => {
     expect(result.score).toBe(60);
     expect(result.tag).toBe('Unranked');
   });
+
+  it('discounts late-round reaches (R7 vs R1)', () => {
+    const player = makePlayer({ rank: 25, position: 'CB' });
+    const r1 = computePickValueScore(makePick({ pick_number: 10 }), player, 1);
+    const r7 = computePickValueScore(makePick({ pick_number: 10 }), player, 7);
+    // Same delta (-15), but R7 should be significantly more forgiving
+    expect(r7.score).toBeGreaterThan(r1.score + 15);
+  });
+
+  it('treats specialist picks (K/P) leniently in late rounds', () => {
+    // Best K (rank 258) taken at pick 224 (last pick, R7)
+    const kPick = makePick({ pick_number: 224 });
+    const kPlayer = makePlayer({ rank: 258, position: 'K' });
+    const kResult = computePickValueScore(kPick, kPlayer, 7);
+    // Despite delta -34, specialist discount should keep it reasonable
+    expect(kResult.score).toBeGreaterThanOrEqual(52);
+    expect(kResult.tag).not.toBe('Big reach');
+
+    // Compare: non-specialist with same delta in R7
+    const wrPick = makePick({ pick_number: 190 });
+    const wrPlayer = makePlayer({ rank: 224, position: 'WR' });
+    const wrResult = computePickValueScore(wrPick, wrPlayer, 7);
+    // Specialist should score better than non-specialist at same delta
+    expect(kResult.score).toBeGreaterThan(wrResult.score);
+  });
 });
 
 // ─── Component 2: Roster Construction Score ─────────────────────────────────
