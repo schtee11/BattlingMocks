@@ -1378,17 +1378,17 @@ export default function Admin() {
       {/* Consensus Analytics */}
       {tab === 'consensus' && (
         <div className="space-y-5">
-          {/* R1 Player Frequency */}
+          {/* Most-picked players across team mocks */}
           <Card className="p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-display font-semibold text-text-primary text-sm uppercase tracking-[0.12em]">
-                  R1 Pick Frequency
+                  Most Picked Players
                 </h3>
                 <p className="text-text-muted text-[11px] mt-0.5">
                   {consensusR1
-                    ? `Based on ${consensusR1.total_mocks} submitted mock${consensusR1.total_mocks !== 1 ? 's' : ''}`
-                    : 'Most-picked players across all round 1 mocks'}
+                    ? `Based on ${consensusR1.total_mocks} team mock${consensusR1.total_mocks !== 1 ? 's' : ''}`
+                    : 'Most-drafted players across all saved team mocks'}
                 </p>
               </div>
             </div>
@@ -1400,7 +1400,7 @@ export default function Admin() {
             )}
 
             {!consensusLoading && consensusR1?.total_mocks === 0 && (
-              <p className="text-text-muted text-sm text-center py-6">No R1 mocks submitted yet.</p>
+              <p className="text-text-muted text-sm text-center py-6">No team mocks saved yet.</p>
             )}
 
             {!consensusLoading && consensusR1?.players?.length > 0 && (
@@ -1460,7 +1460,7 @@ export default function Admin() {
             )}
 
             {!consensusLoading && consensusPos?.total_r1_picks === 0 && (
-              <p className="text-text-muted text-sm text-center py-6">No R1 picks to analyze yet.</p>
+              <p className="text-text-muted text-sm text-center py-6">No team mock picks to analyze yet.</p>
             )}
 
             {!consensusLoading && consensusPos?.positions?.length > 0 && (
