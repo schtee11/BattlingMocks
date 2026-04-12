@@ -107,7 +107,6 @@ export default function Admin() {
   // Volume stats tab
   const [volumeStats, setVolumeStats] = useState(null);
   const [volumeLoading, setVolumeLoading] = useState(false);
-  const [teamColors, setTeamColors] = useState({});
 
   const userIsAdmin = isAdmin(user);
 
@@ -300,18 +299,8 @@ export default function Admin() {
   // ---------- Volume stats ----------
   function loadVolumeStats() {
     setVolumeLoading(true);
-    Promise.all([
-      api.volumeStats(key, syncYear),
-      Object.keys(teamColors).length === 0 ? api.getTeams() : Promise.resolve(null),
-    ])
-      .then(([stats, teams]) => {
-        setVolumeStats(stats);
-        if (teams) {
-          const map = {};
-          for (const t of teams) map[t.id] = t.primaryColor;
-          setTeamColors(map);
-        }
-      })
+    api.volumeStats(key, syncYear)
+      .then(setVolumeStats)
       .catch((e) => toast.error(e.message))
       .finally(() => setVolumeLoading(false));
   }
@@ -1793,47 +1782,30 @@ export default function Admin() {
                 ) : (
                   <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
                     {(() => {
-                      const teamsByDay = {};
-                      for (const r of (volumeStats.dailyByTeam || [])) {
-                        (teamsByDay[r.day] = teamsByDay[r.day] || []).push(r);
-                      }
                       const maxDay = Math.max(...volumeStats.daily.map((d) => d.total));
                       return volumeStats.daily.map((row) => {
                         const totalBarW = maxDay > 0 ? Math.max((row.total / maxDay) * 100, 3) : 0;
                         const completedBarW = maxDay > 0 ? Math.max((row.completed / maxDay) * 100, 1) : 0;
-                        const teams = teamsByDay[row.day] || [];
+                        // Parse YYYY-MM-DD without timezone shift
+                        const [y, m, d] = row.day.split('-').map(Number);
+                        const dayDate = new Date(y, m - 1, d);
                         return (
                           <div key={row.day} className="flex items-center gap-2">
                             <span className="font-mono text-[10px] text-text-muted w-20 shrink-0">
-                              {new Date(row.day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' })}
+                              {dayDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' })}
                             </span>
                             <div className="flex-1 h-5 rounded bg-bg-deep overflow-hidden relative">
-                              {/* Light bar = total started */}
                               <div
                                 className="h-full absolute left-0 top-0 rounded"
                                 style={{ width: `${totalBarW}%`, backgroundColor: '#3b82f6', opacity: 0.15 }}
                               />
-                              {/* Stacked team segments = completed, colored by team */}
-                              <div className="h-full absolute left-0 top-0 flex" style={{ width: `${completedBarW}%` }}>
-                                {teams.map((t) => {
-                                  const segPct = row.completed > 0 ? (t.count / row.completed) * 100 : 0;
-                                  return (
-                                    <div
-                                      key={t.user_team}
-                                      title={`${t.user_team}: ${t.count}`}
-                                      className="h-full first:rounded-l last:rounded-r"
-                                      style={{
-                                        width: `${segPct}%`,
-                                        backgroundColor: teamColors[t.user_team] || '#3b82f6',
-                                        minWidth: teams.length <= 6 ? '3px' : '1px',
-                                      }}
-                                    />
-                                  );
-                                })}
-                              </div>
+                              <div
+                                className="h-full absolute left-0 top-0 rounded"
+                                style={{ width: `${completedBarW}%`, backgroundColor: '#3b82f6' }}
+                              />
                             </div>
-                            <span className="font-mono text-[10px] text-text-muted tabular-nums w-24 text-right shrink-0">
-                              {row.completed}/{row.total} done
+                            <span className="font-mono text-[10px] text-text-muted tabular-nums w-32 text-right shrink-0">
+                              {row.completed}/{row.total} done · {row.distinct_teams} teams
                             </span>
                           </div>
                         );
@@ -1861,6 +1833,38 @@ export default function Admin() {
                         </span>
                       </div>
                     ))}
+                  </div>
+                </Card>
+              )}
+
+              {/* ── Recent sessions ── */}
+              {volumeStats.recent?.length > 0 && (
+                <Card className="p-5">
+                  <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-3">
+                    Latest 20 Sessions
+                  </h4>
+                  <div className="space-y-1">
+                    {volumeStats.recent.map((s) => {
+                      const time = new Date(s.started_at);
+                      return (
+                        <div key={s.id} className="flex items-center gap-2 py-1 border-b border-border-subtle/50 last:border-0">
+                          <TeamLogo abbr={s.user_team} size="xs" />
+                          <span className="font-display font-bold text-[11px] uppercase tracking-wide text-text-primary w-10 shrink-0">
+                            {s.user_team}
+                          </span>
+                          <span className={`text-[11px] w-20 shrink-0 font-medium ${s.completed_at ? 'text-green-500' : 'text-text-muted'}`}>
+                            {s.completed_at ? 'Completed' : 'Abandoned'}
+                          </span>
+                          <span className={`text-[11px] w-14 shrink-0 ${s.is_guest ? 'text-text-muted italic' : 'text-text-primary'}`}>
+                            {s.is_guest ? 'Guest' : s.display_name}
+                          </span>
+                          <span className="font-mono text-[10px] text-text-muted ml-auto shrink-0">
+                            {time.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                            {time.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </Card>
               )}
