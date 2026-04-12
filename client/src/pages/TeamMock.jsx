@@ -1066,11 +1066,13 @@ function ResultsView({
   userPicksMade,
   userSlotCount,
   saving,
+  saved,
   trades = [],
   draftOrder = [],
   onSave,
   onRestart,
   onChangeTeam,
+  onDone,
   isGuest,
 }) {
   const [title, setTitle] = useState(
@@ -1350,49 +1352,100 @@ function ResultsView({
         </div>
 
         {/* ── Save / Share card ── */}
-        <div className="mt-4 p-3 rounded-xl border border-accent/40 bg-accent/[0.05]">
-          <label className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted block mb-1">
-            Mock Title
-          </label>
-          <div className="flex gap-2 items-center">
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value.slice(0, 80))}
-              placeholder="Name this mock…"
-              className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2 text-[13px] text-text-primary placeholder-text-muted focus:border-accent/60 outline-none transition"
-            />
-            <button
-              onClick={handleShare}
-              disabled={exporting}
-              title={isMobile ? 'Share via share sheet' : 'Copy image — paste into Discord with Ctrl+V'}
-              className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.12em] px-3 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
-            >
-              {exporting ? '…' : 'Share'}
-            </button>
-            <button
-              onClick={() => onSave(title.trim() || `${team} · ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`)}
-              disabled={saving}
-              className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 disabled:opacity-50"
-              style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
-            >
-              {isGuest ? 'Sign in to Save' : saving ? 'Saving…' : 'Save Mock'}
-            </button>
+        {isGuest ? (
+          <div className="mt-4 p-4 rounded-xl border border-accent/40 bg-accent/[0.05]">
+            <div className="font-display text-[13px] font-bold uppercase tracking-[0.1em] text-text-primary mb-1">
+              Nice draft, GM.
+            </div>
+            <p className="text-[12px] text-text-secondary leading-relaxed mb-3">
+              Sign in to save this mock, track your draft grades over time, and build your collection.
+            </p>
+            <div className="flex flex-wrap gap-2 items-center">
+              <button
+                onClick={() => onSave(title.trim() || `${team} · ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`)}
+                className="font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2.5 transition hover:brightness-110"
+                style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+              >
+                Sign in to Save
+              </button>
+              <button
+                onClick={handleShare}
+                disabled={exporting}
+                className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-3 py-2.5 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
+              >
+                {exporting ? '…' : 'Share'}
+              </button>
+            </div>
+            <div className="flex gap-3 mt-3">
+              <button
+                onClick={onRestart}
+                className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+              >
+                ← Redraft
+              </button>
+              <button
+                onClick={onChangeTeam}
+                className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+              >
+                Change Team
+              </button>
+            </div>
           </div>
-          <div className="flex gap-3 mt-3">
-            <button
-              onClick={onRestart}
-              className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
-            >
-              ← Redraft
-            </button>
-            <button
-              onClick={onChangeTeam}
-              className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
-            >
-              Change Team
-            </button>
+        ) : (
+          <div className="mt-4 p-3 rounded-xl border border-accent/40 bg-accent/[0.05]">
+            <label className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted block mb-1">
+              Mock Title
+            </label>
+            <div className="flex gap-2 items-center">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value.slice(0, 80))}
+                placeholder="Name this mock…"
+                className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2 text-[13px] text-text-primary placeholder-text-muted focus:border-accent/60 outline-none transition"
+              />
+              <button
+                onClick={handleShare}
+                disabled={exporting}
+                title={isMobile ? 'Share via share sheet' : 'Copy image — paste into Discord with Ctrl+V'}
+                className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.12em] px-3 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
+              >
+                {exporting ? '…' : 'Share'}
+              </button>
+              {saved ? (
+                <button
+                  onClick={onDone}
+                  className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110"
+                  style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+                >
+                  View My Mocks →
+                </button>
+              ) : (
+                <button
+                  onClick={() => onSave(title.trim() || `${team} · ${new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`)}
+                  disabled={saving}
+                  className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 disabled:opacity-50"
+                  style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+                >
+                  {saving ? 'Saving…' : 'Save Mock'}
+                </button>
+              )}
+            </div>
+            <div className="flex gap-3 mt-3">
+              <button
+                onClick={onRestart}
+                className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+              >
+                ← Redraft
+              </button>
+              <button
+                onClick={onChangeTeam}
+                className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+              >
+                Change Team
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ── Draft Grade ── */}
         {draftGrade.letter && (
@@ -1547,6 +1600,43 @@ function ResultsView({
             </div>
           </div>
         )}
+
+        {/* ── Sticky bottom bar — terminal CTA ── */}
+        <div className="sticky bottom-0 left-0 right-0 py-3 px-4 bg-bg-deep/90 backdrop-blur-sm border-t border-border-subtle mt-8">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex gap-3">
+              <button
+                onClick={onRestart}
+                className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+              >
+                Redraft
+              </button>
+              <button
+                onClick={onChangeTeam}
+                className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
+              >
+                New Team
+              </button>
+            </div>
+            {saved ? (
+              <button
+                onClick={onDone}
+                className="font-display font-bold text-[11px] uppercase tracking-[0.14em] text-bg-deep rounded-lg px-5 py-2 transition hover:brightness-110"
+                style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+              >
+                Done →
+              </button>
+            ) : (
+              <button
+                onClick={handleShare}
+                disabled={exporting}
+                className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
+              >
+                {exporting ? '…' : 'Share'}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1602,6 +1692,8 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }, [search]);
   const [posFilter, setPosFilter] = useState('ALL');
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const [trades, setTrades] = useState([]); // record trades for the results view
   // Confirmation state for destructive actions. We gate Restart and Change
   // Team behind an explicit confirm as soon as the user has made any real
@@ -1719,6 +1811,29 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // Auto-switch mobile to Prospects tab when it's the user's turn to pick
   useEffect(() => {
     if (phase === PHASE_ON_CLOCK) setMobileTab('prospects');
+  }, [phase]);
+
+  // ── Confetti celebration when the draft finishes ────────────────────────
+  useEffect(() => {
+    if (phase !== PHASE_DONE) return;
+    import('canvas-confetti').then(({ default: confetti }) => {
+      confetti({
+        particleCount: 120, spread: 80, startVelocity: 50,
+        origin: { y: 0.7 },
+        colors: ['#00e5ff', '#fbbf24', '#3b82f6', '#f97316'],
+      });
+      setTimeout(() => {
+        confetti({ particleCount: 60, angle: 60, spread: 55, origin: { x: 0, y: 0.65 }, colors: ['#00e5ff', '#fbbf24', '#3b82f6', '#f97316'] });
+        confetti({ particleCount: 60, angle: 120, spread: 55, origin: { x: 1, y: 0.65 }, colors: ['#00e5ff', '#fbbf24', '#3b82f6', '#f97316'] });
+      }, 300);
+    });
+  }, [phase]);
+
+  // Brief interstitial before showing full results
+  useEffect(() => {
+    if (phase !== PHASE_DONE) { setShowResults(false); return; }
+    const timer = setTimeout(() => setShowResults(true), 1800);
+    return () => clearTimeout(timer);
   }, [phase]);
 
   // ── Telemetry: lazily create a session and flush picks in batches ────────
@@ -1871,6 +1986,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
     setPicks([]);
     setTrades([]);
+    setSaved(false);
     setPhase(PHASE_READY);
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }
@@ -1956,7 +2072,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       }));
       await api.submitTeamMock(user.id, team, payload, title, trades);
       toast.success('Team mock saved!');
-      onSaved();
+      setSaved(true);
     } catch (e) {
       toast.error(e.message || 'Save failed');
     } finally {
@@ -2211,6 +2327,24 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }
 
   // ── Layout ─────────────────────────────────────────────────────────────────
+  // Celebration interstitial — shows for ~1.8s while confetti fires, then
+  // fades into the full results view.
+  if (phase === PHASE_DONE && !showResults) {
+    return (
+      <div className="fixed inset-0 top-[40px] sm:top-[56px] z-20 bg-bg-deep flex items-center justify-center">
+        <div className="text-center animate-pop-in">
+          <TeamLogo abbr={team} size="xl" className="mx-auto" />
+          <div className="font-display text-3xl sm:text-4xl font-bold uppercase tracking-[0.12em] text-text-primary mt-4">
+            Mock Complete!
+          </div>
+          <div className="font-display text-sm uppercase tracking-[0.14em] text-accent mt-2">
+            {userPicksMade} picks across 7 rounds
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Dedicated results screen once the draft is complete — swaps the in-draft
   // two-panel layout for a "Mock complete" summary with save controls.
   // ResultsView needs to scroll freely — break out of the parent's
@@ -2218,7 +2352,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   if (phase === PHASE_DONE) {
     return (
       <div
-        className="fixed inset-0 top-[40px] sm:top-[56px] z-20 bg-bg-deep overscroll-contain"
+        className="fixed inset-0 top-[40px] sm:top-[56px] z-20 bg-bg-deep overscroll-contain animate-fade-in"
         style={{
           // Use scroll (not auto) so Chrome doesn't toggle scrollability on
           // re-renders and snap back to the top. Also force smooth scrolling
@@ -2234,11 +2368,13 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         userPicksMade={userPicksMade}
         userSlotCount={userSlotCount}
         saving={saving}
+        saved={saved}
         trades={trades}
         draftOrder={draftOrder}
         onSave={handleSave}
         onRestart={restart}
         onChangeTeam={onChangeTeam}
+        onDone={onSaved}
         isGuest={!user}
       />
       {/* Generous bottom padding so Chrome keeps the scroll container tall
