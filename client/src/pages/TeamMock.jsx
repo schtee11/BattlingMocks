@@ -2774,12 +2774,7 @@ export default function TeamMock() {
     }
   }, [user]);
 
-  // Guest prompt — shown when an unauthenticated user picks a team.
-  // "Sign in" sends them to /join; "Continue as Guest" lets them draft.
-  const [guestPromptTeam, setGuestPromptTeam] = useState(null);
-
   function handleTeamSelect(abbr) {
-    if (!user) { setGuestPromptTeam(abbr); return; }
     setTeam(abbr);
   }
 
@@ -2896,15 +2891,6 @@ export default function TeamMock() {
           </div>
         )}
         <TeamPicker onSelect={handleTeamSelect} draftOrder={draftOrder} onRefresh={loadData} />
-        <ConfirmModal
-          open={!!guestPromptTeam}
-          onClose={() => { const t = guestPromptTeam; setGuestPromptTeam(null); setTeam(t); }}
-          onConfirm={() => { setGuestPromptTeam(null); nav('/join'); }}
-          title="Create an account?"
-          description="Sign in to save your mocks and track them over time. You can still share mock screenshots as a guest."
-          confirmLabel="Sign in"
-          cancelLabel="Continue as Guest"
-        />
       </div>
     );
   }
