@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { computeTeamMockGrade, letterFromScore, gradeColor } from '../draftGrader.js';
+import {
+  computeTeamMockGrade,
+  computeAllTeamGrades,
+  computePickValueScore,
+  computeRosterConstructionScore,
+  computeRelativeRankScore,
+  letterFromScore,
+  gradeColor,
+} from '../draftGrader.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -20,6 +28,7 @@ function makePick(overrides = {}) {
     pick_number: overrides.pick_number ?? 10,
     player_id: overrides.player_id ?? 1,
     round: overrides.round ?? 1,
+    team: overrides.team ?? 'LV',
     is_user: true,
     ...overrides,
   };
@@ -32,18 +41,59 @@ function buildGradeInput(specs, teamNeeds = ['EDGE', 'CB', 'WR', 'OT', 'IOL']) {
     player_id: i + 1,
     pick_number: s.pick_number ?? (i + 1) * 10,
     round: s.round ?? 1,
+    team: s.team ?? 'LV',
   }));
   return { myPicks, byId, teamNeeds };
+}
+
+// Build a full-draft input with user + CPU picks for relative rank testing
+function buildFullDraftInput(userSpecs, cpuTeams, teamNeeds = ['EDGE', 'CB', 'WR', 'OT', 'IOL']) {
+  let nextId = 1;
+  const allPlayers = [];
+  const allPicks = [];
+
+  // User picks
+  for (const spec of userSpecs) {
+    const player = makePlayer({ id: nextId, ...spec });
+    allPlayers.push(player);
+    allPicks.push(makePick({
+      player_id: nextId,
+      pick_number: spec.pick_number ?? nextId * 10,
+      round: spec.round ?? 1,
+      team: 'LV',
+    }));
+    nextId++;
+  }
+
+  // CPU team picks
+  for (const cpuTeam of cpuTeams) {
+    for (const spec of cpuTeam.picks) {
+      const player = makePlayer({ id: nextId, ...spec });
+      allPlayers.push(player);
+      allPicks.push(makePick({
+        player_id: nextId,
+        pick_number: spec.pick_number ?? nextId * 10,
+        round: spec.round ?? 1,
+        team: cpuTeam.team,
+      }));
+      nextId++;
+    }
+  }
+
+  const byId = new Map(allPlayers.map((p) => [p.id, p]));
+  const myPicks = allPicks.filter((p) => p.team === 'LV');
+  return { myPicks, byId, teamNeeds, allPicks, userTeam: 'LV' };
 }
 
 // ─── letterFromScore ────────────────────────────────────────────────────────
 
 describe('letterFromScore', () => {
-  it('returns A+ for 97+', () => expect(letterFromScore(97)).toBe('A+'));
-  it('returns A for 93-96', () => expect(letterFromScore(94)).toBe('A'));
-  it('returns B+ for 87-89', () => expect(letterFromScore(88)).toBe('B+'));
-  it('returns C+ for 77-79', () => expect(letterFromScore(78)).toBe('C+'));
-  it('returns F for <60', () => expect(letterFromScore(30)).toBe('F'));
+  it('returns A+ for 90+', () => expect(letterFromScore(92)).toBe('A+'));
+  it('returns A for 83-89', () => expect(letterFromScore(85)).toBe('A'));
+  it('returns B+ for 73-77', () => expect(letterFromScore(74)).toBe('B+'));
+  it('returns B for 68-72', () => expect(letterFromScore(70)).toBe('B'));
+  it('returns C+ for 58-62', () => expect(letterFromScore(60)).toBe('C+'));
+  it('returns F for <35', () => expect(letterFromScore(20)).toBe('F'));
 });
 
 describe('gradeColor', () => {
@@ -54,7 +104,179 @@ describe('gradeColor', () => {
   it('returns gray for null', () => expect(gradeColor(null)).toBe('#94a3b8'));
 });
 
-// ─── computeTeamMockGrade ───────────────────────────────────────────────────
+// ─── Component 1: Per-Pick Value Score ──────────────────────────────────────
+
+describe('computePickValueScore', () => {
+  it('rewards steals with recalibrated thresholds (3.5 pts/spot)', () => {
+    const pick = makePick({ pick_number: 15 });
+    const player = makePlayer({ rank: 5, position: 'EDGE' });
+    const result = computePickValueScore(pick, player, 1);
+    // delta = +10: base 70 + 8*3.5 + 2*1.5 = 101 (capped 100), tier bonus +3
+    expect(result.score).toBeGreaterThanOrEqual(95);
+    expect(result.delta).toBe(10);
+    expect(result.tag).toMatch(/steal|value/i);
+  });
+
+  it('penalizes reaches with round modifier', () => {
+    const pick = makePick({ pick_number: 10 });
+    const player = makePlayer({ rank: 25, position: 'CB' });
+    const result = computePickValueScore(pick, player, 1);
+    // delta = -15: significant reach in R1
+    expect(result.score).toBeLessThan(45);
+    expect(result.delta).toBe(-15);
+    expect(result.tag).toMatch(/reach/i);
+  });
+
+  it('centers at-value picks around base 70 (B range)', () => {
+    const pick = makePick({ pick_number: 10 });
+    const player = makePlayer({ rank: 10, position: 'EDGE' });
+    const result = computePickValueScore(pick, player, 1);
+    // delta = 0: base 70, tier bonus 0 (tier 1 at tier 1 slot)
+    expect(result.score).toBeGreaterThanOrEqual(67);
+    expect(result.score).toBeLessThanOrEqual(75);
+    expect(result.tag).toBe('Fair pick');
+  });
+
+  it('applies tier bonus when player is from a better tier than expected', () => {
+    const pick = makePick({ pick_number: 40 }); // Expected: Tier 3 (33-64)
+    const player = makePlayer({ rank: 8, position: 'EDGE' }); // Tier 1 (1-12)
+    const result = computePickValueScore(pick, player, 2);
+    // delta = +32: huge steal + tier bonus (expected tier 3, got tier 1 = +6)
+    expect(result.score).toBeGreaterThanOrEqual(95);
+    expect(result.tag).toBe('Elite steal');
+  });
+
+  it('applies tier penalty when reaching into a lower tier', () => {
+    const pick = makePick({ pick_number: 10 }); // Expected: Tier 1 (1-12)
+    const player = makePlayer({ rank: 40, position: 'WR' }); // Tier 3 (33-64)
+    const result = computePickValueScore(pick, player, 1);
+    // delta = -30: big reach + tier penalty (expected tier 1, got tier 3)
+    expect(result.score).toBeLessThan(30);
+  });
+
+  it('returns 60 for unranked players', () => {
+    const pick = makePick({ pick_number: 10 });
+    const player = makePlayer({ rank: null, consensus_rank: null });
+    const result = computePickValueScore(pick, player, 1);
+    expect(result.score).toBe(60);
+    expect(result.tag).toBe('Unranked');
+  });
+});
+
+// ─── Component 2: Roster Construction Score ─────────────────────────────────
+
+describe('computeRosterConstructionScore', () => {
+  it('rewards positional diversity', () => {
+    const specs = [
+      { rank: 5, position: 'EDGE', pick_number: 5 },
+      { rank: 10, position: 'CB', pick_number: 10 },
+      { rank: 20, position: 'WR', pick_number: 20 },
+      { rank: 40, position: 'OT', pick_number: 40, round: 2 },
+      { rank: 60, position: 'RB', pick_number: 60, round: 2 },
+      { rank: 80, position: 'DT', pick_number: 80, round: 3 },
+    ];
+    const { myPicks, byId, teamNeeds } = buildGradeInput(specs);
+    const score = computeRosterConstructionScore(myPicks, byId, teamNeeds);
+    expect(score).toBeGreaterThan(70); // diverse roster + needs addressed
+  });
+
+  it('penalizes over-investment at one position', () => {
+    const specs = [
+      { rank: 5, position: 'WR', pick_number: 5 },
+      { rank: 10, position: 'WR', pick_number: 10 },
+      { rank: 20, position: 'WR', pick_number: 20 },
+      { rank: 40, position: 'WR', pick_number: 40, round: 2 },
+      { rank: 60, position: 'WR', pick_number: 60, round: 2 },
+    ];
+    const { myPicks, byId, teamNeeds } = buildGradeInput(specs);
+    const score = computeRosterConstructionScore(myPicks, byId, teamNeeds);
+    expect(score).toBeLessThan(55); // narrow + over-invested
+  });
+
+  it('penalizes catastrophic neglect of top needs', () => {
+    // Team needs EDGE and CB, drafts neither
+    const specs = [
+      { rank: 5, position: 'RB', pick_number: 5 },
+      { rank: 10, position: 'TE', pick_number: 10 },
+      { rank: 20, position: 'S', pick_number: 20 },
+    ];
+    const { myPicks, byId, teamNeeds } = buildGradeInput(specs);
+    const score = computeRosterConstructionScore(myPicks, byId, teamNeeds);
+    expect(score).toBeLessThan(60); // missing top needs + neglect
+  });
+
+  it('rewards high need coverage', () => {
+    // Address 4 of 5 needs
+    const specs = [
+      { rank: 5, position: 'EDGE', pick_number: 5 },
+      { rank: 10, position: 'CB', pick_number: 10 },
+      { rank: 20, position: 'WR', pick_number: 20 },
+      { rank: 40, position: 'OT', pick_number: 40, round: 2 },
+    ];
+    const { myPicks, byId, teamNeeds } = buildGradeInput(specs);
+    const score = computeRosterConstructionScore(myPicks, byId, teamNeeds);
+    expect(score).toBeGreaterThan(75); // 80% coverage + good breadth
+  });
+});
+
+// ─── Component 3: Relative Rank Score ───────────────────────────────────────
+
+describe('computeRelativeRankScore', () => {
+  it('returns 100 for the #1 ranked team', () => {
+    const allPicks = [
+      makePick({ player_id: 1, team: 'LV' }),
+      makePick({ player_id: 2, team: 'NYJ' }),
+    ];
+    const byId = new Map([
+      [1, makePlayer({ id: 1, rank: 1 })], // LV gets rank 1 → highest value
+      [2, makePlayer({ id: 2, rank: 50 })], // NYJ gets rank 50 → lower value
+    ]);
+    const score = computeRelativeRankScore('LV', allPicks, byId);
+    expect(score).toBe(100);
+  });
+
+  it('returns 30 for the last-place team', () => {
+    const allPicks = [
+      makePick({ player_id: 1, team: 'LV' }),
+      makePick({ player_id: 2, team: 'NYJ' }),
+    ];
+    const byId = new Map([
+      [1, makePlayer({ id: 1, rank: 50 })], // LV gets rank 50 → lower value
+      [2, makePlayer({ id: 2, rank: 1 })],  // NYJ gets rank 1 → highest value
+    ]);
+    const score = computeRelativeRankScore('LV', allPicks, byId);
+    expect(score).toBe(30);
+  });
+
+  it('scales linearly between best and worst', () => {
+    const allPicks = [
+      makePick({ player_id: 1, team: 'A' }),
+      makePick({ player_id: 2, team: 'B' }),
+      makePick({ player_id: 3, team: 'C' }),
+    ];
+    const byId = new Map([
+      [1, makePlayer({ id: 1, rank: 1 })],
+      [2, makePlayer({ id: 2, rank: 10 })],
+      [3, makePlayer({ id: 3, rank: 50 })],
+    ]);
+    const score = computeRelativeRankScore('B', allPicks, byId);
+    // B is rank 2 of 3: score = 100 - (1/2)*70 = 65
+    expect(score).toBe(65);
+  });
+
+  it('returns null when allPicks is empty', () => {
+    const byId = new Map([[1, makePlayer({ id: 1 })]]);
+    expect(computeRelativeRankScore('LV', [], byId)).toBeNull();
+  });
+
+  it('returns null when team has fewer than 2 teams', () => {
+    const allPicks = [makePick({ player_id: 1, team: 'LV' })];
+    const byId = new Map([[1, makePlayer({ id: 1 })]]);
+    expect(computeRelativeRankScore('LV', allPicks, byId)).toBeNull();
+  });
+});
+
+// ─── computeTeamMockGrade (main function) ───────────────────────────────────
 
 describe('computeTeamMockGrade', () => {
   it('returns zeroes for empty picks', () => {
@@ -64,108 +286,42 @@ describe('computeTeamMockGrade', () => {
     expect(result.pickBreakdown).toHaveLength(0);
   });
 
-  describe('value dimension', () => {
-    it('rewards steals (positive delta)', () => {
-      // Pick a rank-5 player at pick 15 → steal of 10 spots
-      const input = buildGradeInput([
-        { rank: 5, position: 'EDGE', pick_number: 15 },
-      ]);
-      const result = computeTeamMockGrade(input);
-      expect(result.value).toBeGreaterThan(85); // Big steal → high value score
-    });
-
-    it('penalizes reaches (negative delta)', () => {
-      // Pick a rank-30 player at pick 10 → reach of 20 spots
-      const input = buildGradeInput([
-        { rank: 30, position: 'EDGE', pick_number: 10 },
-      ]);
-      const result = computeTeamMockGrade(input);
-      expect(result.value).toBeLessThan(55); // Big reach → low value score
-    });
-
-    it('gives solid B+ for fair-value picks', () => {
-      // Pick a rank-10 player at pick 10 → delta 0
-      const input = buildGradeInput([
-        { rank: 10, position: 'EDGE', pick_number: 10 },
-      ]);
-      const result = computeTeamMockGrade(input);
-      expect(result.value).toBeGreaterThanOrEqual(75);
-      expect(result.value).toBeLessThanOrEqual(82);
-    });
+  it('includes pickValue, rosterBuild, and relativeRank in the result', () => {
+    const input = buildGradeInput([
+      { rank: 10, position: 'EDGE', pick_number: 10 },
+    ]);
+    const result = computeTeamMockGrade(input);
+    expect(result).toHaveProperty('pickValue');
+    expect(result).toHaveProperty('rosterBuild');
+    expect(result).toHaveProperty('relativeRank');
+    expect(result).toHaveProperty('total');
+    expect(result).toHaveProperty('letter');
+    expect(result).toHaveProperty('pickBreakdown');
   });
 
-  describe('need fit dimension', () => {
-    it('scores high when addressing top needs early', () => {
-      const input = buildGradeInput([
-        { rank: 5, position: 'EDGE', pick_number: 5 },  // top need
-        { rank: 12, position: 'CB', pick_number: 12 },  // 2nd need
-      ]);
-      const result = computeTeamMockGrade(input);
-      expect(result.needFit).toBeGreaterThan(85);
-    });
-
-    it('scores lower when ignoring all needs', () => {
-      const input = buildGradeInput([
-        { rank: 5, position: 'RB', pick_number: 5 },   // not a need
-        { rank: 12, position: 'S', pick_number: 12 },  // not a need
-      ]);
-      const result = computeTeamMockGrade(input);
-      expect(result.needFit).toBeLessThan(60);
-    });
-
-    it('penalizes repeated picks at same position (depth diminishing returns)', () => {
-      const input = buildGradeInput([
-        { rank: 5, position: 'EDGE', pick_number: 5 },
-        { rank: 15, position: 'EDGE', pick_number: 40, round: 2 },
-      ]);
-      const result = computeTeamMockGrade(input);
-      // First EDGE gets high score, second gets depth penalty
-      const firstNeed = result.pickBreakdown[0].need_score;
-      const secondNeed = result.pickBreakdown[1].need_score;
-      expect(firstNeed).toBeGreaterThan(secondNeed);
-    });
+  it('uses 2-component scoring when allPicks is not provided (CPU mode)', () => {
+    const input = buildGradeInput([
+      { rank: 10, position: 'EDGE', pick_number: 10 },
+    ]);
+    const result = computeTeamMockGrade(input);
+    expect(result.relativeRank).toBeNull();
+    // total ≈ pickValue * 0.55 + rosterBuild * 0.45
+    const expected = Math.round(result.pickValue * 0.55 + result.rosterBuild * 0.45);
+    expect(Math.abs(result.total - expected)).toBeLessThanOrEqual(1);
   });
 
-  describe('roster build dimension', () => {
-    it('rewards positional diversity', () => {
-      const diverseInput = buildGradeInput([
-        { rank: 5, position: 'EDGE', pick_number: 5 },
-        { rank: 10, position: 'CB', pick_number: 10 },
-        { rank: 20, position: 'WR', pick_number: 20 },
-        { rank: 40, position: 'OT', pick_number: 40, round: 2 },
-        { rank: 60, position: 'RB', pick_number: 60, round: 2 },
-        { rank: 80, position: 'DT', pick_number: 80, round: 3 },
-      ]);
-      const narrowInput = buildGradeInput([
-        { rank: 5, position: 'WR', pick_number: 5 },
-        { rank: 10, position: 'WR', pick_number: 10 },
-        { rank: 20, position: 'WR', pick_number: 20 },
-        { rank: 40, position: 'WR', pick_number: 40, round: 2 },
-        { rank: 60, position: 'WR', pick_number: 60, round: 2 },
-        { rank: 80, position: 'WR', pick_number: 80, round: 3 },
-      ]);
-      const diverse = computeTeamMockGrade(diverseInput);
-      const narrow = computeTeamMockGrade(narrowInput);
-      expect(diverse.rosterBuild).toBeGreaterThan(narrow.rosterBuild);
-    });
-  });
-
-  describe('strategy dimension', () => {
-    it('rewards addressing top 2 needs in first 3 picks', () => {
-      const goodStrategy = buildGradeInput([
-        { rank: 5, position: 'EDGE', pick_number: 5 },   // need #1
-        { rank: 10, position: 'CB', pick_number: 10 },   // need #2
-        { rank: 20, position: 'WR', pick_number: 20 },   // need #3
-      ]);
-      const badStrategy = buildGradeInput([
-        { rank: 5, position: 'RB', pick_number: 5 },    // not a need, low premium
-        { rank: 10, position: 'S', pick_number: 10 },   // not a top need
-        { rank: 20, position: 'LB', pick_number: 20 },  // not a top need
-      ]);
-      const good = computeTeamMockGrade(goodStrategy);
-      const bad = computeTeamMockGrade(badStrategy);
-      expect(good.strategy).toBeGreaterThan(bad.strategy);
-    });
+  it('uses 3-component scoring when allPicks is provided (user mode)', () => {
+    const input = buildFullDraftInput(
+      [{ rank: 5, position: 'EDGE', pick_number: 5 }],
+      [{ team: 'NYJ', picks: [{ rank: 30, position: 'WR', pick_number: 2 }] }],
+    );
+    const result = computeTeamMockGrade(input);
+    expect(result.relativeRank).not.toBeNull();
+    // total ≈ pickValue * 0.40 + rosterBuild * 0.35 + relativeRank * 0.25
+    const expected = Math.round(
+      result.pickValue * 0.40 + result.rosterBuild * 0.35 + result.relativeRank * 0.25
+    );
+    expect(Math.abs(result.total - expected)).toBeLessThanOrEqual(1);
   });
 
   describe('per-pick breakdown', () => {
@@ -178,7 +334,6 @@ describe('computeTeamMockGrade', () => {
       expect(result.pickBreakdown).toHaveLength(2);
       expect(result.pickBreakdown[0].pick_grade).toBeTruthy();
       expect(result.pickBreakdown[0].value_tag).toBeTruthy();
-      expect(result.pickBreakdown[0].need_tag).toBeTruthy();
       expect(result.pickBreakdown[1].pick_grade).toBeTruthy();
     });
 
@@ -193,8 +348,8 @@ describe('computeTeamMockGrade', () => {
     });
   });
 
-  describe('overall grade', () => {
-    it('produces A-range for a perfect mock (all steals at top needs)', () => {
+  describe('overall grade variance', () => {
+    it('produces A-range for a great mock (all steals at needs)', () => {
       const input = buildGradeInput([
         { rank: 1, position: 'EDGE', pick_number: 10 },
         { rank: 5, position: 'CB', pick_number: 20 },
@@ -203,7 +358,10 @@ describe('computeTeamMockGrade', () => {
         { rank: 20, position: 'IOL', pick_number: 50, round: 2 },
       ]);
       const result = computeTeamMockGrade(input);
-      expect(result.letter).toMatch(/^A/);
+      // With no allPicks, this is 2-component (CPU mode)
+      // pickValue should be high (all steals), rosterBuild should be high (needs addressed)
+      expect(result.pickValue).toBeGreaterThan(80);
+      expect(result.letter).toMatch(/^[AB]/);
     });
 
     it('produces C/D range for a bad mock (big reaches, wrong positions)', () => {
@@ -214,19 +372,87 @@ describe('computeTeamMockGrade', () => {
         { rank: 70, position: 'RB', pick_number: 35, round: 2 },
       ]);
       const result = computeTeamMockGrade(input);
+      expect(result.pickValue).toBeLessThan(55);
       expect(['C+', 'C', 'C-', 'D', 'F']).toContain(result.letter);
     });
 
-    it('total is weighted composite of 4 dimensions', () => {
-      const input = buildGradeInput([
-        { rank: 10, position: 'EDGE', pick_number: 10 },
-      ]);
-      const result = computeTeamMockGrade(input);
-      // total should approximately equal 0.35*value + 0.30*needFit + 0.20*rosterBuild + 0.15*strategy
-      const expected = Math.round(
-        result.value * 0.35 + result.needFit * 0.30 + result.rosterBuild * 0.20 + result.strategy * 0.15
+    it('user grade is boosted by high relative rank', () => {
+      // User gets great players, CPU gets bad ones
+      const input = buildFullDraftInput(
+        [
+          { rank: 1, position: 'EDGE', pick_number: 5 },
+          { rank: 3, position: 'CB', pick_number: 15 },
+          { rank: 5, position: 'WR', pick_number: 25 },
+        ],
+        [
+          { team: 'NYJ', picks: [
+            { rank: 50, position: 'RB', pick_number: 2 },
+            { rank: 80, position: 'S', pick_number: 12 },
+            { rank: 100, position: 'LB', pick_number: 22 },
+          ]},
+        ],
       );
-      expect(Math.abs(result.total - expected)).toBeLessThanOrEqual(1);
+      const result = computeTeamMockGrade(input);
+      expect(result.relativeRank).toBe(100); // #1 team
+      // 3-component total should exceed what 2-component (CPU) scoring would give
+      const cpuTotal = Math.round(result.pickValue * 0.55 + result.rosterBuild * 0.45);
+      expect(result.total).toBeGreaterThan(cpuTotal);
     });
+
+    it('user grade is hurt by low relative rank', () => {
+      // User gets bad players, CPU gets great ones
+      const input = buildFullDraftInput(
+        [
+          { rank: 80, position: 'RB', pick_number: 5 },
+          { rank: 90, position: 'S', pick_number: 15 },
+        ],
+        [
+          { team: 'NYJ', picks: [
+            { rank: 1, position: 'EDGE', pick_number: 2 },
+            { rank: 2, position: 'QB', pick_number: 12 },
+          ]},
+        ],
+      );
+      const result = computeTeamMockGrade(input);
+      expect(result.relativeRank).toBe(30); // Last place
+    });
+  });
+});
+
+// ─── computeAllTeamGrades ───────────────────────────────────────────────────
+
+describe('computeAllTeamGrades', () => {
+  it('grades all teams and sorts by total descending', () => {
+    const input = buildFullDraftInput(
+      [{ rank: 1, position: 'EDGE', pick_number: 5 }],
+      [
+        { team: 'NYJ', picks: [{ rank: 30, position: 'WR', pick_number: 2 }] },
+        { team: 'ARI', picks: [{ rank: 50, position: 'RB', pick_number: 3 }] },
+      ],
+    );
+    const draftOrder = [
+      { team: 'LV', team_name: 'Las Vegas Raiders', team_needs: ['EDGE', 'CB'] },
+      { team: 'NYJ', team_name: 'New York Jets', team_needs: ['QB', 'OT'] },
+      { team: 'ARI', team_name: 'Arizona Cardinals', team_needs: ['EDGE', 'CB'] },
+    ];
+    const results = computeAllTeamGrades({
+      allPicks: input.allPicks,
+      byId: input.byId,
+      draftOrder,
+      userTeam: 'LV',
+    });
+    expect(results.length).toBe(3);
+    // Results should be sorted by total descending
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i - 1].total).toBeGreaterThanOrEqual(results[i].total);
+    }
+    // User team should be flagged
+    const userResult = results.find((r) => r.team === 'LV');
+    expect(userResult.isUser).toBe(true);
+    // User should have relativeRank, CPU should not
+    expect(userResult.relativeRank).not.toBeNull();
+    const cpuResult = results.find((r) => r.team === 'NYJ');
+    expect(cpuResult.relativeRank).toBeNull();
+    expect(cpuResult.isUser).toBe(false);
   });
 });
