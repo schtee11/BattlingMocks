@@ -802,19 +802,18 @@ router.get('/volume-stats', async (req, res) => {
       ORDER BY day DESC
     `, [year]);
 
-    // 5) Top users by completed team mocks
+    // 5) Top users by completed team mocks (guests lumped together)
     const { rows: topUsers } = await pool.query(`
       SELECT
-        ds.user_id,
-        u.display_name,
-        COUNT(*)::int AS completed_team_mocks
+        COALESCE(ds.user_id::text, 'guest') AS user_id,
+        COALESCE(u.display_name, 'Guest')   AS display_name,
+        COUNT(*)::int                        AS completed_team_mocks
       FROM draft_sessions ds
       LEFT JOIN users u ON u.id = ds.user_id
       WHERE ds.draft_year = $1
         AND ds.mock_type = 'team'
         AND ds.completed_at IS NOT NULL
-        AND ds.user_id IS NOT NULL
-      GROUP BY ds.user_id, u.display_name
+      GROUP BY COALESCE(ds.user_id::text, 'guest'), COALESCE(u.display_name, 'Guest')
       ORDER BY completed_team_mocks DESC
       LIMIT 15
     `, [year]);
