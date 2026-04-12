@@ -33,6 +33,7 @@ const TABS = [
   ['scoring', 'Scoring & Lock'],
   ['algo', 'Algo Tuning'],
   ['consensus', 'Consensus'],
+  ['volume', 'Volume Stats'],
 ];
 
 export default function Admin() {
@@ -102,6 +103,10 @@ export default function Admin() {
   const [consensusTeam, setConsensusTeam] = useState('');
   const [consensusTeamData, setConsensusTeamData] = useState(null);
   const [consensusTeamLoading, setConsensusTeamLoading] = useState(false);
+
+  // Volume stats tab
+  const [volumeStats, setVolumeStats] = useState(null);
+  const [volumeLoading, setVolumeLoading] = useState(false);
 
   const userIsAdmin = isAdmin(user);
 
@@ -288,6 +293,21 @@ export default function Admin() {
       .then(([r1, pos]) => { setConsensusR1(r1); setConsensusPos(pos); })
       .catch((e) => toast.error(e.message))
       .finally(() => setConsensusLoading(false));
+    // eslint-disable-next-line
+  }, [unlocked, tab]);
+
+  // ---------- Volume stats ----------
+  function loadVolumeStats() {
+    setVolumeLoading(true);
+    api.volumeStats(key, syncYear)
+      .then(setVolumeStats)
+      .catch((e) => toast.error(e.message))
+      .finally(() => setVolumeLoading(false));
+  }
+  useEffect(() => {
+    if (!unlocked || tab !== 'volume') return;
+    if (volumeStats) return;
+    loadVolumeStats();
     // eslint-disable-next-line
   }, [unlocked, tab]);
 
@@ -1633,6 +1653,220 @@ export default function Admin() {
             )}
           </Card>
 
+        </div>
+      )}
+
+      {/* Volume Stats */}
+      {tab === 'volume' && (
+        <div className="space-y-5">
+
+          {/* Header + refresh */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-display font-semibold text-text-primary text-sm uppercase tracking-[0.12em]">
+                Volume Stats — {syncYear}
+              </h3>
+              <p className="text-text-muted text-[11px] mt-0.5">
+                Draft session telemetry · how much data we have and where the gaps are
+              </p>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => { setVolumeStats(null); loadVolumeStats(); }} disabled={volumeLoading}>
+              {volumeLoading ? 'Loading…' : 'Refresh'}
+            </Button>
+          </div>
+
+          {volumeLoading && !volumeStats && (
+            <div className="space-y-3">
+              <Skeleton className="h-24" />
+              <Skeleton className="h-40" />
+              <Skeleton className="h-40" />
+            </div>
+          )}
+
+          {volumeStats && (
+            <>
+              {/* ── Overview cards ── */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  ['Total Sessions', volumeStats.overview.total_sessions],
+                  ['Completed', volumeStats.overview.completed],
+                  ['Abandoned', volumeStats.overview.abandoned],
+                  ['Completion Rate', volumeStats.overview.total_sessions > 0
+                    ? `${Math.round((volumeStats.overview.completed / volumeStats.overview.total_sessions) * 100)}%`
+                    : '—'],
+                  ['Unique Users', volumeStats.overview.unique_users],
+                  ['Anonymous', volumeStats.overview.anonymous_sessions],
+                  ['Avg Duration', volumeStats.overview.avg_duration_sec != null
+                    ? `${Math.floor(volumeStats.overview.avg_duration_sec / 60)}m ${volumeStats.overview.avg_duration_sec % 60}s`
+                    : '—'],
+                  ['Data Range', volumeStats.overview.earliest_session
+                    ? `${new Date(volumeStats.overview.earliest_session).toLocaleDateString()} → ${new Date(volumeStats.overview.latest_session).toLocaleDateString()}`
+                    : '—'],
+                ].map(([label, value]) => (
+                  <Card key={label} className="p-3 text-center">
+                    <div className="text-text-muted text-[10px] uppercase tracking-widest font-display">{label}</div>
+                    <div className="text-text-primary font-display font-bold text-lg mt-1">{value}</div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* ── Breakdown by mock type ── */}
+              <Card className="p-5">
+                <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-3">
+                  By Mock Type
+                </h4>
+                {volumeStats.byType.length === 0 ? (
+                  <p className="text-text-muted text-xs">No sessions recorded yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {volumeStats.byType.map((row) => {
+                      const pct = row.total > 0 ? (row.completed / row.total) * 100 : 0;
+                      return (
+                        <div key={row.mock_type} className="flex items-center gap-3">
+                          <span className="font-mono text-[11px] text-text-primary w-16 shrink-0 uppercase font-bold">
+                            {row.mock_type}
+                          </span>
+                          <div className="flex-1 h-5 rounded-full bg-bg-deep overflow-hidden relative">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${pct}%`,
+                                backgroundColor: row.mock_type === 'team' ? '#22c55e' : '#3b82f6',
+                              }}
+                            />
+                          </div>
+                          <span className="font-mono text-[11px] text-text-muted tabular-nums w-36 text-right shrink-0">
+                            {row.completed}/{row.total} completed · {row.unique_users} users
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+
+              {/* ── Team mock breakdown (the money table) ── */}
+              <Card className="p-5">
+                <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-1">
+                  Completed Team Mocks by Team
+                </h4>
+                <p className="text-text-muted text-[10px] mb-3">
+                  This is the data set that powers consensus analytics. More completed mocks = better data.
+                </p>
+                {volumeStats.byTeam.length === 0 ? (
+                  <p className="text-text-muted text-xs">No team mock sessions yet.</p>
+                ) : (
+                  <>
+                    {/* Summary bar */}
+                    {(() => {
+                      const totalCompleted = volumeStats.byTeam.reduce((s, r) => s + r.completed, 0);
+                      const teamCount = volumeStats.byTeam.filter((r) => r.completed > 0).length;
+                      return (
+                        <div className="flex gap-4 mb-4 text-[11px]">
+                          <span className="text-text-muted">
+                            Total completed team mocks: <span className="text-text-primary font-bold">{totalCompleted}</span>
+                          </span>
+                          <span className="text-text-muted">
+                            Teams with data: <span className="text-text-primary font-bold">{teamCount}/32</span>
+                          </span>
+                        </div>
+                      );
+                    })()}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 max-h-[420px] overflow-y-auto">
+                      {volumeStats.byTeam.map((row) => {
+                        const maxCompleted = volumeStats.byTeam[0]?.completed || 1;
+                        const barW = Math.max((row.completed / maxCompleted) * 100, 2);
+                        return (
+                          <div key={row.user_team} className="flex items-center gap-2 p-1.5 rounded border border-border-subtle bg-bg-surface/40">
+                            <TeamLogo abbr={row.user_team} size="xs" />
+                            <span className="font-display font-bold text-[11px] uppercase tracking-wide text-text-primary w-10 shrink-0">
+                              {row.user_team}
+                            </span>
+                            <div className="flex-1 h-4 rounded bg-bg-deep overflow-hidden">
+                              <div
+                                className="h-full rounded transition-all"
+                                style={{
+                                  width: `${barW}%`,
+                                  backgroundColor: row.completed >= 10 ? '#22c55e' : row.completed >= 5 ? '#eab308' : '#ef4444',
+                                }}
+                              />
+                            </div>
+                            <span className="font-mono text-[10px] text-text-muted tabular-nums w-24 text-right shrink-0">
+                              {row.completed} done · {row.total} total
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-4 mt-3 text-[10px] text-text-muted">
+                      <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#22c55e' }} /> 10+ (good)</span>
+                      <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#eab308' }} /> 5-9 (building)</span>
+                      <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: '#ef4444' }} /> &lt;5 (needs more)</span>
+                    </div>
+                  </>
+                )}
+              </Card>
+
+              {/* ── Daily trend (last 30 days) ── */}
+              <Card className="p-5">
+                <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-3">
+                  Daily Volume — Last 30 Days
+                </h4>
+                {volumeStats.daily.length === 0 ? (
+                  <p className="text-text-muted text-xs">No sessions in the last 30 days.</p>
+                ) : (
+                  <div className="space-y-1 max-h-[340px] overflow-y-auto">
+                    {volumeStats.daily.map((row) => {
+                      const maxDay = Math.max(...volumeStats.daily.map((d) => d.total));
+                      const barW = maxDay > 0 ? Math.max((row.total / maxDay) * 100, 3) : 0;
+                      return (
+                        <div key={row.day} className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] text-text-muted w-20 shrink-0">
+                            {new Date(row.day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' })}
+                          </span>
+                          <div className="flex-1 h-4 rounded bg-bg-deep overflow-hidden relative">
+                            <div
+                              className="h-full rounded transition-all absolute left-0 top-0"
+                              style={{ width: `${barW}%`, backgroundColor: '#3b82f6', opacity: 0.35 }}
+                            />
+                            <div
+                              className="h-full rounded transition-all absolute left-0 top-0"
+                              style={{ width: `${maxDay > 0 ? Math.max((row.completed / maxDay) * 100, 1) : 0}%`, backgroundColor: '#3b82f6' }}
+                            />
+                          </div>
+                          <span className="font-mono text-[10px] text-text-muted tabular-nums w-28 text-right shrink-0">
+                            {row.completed}/{row.total} done{row.team_completed > 0 ? ` · ${row.team_completed} team` : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+
+              {/* ── Top contributors ── */}
+              {volumeStats.topUsers.length > 0 && (
+                <Card className="p-5">
+                  <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-3">
+                    Top Contributors — Completed Team Mocks
+                  </h4>
+                  <div className="space-y-1.5">
+                    {volumeStats.topUsers.map((u, i) => (
+                      <div key={u.user_id} className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-text-muted w-5 text-right shrink-0">{i + 1}.</span>
+                        <span className="text-text-primary text-xs font-medium truncate flex-1">
+                          {u.display_name || u.user_id?.slice(0, 8)}
+                        </span>
+                        <span className="font-mono text-[11px] text-accent tabular-nums font-bold">
+                          {u.completed_team_mocks}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
         </div>
       )}
 
