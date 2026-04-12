@@ -1854,8 +1854,8 @@ export default function Admin() {
                     {volumeStats.topUsers.map((u, i) => (
                       <div key={u.user_id} className="flex items-center gap-2">
                         <span className="font-mono text-[10px] text-text-muted w-5 text-right shrink-0">{i + 1}.</span>
-                        <span className="text-text-primary text-xs font-medium truncate flex-1">
-                          {u.display_name || u.user_id?.slice(0, 8)}
+                        <span className={`text-xs font-medium truncate flex-1 ${u.user_id === 'guest' ? 'text-text-muted italic' : 'text-text-primary'}`}>
+                          {u.display_name}
                         </span>
                         <span className="font-mono text-[11px] text-accent tabular-nums font-bold">
                           {u.completed_team_mocks}
