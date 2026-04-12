@@ -27,11 +27,12 @@ router.get('/r1-consensus', async (_req, res) => {
         JOIN players p ON p.id = dsp.player_id
         WHERE dsp.is_user = TRUE
           AND ds.mock_type = 'team'
+          AND ds.completed_at IS NOT NULL
         GROUP BY p.id
         ORDER BY pick_count DESC, avg_pick ASC
         LIMIT 50
       `),
-      pool.query(`SELECT COUNT(*)::int AS total FROM draft_sessions WHERE mock_type = 'team'`),
+      pool.query(`SELECT COUNT(*)::int AS total FROM draft_sessions WHERE mock_type = 'team' AND completed_at IS NOT NULL`),
     ]);
 
     res.set('Cache-Control', 'public, max-age=120');
@@ -72,6 +73,7 @@ router.get('/team-pick-breakdown/:team', async (req, res) => {
           WHERE dsp.is_user = TRUE
             AND ds.mock_type = 'team'
             AND ds.user_team = $1
+            AND ds.completed_at IS NOT NULL
           GROUP BY dsp.pick_number, dsp.round, p.id, p.name, p.position, p.school, p.headshot_url
         ),
         slot_totals AS (
@@ -96,7 +98,7 @@ router.get('/team-pick-breakdown/:team', async (req, res) => {
       pool.query(`
         SELECT COUNT(DISTINCT id)::int AS total
         FROM draft_sessions
-        WHERE mock_type = 'team' AND user_team = $1
+        WHERE mock_type = 'team' AND user_team = $1 AND completed_at IS NOT NULL
       `, [team]),
     ]);
 
@@ -148,6 +150,7 @@ router.get('/positions', async (_req, res) => {
         JOIN players p         ON p.id  = dsp.player_id
         WHERE dsp.is_user = TRUE
           AND ds.mock_type = 'team'
+          AND ds.completed_at IS NOT NULL
         GROUP BY p.position
         ORDER BY pick_count DESC
       `),
@@ -157,6 +160,7 @@ router.get('/positions', async (_req, res) => {
         JOIN draft_sessions ds ON ds.id = dsp.session_id
         WHERE dsp.is_user = TRUE
           AND ds.mock_type = 'team'
+          AND ds.completed_at IS NOT NULL
       `),
     ]);
 
