@@ -107,6 +107,7 @@ export default function Admin() {
   // Volume stats tab
   const [volumeStats, setVolumeStats] = useState(null);
   const [volumeLoading, setVolumeLoading] = useState(false);
+  const [teamColors, setTeamColors] = useState({});
 
   const userIsAdmin = isAdmin(user);
 
@@ -299,8 +300,18 @@ export default function Admin() {
   // ---------- Volume stats ----------
   function loadVolumeStats() {
     setVolumeLoading(true);
-    api.volumeStats(key, syncYear)
-      .then(setVolumeStats)
+    Promise.all([
+      api.volumeStats(key, syncYear),
+      Object.keys(teamColors).length === 0 ? api.getTeams() : Promise.resolve(null),
+    ])
+      .then(([stats, teams]) => {
+        setVolumeStats(stats);
+        if (teams) {
+          const map = {};
+          for (const t of teams) map[t.id] = t.primaryColor;
+          setTeamColors(map);
+        }
+      })
       .catch((e) => toast.error(e.message))
       .finally(() => setVolumeLoading(false));
   }
@@ -1710,41 +1721,6 @@ export default function Admin() {
                 ))}
               </div>
 
-              {/* ── Breakdown by mock type ── */}
-              <Card className="p-5">
-                <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-3">
-                  By Mock Type
-                </h4>
-                {volumeStats.byType.length === 0 ? (
-                  <p className="text-text-muted text-xs">No sessions recorded yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {volumeStats.byType.map((row) => {
-                      const pct = row.total > 0 ? (row.completed / row.total) * 100 : 0;
-                      return (
-                        <div key={row.mock_type} className="flex items-center gap-3">
-                          <span className="font-mono text-[11px] text-text-primary w-16 shrink-0 uppercase font-bold">
-                            {row.mock_type}
-                          </span>
-                          <div className="flex-1 h-5 rounded-full bg-bg-deep overflow-hidden relative">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${pct}%`,
-                                backgroundColor: row.mock_type === 'team' ? '#22c55e' : '#3b82f6',
-                              }}
-                            />
-                          </div>
-                          <span className="font-mono text-[11px] text-text-muted tabular-nums w-36 text-right shrink-0">
-                            {row.completed}/{row.total} completed · {row.unique_users} users
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-
               {/* ── Team mock breakdown (the money table) ── */}
               <Card className="p-5">
                 <h4 className="font-display font-semibold text-text-primary text-xs uppercase tracking-[0.12em] mb-1">
@@ -1815,31 +1791,54 @@ export default function Admin() {
                 {volumeStats.daily.length === 0 ? (
                   <p className="text-text-muted text-xs">No sessions in the last 30 days.</p>
                 ) : (
-                  <div className="space-y-1 max-h-[340px] overflow-y-auto">
-                    {volumeStats.daily.map((row) => {
+                  <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+                    {(() => {
+                      const teamsByDay = {};
+                      for (const r of (volumeStats.dailyByTeam || [])) {
+                        (teamsByDay[r.day] = teamsByDay[r.day] || []).push(r);
+                      }
                       const maxDay = Math.max(...volumeStats.daily.map((d) => d.total));
-                      const barW = maxDay > 0 ? Math.max((row.total / maxDay) * 100, 3) : 0;
-                      return (
-                        <div key={row.day} className="flex items-center gap-2">
-                          <span className="font-mono text-[10px] text-text-muted w-20 shrink-0">
-                            {new Date(row.day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' })}
-                          </span>
-                          <div className="flex-1 h-4 rounded bg-bg-deep overflow-hidden relative">
-                            <div
-                              className="h-full rounded transition-all absolute left-0 top-0"
-                              style={{ width: `${barW}%`, backgroundColor: '#3b82f6', opacity: 0.35 }}
-                            />
-                            <div
-                              className="h-full rounded transition-all absolute left-0 top-0"
-                              style={{ width: `${maxDay > 0 ? Math.max((row.completed / maxDay) * 100, 1) : 0}%`, backgroundColor: '#3b82f6' }}
-                            />
+                      return volumeStats.daily.map((row) => {
+                        const totalBarW = maxDay > 0 ? Math.max((row.total / maxDay) * 100, 3) : 0;
+                        const completedBarW = maxDay > 0 ? Math.max((row.completed / maxDay) * 100, 1) : 0;
+                        const teams = teamsByDay[row.day] || [];
+                        return (
+                          <div key={row.day} className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] text-text-muted w-20 shrink-0">
+                              {new Date(row.day).toLocaleDateString(undefined, { month: 'short', day: 'numeric', weekday: 'short' })}
+                            </span>
+                            <div className="flex-1 h-5 rounded bg-bg-deep overflow-hidden relative">
+                              {/* Light bar = total started */}
+                              <div
+                                className="h-full absolute left-0 top-0 rounded"
+                                style={{ width: `${totalBarW}%`, backgroundColor: '#3b82f6', opacity: 0.15 }}
+                              />
+                              {/* Stacked team segments = completed, colored by team */}
+                              <div className="h-full absolute left-0 top-0 flex" style={{ width: `${completedBarW}%` }}>
+                                {teams.map((t) => {
+                                  const segPct = row.completed > 0 ? (t.count / row.completed) * 100 : 0;
+                                  return (
+                                    <div
+                                      key={t.user_team}
+                                      title={`${t.user_team}: ${t.count}`}
+                                      className="h-full first:rounded-l last:rounded-r"
+                                      style={{
+                                        width: `${segPct}%`,
+                                        backgroundColor: teamColors[t.user_team] || '#3b82f6',
+                                        minWidth: teams.length <= 6 ? '3px' : '1px',
+                                      }}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <span className="font-mono text-[10px] text-text-muted tabular-nums w-24 text-right shrink-0">
+                              {row.completed}/{row.total} done
+                            </span>
                           </div>
-                          <span className="font-mono text-[10px] text-text-muted tabular-nums w-28 text-right shrink-0">
-                            {row.completed}/{row.total} done{row.team_completed > 0 ? ` · ${row.team_completed} team` : ''}
-                          </span>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </Card>
