@@ -776,9 +776,11 @@ router.get('/volume-stats', async (req, res) => {
     `, [year]);
 
     // 4) Daily volume over last 30 days
+    // Use TO_CHAR to return a plain text date — the pg driver's DATE parser
+    // shifts dates by one day on servers in US timezones.
     const { rows: daily } = await pool.query(`
       SELECT
-        started_at::date                                        AS day,
+        TO_CHAR(started_at::date, 'YYYY-MM-DD')                AS day,
         COUNT(*)::int                                           AS total,
         SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END)::int AS completed,
         COUNT(DISTINCT CASE WHEN completed_at IS NOT NULL AND mock_type = 'team' THEN user_team END)::int AS distinct_teams

@@ -1786,8 +1786,8 @@ export default function Admin() {
                       return volumeStats.daily.map((row) => {
                         const totalBarW = maxDay > 0 ? Math.max((row.total / maxDay) * 100, 3) : 0;
                         const completedBarW = maxDay > 0 ? Math.max((row.completed / maxDay) * 100, 1) : 0;
-                        // Parse as local date — handles both "YYYY-MM-DD" and full ISO strings
-                        const dayDate = new Date(row.day + (row.day.length === 10 ? 'T00:00:00' : ''));
+                        // Append T12:00:00 to avoid any timezone-boundary day shift
+                        const dayDate = new Date(row.day + 'T12:00:00');
                         return (
                           <div key={row.day} className="flex items-center gap-2">
                             <span className="font-mono text-[10px] text-text-muted w-20 shrink-0">
