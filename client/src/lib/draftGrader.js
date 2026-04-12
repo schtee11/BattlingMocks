@@ -59,21 +59,20 @@ const STARTER_SLOTS = {
 const CRITICAL_POSITIONS = ['QB', 'WR', 'EDGE', 'OT', 'CB'];
 
 // ─── Letter grading ─────────────────────────────────────────────────────────
-// Thresholds tuned against Part 4 simulation runs so the user grade
-// distribution approximately matches:
-//   A/A+ ~10%,  A- ~15%,  B+ ~20%,  B ~20%,  B- ~15%,  C+ ~10%,  C/below ~10%
+// Standard academic scale so grades feel familiar to users.
+//   A = 90s, B = 80s, C = 70s, D = 60s, F = below 60
 
 export function letterFromScore(score) {
-  if (score >= 90) return 'A+';
-  if (score >= 83) return 'A';
-  if (score >= 78) return 'A-';
-  if (score >= 73) return 'B+';
-  if (score >= 68) return 'B';
-  if (score >= 63) return 'B-';
-  if (score >= 58) return 'C+';
-  if (score >= 52) return 'C';
-  if (score >= 45) return 'C-';
-  if (score >= 35) return 'D';
+  if (score >= 97) return 'A+';
+  if (score >= 93) return 'A';
+  if (score >= 90) return 'A-';
+  if (score >= 87) return 'B+';
+  if (score >= 83) return 'B';
+  if (score >= 80) return 'B-';
+  if (score >= 77) return 'C+';
+  if (score >= 73) return 'C';
+  if (score >= 70) return 'C-';
+  if (score >= 60) return 'D';
   return 'F';
 }
 
@@ -103,28 +102,36 @@ export function computePickValueScore(pick, player, roundNumber, needRank = -1) 
   const premium = getPositionPremium(pos);
 
   // ── Recalibrated ADP delta score ──
-  // Base 72: at-value picks land in the upper-Fair / lower-Good range.
-  // Steals push into A/A+ territory; reaches drop into C/D.
-  const BASE = 72;
+  // Base 75: at-value picks land in the "Good value" range so the grading
+  // tone feels positive for reasonable drafting. Steals push well into A+;
+  // reaches use a progressive penalty that's gentle for small reaches and
+  // escalates for large ones. Calibrated so delta -16 ≈ 65, delta -25 ≈ 45
+  // at neutral round multiplier.
+  const BASE = 75;
   let adpScore;
   if (delta >= 0) {
     // Steal: +3.75 per spot up to 8, then +1.5 (diminishing returns on giant steals)
     adpScore = BASE + Math.min(delta, 8) * 3.75 + Math.max(0, delta - 8) * 1.5;
   } else {
-    // Reach: -2.0 per spot, amplified in early rounds, discounted in late rounds.
-    // R1-2 are high-capital picks where reaches hurt most; R5-R7 are where
-    // teams take fliers on developmental players and specialists.
+    // Progressive reach penalty with breakpoints at 8 and 16.
+    // 0-8 spots: 0.2/spot (barely noticeable — normal draft variance)
+    // 9-16 spots: 0.9/spot (moderate — clear reach territory)
+    // 17+ spots: 2.2/spot (steep — big reach, heavily penalized)
+    // Amplified in early rounds (R1-2), discounted in late rounds (R5-7).
     const roundMult = roundNumber <= 2 ? 1.3
-      : roundNumber <= 4 ? 1.15
+      : roundNumber <= 4 ? 1.0
       : roundNumber === 5 ? 0.85
       : roundNumber === 6 ? 0.70
       : 0.55; // R7
-    const premDiscount = 1 - premium * 0.3;
     // Specialists (K, P, LS) are always ranked far below where they're drafted;
     // reaching for one is expected, not a mistake.
     const isSpecialist = pos === 'K' || pos === 'P' || pos === 'LS';
     const specialistDiscount = isSpecialist ? 0.20 : 1.0;
-    adpScore = BASE + delta * 2.0 * roundMult * premDiscount * specialistDiscount;
+    const absDelta = -delta;
+    const rawPenalty = Math.min(absDelta, 8) * 0.2
+      + Math.max(0, Math.min(absDelta - 8, 8)) * 0.9
+      + Math.max(0, absDelta - 16) * 2.2;
+    adpScore = BASE - rawPenalty * roundMult * specialistDiscount;
   }
 
   // ── Tier overlay ──
@@ -138,8 +145,8 @@ export function computePickValueScore(pick, player, roundNumber, needRank = -1) 
   if (tierDiff >= 2) tierBonus = 6;
   else if (tierDiff === 1) tierBonus = 3;
   else if (tierDiff === 0) tierBonus = 0;
-  else if (tierDiff === -1) tierBonus = -3;
-  else tierBonus = -5;
+  else if (tierDiff === -1) tierBonus = -1;
+  else tierBonus = -3;
 
   // ── Need-awareness bonus ──
   // Drafting to fill a team need reflects smart roster-building. Top-2 needs
@@ -152,12 +159,12 @@ export function computePickValueScore(pick, player, roundNumber, needRank = -1) 
   const score = Math.max(0, Math.min(100, Math.round(adpScore + tierBonus + needBonus)));
 
   let tag;
-  if (score >= 93) tag = 'Elite steal';
-  else if (score >= 83) tag = 'Great value';
-  else if (score >= 73) tag = 'Good value';
-  else if (score >= 60) tag = 'Fair pick';
-  else if (score >= 47) tag = 'Slight reach';
-  else if (score >= 33) tag = 'Reach';
+  if (score >= 96) tag = 'Elite steal';
+  else if (score >= 86) tag = 'Great value';
+  else if (score >= 72) tag = 'Good value';
+  else if (score >= 58) tag = 'Fair pick';
+  else if (score >= 44) tag = 'Slight reach';
+  else if (score >= 30) tag = 'Reach';
   else tag = 'Big reach';
 
   return { score, delta, tag };
