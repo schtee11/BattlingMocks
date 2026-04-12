@@ -1,9 +1,8 @@
 // Draft grade engine — rebuilt to produce meaningful variance.
 //
-// Three scoring components:
-//   1. Per-Pick Value (50%)  — Tier-based value + recalibrated ADP delta + need bonus.
-//   2. Roster Construction (40%) — Positional balance, need coverage, round-appropriate picks.
-//   3. Relative Rank (10%, user only) — Small tiebreaker from league standing.
+// Two scoring components:
+//   1. Per-Pick Value (55%)  — Tier-based value + recalibrated ADP delta + need bonus.
+//   2. Roster Construction (45%) — Positional balance, need coverage, round-appropriate picks.
 //
 // CPU teams receive Components 1 + 2 only (rebalanced to 55% / 45%).
 // Per-pick grades: each pick gets its own letter grade + narrative tag.
@@ -412,22 +411,17 @@ export function computeTeamMockGrade({ myPicks, byId, teamNeeds = [], allPicks =
   // Component 2: Roster Construction (informed by per-pick quality)
   const rosterBuild = computeRosterConstructionScore(myPicks, byId, teamNeeds, pickValue);
 
-  // Component 3: Relative Rank (user team only, requires allPicks)
+  // Component 3: Relative Rank (computed for data but NOT used in grade —
+  // bots draft pure BPA so they always out-delta need-based drafters,
+  // making this metric structurally unfair to smart need-filling strategies)
   const team = userTeam || myPicks[0]?.team;
   const relativeRank = allPicks.length > 0 && team
     ? computeRelativeRankScore(team, allPicks, byId)
     : null;
 
-  // Final weighted composite
-  let total;
-  if (relativeRank !== null) {
-    // User team: 3-component scoring — PV and RB dominate, league rank is
-    // a small tiebreaker so it can't tank an otherwise excellent draft.
-    total = Math.round(pickValue * 0.50 + rosterBuild * 0.40 + relativeRank * 0.10);
-  } else {
-    // CPU team or no all-draft data: 2-component scoring
-    total = Math.round(pickValue * 0.55 + rosterBuild * 0.45);
-  }
+  // Final weighted composite — 2-component for all teams.
+  // PV (with need bonuses) and RB together capture drafting quality fully.
+  const total = Math.round(pickValue * 0.55 + rosterBuild * 0.45);
 
   return {
     pickValue,

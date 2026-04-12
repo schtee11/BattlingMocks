@@ -1429,13 +1429,10 @@ function ResultsView({
               </div>
             </div>
             {/* Component breakdown */}
-            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="mt-3 grid grid-cols-2 gap-3">
               {[
-                { label: 'Pick Value', score: draftGrade.pickValue, weight: '50%' },
-                { label: 'Roster Build', score: draftGrade.rosterBuild, weight: '40%' },
-                ...(draftGrade.relativeRank != null
-                  ? [{ label: 'vs League', score: draftGrade.relativeRank, weight: '10%' }]
-                  : []),
+                { label: 'Pick Value', score: draftGrade.pickValue, weight: '55%' },
+                { label: 'Roster Build', score: draftGrade.rosterBuild, weight: '45%' },
               ].map(({ label, score, weight }) => (
                 <div key={label}>
                   <div className="font-display text-[9px] font-semibold uppercase tracking-[0.14em] text-text-muted">
