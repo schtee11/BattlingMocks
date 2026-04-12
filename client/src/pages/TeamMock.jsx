@@ -1960,15 +1960,27 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   function applyTradeLocal({ partnerTeam, yourPicks, theirPicks }) {
     const yourSet = new Set(yourPicks);
     const theirSet = new Set(theirPicks);
-    setLiveOrder((prev) =>
-      prev.map((row) => {
+    setLiveOrder((prev) => {
+      // Build a team → team_needs lookup so swapped picks carry the new owner's
+      // needs rather than staying tied to the original team.
+      const needsByTeam = new Map();
+      for (const row of prev) {
+        if (!needsByTeam.has(row.team) && Array.isArray(row.team_needs) && row.team_needs.length) {
+          needsByTeam.set(row.team, row.team_needs);
+        }
+      }
+      return prev.map((row) => {
         // Don't touch picks already made
         if (row.pick_number <= picks.length) return row;
-        if (yourSet.has(row.pick_number)) return { ...row, team: partnerTeam };
-        if (theirSet.has(row.pick_number)) return { ...row, team };
+        if (yourSet.has(row.pick_number)) {
+          return { ...row, team: partnerTeam, team_needs: needsByTeam.get(partnerTeam) ?? row.team_needs };
+        }
+        if (theirSet.has(row.pick_number)) {
+          return { ...row, team, team_needs: needsByTeam.get(team) ?? row.team_needs };
+        }
         return row;
-      })
-    );
+      });
+    });
     // Record trade for the results view
     setTrades((prev) => [
       ...prev,
