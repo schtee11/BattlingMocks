@@ -1,21 +1,40 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { requireAuth } from '../middleware/requireAuth.js';
+import { validate } from '../middleware/validate.js';
 
 const router = Router();
+
+const submitLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too many submissions, please wait a minute' },
+});
+
+const pickSchema = z.object({
+  pick_number: z.number().int().min(1).max(32),
+  player_id: z.number().int(),
+  is_confident: z.boolean().optional(),
+});
+
+const submitMockSchema = validate({
+  body: z.object({
+    picks: z.array(pickSchema).length(32),
+  }),
+});
 
 async function getSettings(client = pool) {
   const { rows } = await client.query('SELECT * FROM draft_settings WHERE id = 1');
   return rows[0];
 }
 
-router.post('/', async (req, res) => {
-  const { user_id, picks } = req.body || {};
-  if (!user_id || !Array.isArray(picks)) {
-    return res.status(400).json({ error: 'user_id and picks[] required' });
-  }
-  if (picks.length !== 32) {
-    return res.status(400).json({ error: 'must submit exactly 32 picks' });
-  }
+router.post('/', submitLimit, requireAuth, submitMockSchema, async (req, res) => {
+  const user_id = req.userId;
+  const { picks } = req.body;
   const slots = new Set();
   const players = new Set();
   let confidentCount = 0;

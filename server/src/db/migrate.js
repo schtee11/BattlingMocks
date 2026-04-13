@@ -235,6 +235,10 @@ CREATE TABLE IF NOT EXISTS team_needs (
 );
 CREATE INDEX IF NOT EXISTS idx_team_needs_team_year ON team_needs(team_id, draft_year);
 
+-- Phase 7: role-based admin access. Default FALSE so existing users aren't
+-- promoted accidentally. Admins are promoted via a SQL UPDATE or the admin panel.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
+
 -- Phase 6 indexes
 CREATE INDEX IF NOT EXISTS idx_players_draft_year_rank
   ON players(draft_year, consensus_rank) WHERE consensus_rank IS NOT NULL;

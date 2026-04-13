@@ -1,8 +1,23 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { pool } from '../db/pool.js';
+import {
+  setAuthCookies,
+  clearAuthCookies,
+  requireAuth,
+} from '../middleware/requireAuth.js';
 
 const router = Router();
+
+// Strict rate limit on OAuth initiation to prevent redirect-flood abuse.
+const oauthInitLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too many sign-in attempts, please wait a minute' },
+});
 
 // In-memory CSRF state store. Fine for single-instance server.
 // Entries older than 10 minutes are swept on each callback.
@@ -96,7 +111,7 @@ function redirectToFrontend(res, pathWithHash) {
 // assertion of user id (same threat model as the rest of the app's
 // localStorage-based session). If the session model is upgraded later, this
 // should be replaced with a server-validated session.
-router.get('/:provider', async (req, res, next) => {
+router.get('/:provider', oauthInitLimit, async (req, res, next) => {
   const providerKey = req.params.provider;
   if (!PROVIDERS[providerKey]) return next();
 
@@ -296,8 +311,10 @@ router.get('/:provider/callback', async (req, res, next) => {
       );
     }
 
-    // Send user back to the frontend; id lives in the hash fragment so it's
-    // not sent to servers or logged by proxies.
+    // Set HttpOnly JWT cookies so the server can validate subsequent requests.
+    setAuthCookies(res, user.id);
+    // The id is also passed in the hash so the frontend can identify the user
+    // on first load (the cookie is HttpOnly and unreadable by JS).
     return redirectToFrontend(res, `/auth/callback#id=${user.id}`);
   } catch (e) {
     console.error(`[${providerKey} auth]`, e);
@@ -312,9 +329,12 @@ router.get('/:provider/callback', async (req, res, next) => {
 // model is hardened, add auth middleware here.
 // ---------------------------------------------------------------------------
 
-// List all linked providers for a user.
-router.get('/users/:userId/identities', async (req, res) => {
+// List all linked providers for a user (authenticated, owner only).
+router.get('/users/:userId/identities', requireAuth, async (req, res) => {
   const { userId } = req.params;
+  if (req.userId !== userId) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
   try {
     const { rows: userRows } = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
     if (!userRows.length) return res.status(404).json({ error: 'user not found' });
@@ -339,10 +359,13 @@ router.get('/users/:userId/identities', async (req, res) => {
   }
 });
 
-// Unlink a provider from a user. Refuses to remove the user's last
-// remaining identity (that would lock them out permanently).
-router.delete('/users/:userId/identities/:provider', async (req, res) => {
+// Unlink a provider from a user (authenticated, owner only). Refuses to
+// remove the user's last remaining identity (that would lock them out).
+router.delete('/users/:userId/identities/:provider', requireAuth, async (req, res) => {
   const { userId, provider } = req.params;
+  if (req.userId !== userId) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
   if (!PROVIDERS[provider]) return res.status(400).json({ error: 'unknown provider' });
 
   try {
@@ -370,6 +393,35 @@ router.delete('/users/:userId/identities/:provider', async (req, res) => {
     console.error('[auth identities unlink]', e);
     res.status(500).json({ error: 'server error' });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Session endpoints — cookie-based JWT auth
+// ---------------------------------------------------------------------------
+
+// GET /api/auth/me — return the current authenticated user from the JWT cookie.
+// Used on page load to hydrate the client auth state without localStorage.
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, display_name, avatar_url, created_at FROM users WHERE id = $1',
+      [req.userId]
+    );
+    if (!rows.length) {
+      clearAuthCookies(res);
+      return res.status(401).json({ error: 'user not found' });
+    }
+    res.json(rows[0]);
+  } catch (e) {
+    console.error('[auth/me]', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+// POST /api/auth/sign-out — clear auth cookies.
+router.post('/sign-out', (_req, res) => {
+  clearAuthCookies(res);
+  res.json({ ok: true });
 });
 
 export default router;

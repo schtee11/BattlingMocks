@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { api } from '../lib/api.js';
 
 const KEY = 'mds_user';
 const listeners = new Set();
+let hydrated = false;
 
-function read() {
+function readLocal() {
   if (typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(KEY);
@@ -13,7 +15,7 @@ function read() {
   }
 }
 
-// Write to storage and notify every useAuth subscriber across the tree.
+// Write to localStorage and notify every useAuth subscriber across the tree.
 function write(u) {
   try {
     if (u) localStorage.setItem(KEY, JSON.stringify(u));
@@ -24,14 +26,30 @@ function write(u) {
   });
 }
 
+// Hydrate from the server-side JWT cookie. Called once on app startup.
+// Falls back to localStorage if the server call fails (offline, no cookie).
+async function hydrateFromServer() {
+  if (hydrated) return;
+  hydrated = true;
+  try {
+    const user = await api.getMe();
+    write(user);
+  } catch {
+    // No valid session cookie — keep whatever localStorage had (or null).
+  }
+}
+
 export function useAuth() {
-  const [user, setUserState] = useState(read);
+  const [user, setUserState] = useState(readLocal);
 
   useEffect(() => {
     // Subscribe this component to auth updates triggered from anywhere.
     listeners.add(setUserState);
 
-    // Also stay in sync with localStorage changes from other tabs.
+    // Hydrate from server cookie on first mount.
+    hydrateFromServer();
+
+    // Stay in sync with localStorage changes from other tabs.
     const onStorage = (e) => {
       if (e.key !== KEY) return;
       try {
@@ -51,6 +69,9 @@ export function useAuth() {
   return {
     user,
     setUser: write,
-    signOut: () => write(null),
+    signOut: async () => {
+      try { await api.signOut(); } catch {}
+      write(null);
+    },
   };
 }
