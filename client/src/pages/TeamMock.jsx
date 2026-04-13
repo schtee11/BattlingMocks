@@ -1035,7 +1035,6 @@ function useShareExport({ myPicks, byId, userTeam, mockTitle, submittedAt, trade
           await navigator.share({
             files: [file],
             title: mockTitle,
-            text: `My ${userTeam} mock draft — MockDraft Showdown`,
           });
           return;
         } catch (e) {
