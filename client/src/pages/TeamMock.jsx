@@ -234,7 +234,7 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
             className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg text-bg-deep transition hover:brightness-110 disabled:opacity-50"
             style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
           >
-            {exporting ? 'Rendering…' : isMobile ? 'Share' : 'Copy'}
+            {exporting ? 'Rendering…' : 'Share'}
           </button>
           {isMobile && (
             <button
@@ -967,7 +967,7 @@ function useShareExport({ myPicks, byId, userTeam, mockTitle, submittedAt, trade
       generateBlob()
         .then((blob) => { if (!cancelled) cachedBlobRef.current = blob; })
         .catch((e) => { console.warn('[pre-render]', e); });
-    }, 500);
+    }, 100);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme, teamLogoDataUrl, headshotsLoadedCount, trades.length]);
@@ -984,8 +984,8 @@ function useShareExport({ myPicks, byId, userTeam, mockTitle, submittedAt, trade
     }
     setExporting(true);
     const blobPromise = (async () => {
+      if (cachedBlobRef.current) return cachedBlobRef.current;
       await waitForImages();
-      cachedBlobRef.current = null;
       const blob = await generateBlob();
       if (!blob) throw new Error('render failed');
       cachedBlobRef.current = blob;
@@ -1024,10 +1024,12 @@ function useShareExport({ myPicks, byId, userTeam, mockTitle, submittedAt, trade
   async function handleMobileShare() {
     setExporting(true);
     try {
-      await waitForImages();
-      cachedBlobRef.current = null;
-      const blob = await generateBlob();
-      if (blob) cachedBlobRef.current = blob;
+      let blob = cachedBlobRef.current;
+      if (!blob) {
+        await waitForImages();
+        blob = await generateBlob();
+        if (blob) cachedBlobRef.current = blob;
+      }
       if (!blob) throw new Error('render failed');
       const file = new File([blob], fileName, { type: 'image/png' });
       if (navigator.canShare?.({ files: [file] })) {
@@ -1216,7 +1218,7 @@ function ResultsView({
                 onClick={onChangeTeam}
                 className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
               >
-                Change Team
+                New Team
               </button>
             </div>
           </div>
@@ -1238,7 +1240,7 @@ function ResultsView({
                 title={isMobile ? 'Share via share sheet' : 'Copy image — paste into Discord with Ctrl+V'}
                 className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.12em] px-3 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
               >
-                {exporting ? '…' : isMobile ? 'Share' : 'Copy'}
+                {exporting ? '…' : 'Share'}
               </button>
               {isMobile && (
                 <button
@@ -1280,7 +1282,7 @@ function ResultsView({
                 onClick={onChangeTeam}
                 className="font-display text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted hover:text-text-primary transition"
               >
-                Change Team
+                New Team
               </button>
             </div>
           </div>
