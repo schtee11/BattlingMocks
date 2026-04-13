@@ -1,5 +1,8 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { optionalAuth } from '../middleware/requireAuth.js';
+import { validate } from '../middleware/validate.js';
 
 const router = Router();
 
@@ -21,23 +24,26 @@ const router = Router();
 //         algo_config_snapshot, draft_year }
 // The session_uuid is minted client-side so a network retry with the same
 // uuid is idempotent (ON CONFLICT DO UPDATE).
-router.post('/', async (req, res) => {
+const createSessionSchema = validate({
+  body: z.object({
+    session_uuid: z.string().uuid(),
+    mock_type: z.string().min(1),
+    user_team: z.string().max(5).optional().nullable(),
+    randomness: z.number().finite().optional().nullable(),
+    algo_config_snapshot: z.any().optional(),
+    draft_year: z.number().int().optional().nullable(),
+  }),
+});
+
+router.post('/', optionalAuth, createSessionSchema, async (req, res) => {
   const {
     session_uuid,
-    user_id,
     mock_type,
     user_team,
     randomness,
     algo_config_snapshot,
     draft_year,
-  } = req.body || {};
-
-  if (!session_uuid || typeof session_uuid !== 'string') {
-    return res.status(400).json({ error: 'session_uuid required' });
-  }
-  if (!mock_type || typeof mock_type !== 'string') {
-    return res.status(400).json({ error: 'mock_type required' });
-  }
+  } = req.body;
 
   try {
     // ON CONFLICT DO UPDATE rather than DO NOTHING: if the client retried
@@ -55,7 +61,7 @@ router.post('/', async (req, res) => {
        RETURNING id`,
       [
         session_uuid,
-        user_id || null,
+        req.userId || null,
         mock_type,
         user_team || null,
         Number.isFinite(randomness) ? randomness : null,

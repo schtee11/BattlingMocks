@@ -1,7 +1,31 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { validate } from '../middleware/validate.js';
 
 const router = Router();
+
+const createUserLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too many account creation attempts, please wait a minute' },
+});
+
+// Display names: alphanumeric, hyphens, underscores, spaces. 2-60 chars.
+const displayNameRegex = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,58}[a-zA-Z0-9]$/;
+
+const createUserSchema = validate({
+  body: z.object({
+    display_name: z
+      .string()
+      .min(2, 'display name must be at least 2 characters')
+      .max(60, 'display name must be at most 60 characters')
+      .regex(displayNameRegex, 'display name can only contain letters, numbers, hyphens, underscores, and spaces'),
+  }),
+});
 
 // Look up a user by display name (case-insensitive) — used for sign-in.
 router.get('/by-name', async (req, res) => {
@@ -27,12 +51,8 @@ router.get('/check', async (req, res) => {
   res.json({ available: rows.length === 0 });
 });
 
-router.post('/', async (req, res) => {
-  const { display_name } = req.body || {};
-  if (!display_name || typeof display_name !== 'string' || display_name.trim().length < 2) {
-    return res.status(400).json({ error: 'display_name required (min 2 chars)' });
-  }
-  const name = display_name.trim().slice(0, 60);
+router.post('/', createUserLimit, createUserSchema, async (req, res) => {
+  const name = req.body.display_name.trim();
   try {
     const { rows } = await pool.query(
       'INSERT INTO users (display_name) VALUES ($1) RETURNING id, display_name, avatar_url, created_at',

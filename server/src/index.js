@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import players from './routes/players.js';
 import users from './routes/users.js';
@@ -23,24 +25,45 @@ dotenv.config();
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
+
+// Global rate limiter: 100 requests per minute per IP.
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'too many requests, please try again later' },
+  })
+);
 
 // CORS: accept FRONTEND_URL as a comma-separated list. Local dev + prod can
-// coexist. If nothing is set, reflect the request origin (dev only).
+// coexist. In production, CORS rejects all origins if FRONTEND_URL is not set.
 const allowedOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+
+const isProd = process.env.NODE_ENV === 'production';
+if (isProd && allowedOrigins.length === 0) {
+  console.warn('[cors] WARNING: FRONTEND_URL is not set in production — all cross-origin requests will be rejected');
+}
 
 app.use(
   cors({
     origin(origin, cb) {
       // Allow curl/Postman (no origin) and anything in the allow-list
       if (!origin) return cb(null, true);
-      if (allowedOrigins.length === 0) return cb(null, true);
+      if (allowedOrigins.length === 0) {
+        // In production, reject unknown origins. In dev, allow all.
+        if (isProd) return cb(new Error(`Origin ${origin} not allowed by CORS (FRONTEND_URL not configured)`));
+        return cb(null, true);
+      }
       if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`Origin ${origin} not allowed by CORS`));
     },
-    credentials: false,
+    credentials: true,
   })
 );
 

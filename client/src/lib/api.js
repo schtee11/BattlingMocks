@@ -27,6 +27,7 @@ async function request(path, { method = 'GET', body, adminKey } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
+    credentials: 'include',
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -61,6 +62,10 @@ export function invalidateCache(prefix) {
 }
 
 export const api = {
+  // Auth — cookie-based JWT session
+  getMe: () => request('/api/auth/me'),
+  signOut: () => request('/api/auth/sign-out', { method: 'POST' }),
+
   // public — cached where safe
   getPlayers: ({ fresh = false } = {}) => {
     if (fresh) invalidateCache('players');
@@ -120,7 +125,9 @@ export const api = {
   submitMock: (user_id, picks) => {
     invalidateCache('stats');
     // picks may include { pick_number, player_id, is_confident? }
-    return request('/api/mocks', { method: 'POST', body: { user_id, picks } });
+    // user_id is now derived from the JWT cookie on the server; we still
+    // accept the parameter for API shape compatibility but don't send it.
+    return request('/api/mocks', { method: 'POST', body: { picks } });
   },
   getMock: (userId) => request(`/api/mocks/${userId}`),
   getLeaderboard: (limit = 100, offset = 0) =>
@@ -130,9 +137,10 @@ export const api = {
   listTeamMocks: (userId) => request(`/api/team-mocks/user/${userId}`),
   getTeamMockById: (id) => request(`/api/team-mocks/${id}`),
   submitTeamMock: (user_id, team_abbr, picks, title, trades) =>
+    // user_id is now derived from the JWT cookie on the server.
     request('/api/team-mocks', {
       method: 'POST',
-      body: { user_id, team_abbr, picks, title, trades },
+      body: { team_abbr, picks, title, trades },
     }),
   deleteTeamMock: (id) => request(`/api/team-mocks/${id}`, { method: 'DELETE' }),
 

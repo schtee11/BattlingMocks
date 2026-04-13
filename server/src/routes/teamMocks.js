@@ -1,5 +1,8 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { requireAuth } from '../middleware/requireAuth.js';
+import { validate } from '../middleware/validate.js';
 
 const router = Router();
 
@@ -11,15 +14,26 @@ const router = Router();
 // every pick and only POSTs the final 262 picks once the user is done. The
 // backend is just a thin persistence layer.
 
+const teamMockPickSchema = z.object({
+  pick_number: z.number().int().min(1).max(262),
+  player_id: z.number().int(),
+  round: z.number().int().optional(),
+  team: z.string().max(5).optional(),
+});
+
+const submitTeamMockSchema = validate({
+  body: z.object({
+    team_abbr: z.string().min(2).max(5),
+    picks: z.array(teamMockPickSchema).min(1).max(262),
+    title: z.string().max(80).optional().nullable(),
+    trades: z.array(z.any()).optional().nullable(),
+  }),
+});
+
 // POST /api/team-mocks — create a new team mock (never updates)
-router.post('/', async (req, res) => {
-  const { user_id, team_abbr, picks, title, trades } = req.body || {};
-  if (!user_id || !team_abbr || !Array.isArray(picks)) {
-    return res.status(400).json({ error: 'user_id, team_abbr, picks[] required' });
-  }
-  if (picks.length === 0) {
-    return res.status(400).json({ error: 'picks[] cannot be empty' });
-  }
+router.post('/', requireAuth, submitTeamMockSchema, async (req, res) => {
+  const user_id = req.userId;
+  const { team_abbr, picks, title, trades } = req.body;
 
   const slots = new Set();
   const players = new Set();
@@ -144,14 +158,14 @@ router.get('/:id', async (req, res) => {
   res.json({ ...mock, picks });
 });
 
-// DELETE /api/team-mocks/:id — delete a specific team mock
-router.delete('/:id', async (req, res) => {
+// DELETE /api/team-mocks/:id — delete a specific team mock (owner only)
+router.delete('/:id', requireAuth, async (req, res) => {
   const mockId = parseInt(req.params.id, 10);
   if (!Number.isFinite(mockId)) return res.status(400).json({ error: 'invalid id' });
 
   const result = await pool.query(
-    "DELETE FROM mocks WHERE id = $1 AND mock_type = 'team' RETURNING id",
-    [mockId]
+    "DELETE FROM mocks WHERE id = $1 AND mock_type = 'team' AND user_id = $2 RETURNING id",
+    [mockId, req.userId]
   );
   if (!result.rows.length) return res.status(404).json({ error: 'no team mock' });
   res.status(204).end();
