@@ -1480,80 +1480,111 @@ export default function Admin() {
               <div className="space-y-5">
                 <p className="text-text-muted text-[11px]">
                   <span className="text-text-primary font-semibold">{consensusTeamData.total_team_mocks}</span>{' '}
-                  GM{consensusTeamData.total_team_mocks !== 1 ? 's' : ''} drafted {consensusTeam} — showing top choices at each pick slot
+                  GM{consensusTeamData.total_team_mocks !== 1 ? 's' : ''} drafted {consensusTeam}
                 </p>
                 {Object.entries(teamPicksByRound)
                   .sort(([a], [b]) => Number(a) - Number(b))
                   .map(([round, picks]) => (
                     <div key={round}>
                       {/* Round header */}
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="font-display font-bold text-[11px] uppercase tracking-[0.16em] text-accent">
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <span className="font-display font-bold text-[10px] uppercase tracking-[0.18em] text-text-muted px-2 py-0.5 rounded border border-border-subtle">
                           Round {round}
                         </span>
                         <div className="flex-1 h-px bg-border-subtle" />
+                        <span className="font-mono text-[10px] text-text-muted/60">
+                          {picks.length} pick{picks.length !== 1 ? 's' : ''}
+                        </span>
                       </div>
-                      {/* Picks in this round */}
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                        {picks.map((pick) => (
-                          <div
-                            key={pick.pick_number}
-                            className="rounded border border-border-subtle bg-bg-deep overflow-hidden"
-                          >
-                            {/* Pick slot header */}
-                            <div className="flex items-center justify-between px-3 py-1.5 bg-bg-elevated border-b border-border-subtle">
-                              <span className="font-mono font-bold text-[12px] text-text-primary">
-                                R{pick.round} · Pick #{pick.pick_number}
-                              </span>
-                              <span className="text-[10px] text-text-muted font-mono">
-                                {consensusTeamData.total_team_mocks} GMs
-                                {pick.slot_total < consensusTeamData.total_team_mocks && (
-                                  <span className="text-text-muted/60"> (data for {pick.slot_total})</span>
-                                )}
-                              </span>
-                            </div>
-                            {/* Player options */}
-                            <div className="divide-y divide-border-subtle">
-                              {pick.options.map((opt) => {
-                                const hex = posHex(opt.position);
-                                return (
-                                  <div key={opt.player_id} className="flex items-center gap-2 px-3 py-2">
-                                    <PlayerHeadshot
-                                      url={opt.headshot_url}
-                                      name={opt.name}
-                                      position={opt.position}
-                                      size="sm"
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1 mb-0.5">
-                                        <span className="text-[12px] font-semibold text-text-primary truncate">
-                                          {opt.name}
-                                        </span>
-                                        <PositionBadge position={opt.position} />
-                                      </div>
-                                      <div className="text-[10px] text-text-muted mb-1">{opt.school}</div>
-                                      <div className="flex items-center gap-1.5">
-                                        <div className="flex-1 h-1 rounded-full bg-white/[0.06]">
-                                          <div
-                                            className="h-full rounded-full transition-all duration-500"
-                                            style={{
-                                              width: `${opt.pct}%`,
-                                              backgroundColor: hex,
-                                              boxShadow: `0 0 6px -1px ${hex}99`,
-                                            }}
-                                          />
+                      {/* Pick cards */}
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {picks.map((pick) => {
+                          const top = pick.options[0];
+                          const topHex = top ? posHex(top.position) : null;
+                          return (
+                            <div
+                              key={pick.pick_number}
+                              className="rounded-lg border border-border-subtle bg-bg-deep overflow-hidden"
+                            >
+                              {/* Minimal pick header */}
+                              <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
+                                <span className="font-mono text-[11px] text-text-muted">
+                                  Pick{' '}
+                                  <span className="text-text-primary font-bold">#{pick.pick_number}</span>
+                                </span>
+                                <span className="font-mono text-[10px] text-text-muted/60">
+                                  {pick.slot_total < consensusTeamData.total_team_mocks
+                                    ? `${pick.slot_total} GMs`
+                                    : `${consensusTeamData.total_team_mocks} GMs`}
+                                </span>
+                              </div>
+
+                              {top ? (
+                                <>
+                                  {/* Hero — top pick */}
+                                  <div className="px-3 pt-2.5 pb-2">
+                                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1 mb-0.5">
+                                          <PositionBadge position={top.position} />
                                         </div>
-                                        <span className="font-mono font-semibold text-[12px] tabular-nums shrink-0 w-9 text-right" style={{ color: hex }}>
-                                          {opt.pct}%
-                                        </span>
+                                        <div className="text-[13px] font-semibold text-text-primary leading-tight truncate">
+                                          {top.name}
+                                        </div>
+                                        <div className="text-[10px] text-text-muted mt-0.5 truncate">{top.school}</div>
                                       </div>
+                                      <span
+                                        className="font-mono font-bold text-[20px] tabular-nums leading-none shrink-0"
+                                        style={{ color: topHex }}
+                                      >
+                                        {top.pct}%
+                                      </span>
+                                    </div>
+                                    <div className="h-1.5 w-full rounded-full bg-white/[0.06]">
+                                      <div
+                                        className="h-full rounded-full transition-all duration-500"
+                                        style={{
+                                          width: `${top.pct}%`,
+                                          backgroundColor: topHex,
+                                          boxShadow: `0 0 8px -2px ${topHex}88`,
+                                        }}
+                                      />
                                     </div>
                                   </div>
-                                );
-                              })}
+
+                                  {/* Alternatives */}
+                                  {pick.options.length > 1 && (
+                                    <div className="border-t border-border-subtle/40 px-3 py-1.5 space-y-1">
+                                      {pick.options.slice(1).map((opt) => {
+                                        const hex = posHex(opt.position);
+                                        return (
+                                          <div key={opt.player_id} className="flex items-center gap-1.5">
+                                            <PositionBadge position={opt.position} />
+                                            <span className="text-[11px] text-text-muted truncate flex-1">{opt.name}</span>
+                                            <div className="w-8 h-0.5 rounded-full bg-white/[0.06] shrink-0">
+                                              <div
+                                                className="h-full rounded-full"
+                                                style={{ width: `${opt.pct}%`, backgroundColor: hex }}
+                                              />
+                                            </div>
+                                            <span
+                                              className="font-mono text-[10px] tabular-nums w-7 text-right shrink-0"
+                                              style={{ color: hex }}
+                                            >
+                                              {opt.pct}%
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <p className="px-3 py-4 text-[11px] text-text-muted text-center">No data</p>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
