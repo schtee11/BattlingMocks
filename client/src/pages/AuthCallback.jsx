@@ -88,7 +88,13 @@ export default function AuthCallback() {
 
     (async () => {
       try {
-        const u = await api.getUser(id);
+        // Validate the JWT session via the authenticated /me endpoint.
+        // Previously this used the public getUser(id) endpoint which
+        // doesn't require cookies, masking mobile browsers that block
+        // third-party cookies and leaving the user in a "ghost" logged-in
+        // state where localStorage had user data but every authenticated
+        // API call would 401.
+        const u = await api.getMe();
         setUser(u);
         toast.success(`Welcome, ${prettyName(u.display_name)}`);
         // If the user came from a guest team-mock session that stashed a
@@ -98,10 +104,20 @@ export default function AuthCallback() {
         window.history.replaceState(null, '', dest);
         nav(dest, { replace: true });
       } catch (e) {
-        setError({
-          title: 'Sign-in error',
-          body: e.message || 'Could not finish signing you in.',
-        });
+        // 401 means the JWT cookie wasn't sent — typically a mobile browser
+        // blocking third-party cookies (Safari ITP, private browsing, etc.).
+        // Show an actionable message instead of the raw server error.
+        if (e.status === 401) {
+          setError({
+            title: 'Session could not be verified',
+            body: 'Your browser may be blocking cookies needed for sign-in. Try disabling private browsing mode or allowing third-party cookies for this site, then sign in again.',
+          });
+        } else {
+          setError({
+            title: 'Sign-in error',
+            body: e.message || 'Could not finish signing you in.',
+          });
+        }
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

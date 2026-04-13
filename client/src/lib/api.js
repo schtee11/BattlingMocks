@@ -22,7 +22,12 @@ export function proxyImageUrl(url) {
 }
 
 async function request(path, { method = 'GET', body, adminKey } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = {};
+  // Only set Content-Type when there's a body to send. Sending it on GET
+  // requests triggers a CORS preflight (application/json is not a "simple"
+  // content type), which can interfere with cookie handling on mobile
+  // browsers that have strict third-party cookie policies.
+  if (body) headers['Content-Type'] = 'application/json';
   if (adminKey) headers['X-Admin-Key'] = adminKey;
   const res = await fetch(`${BASE}${path}`, {
     method,
