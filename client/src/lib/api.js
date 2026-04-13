@@ -1,4 +1,10 @@
-const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001';
+// In production, use relative URLs so requests go through Netlify's reverse
+// proxy (configured in _redirects). This makes API cookies same-origin,
+// eliminating cross-site cookie issues on mobile browsers. In dev, hit the
+// local API server directly.
+const BASE = import.meta.env.DEV
+  ? (import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001')
+  : '';
 
 export const API_BASE = BASE;
 export const DISCORD_AUTH_URL = `${BASE}/api/auth/discord`;
