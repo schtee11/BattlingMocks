@@ -134,269 +134,29 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
     [myPicks, byId, teamNeeds, savedMock.picks, userTeam]
   );
 
-  // Export: renders the hidden ExportCard to a PNG blob, then either copies
-  // to clipboard (desktop) or opens the native share sheet (mobile). One
-  // button, two behaviors based on platform — Windows share-to-Discord is
-  // broken (Discord pops its own server/channel picker instead of pasting
-  // into the current chat), so clipboard+Ctrl-V is the reliable path.
-  const exportRef = useRef(null);
-  const [exporting, setExporting] = useState(false);
-  const cachedBlobRef = useRef(null);
-
-  // Mobile detection: touch-primary device with no hover. Desktops with
-  // trackpads report hover:hover; phones/tablets report hover:none. This is
-  // more reliable than user-agent sniffing.
-  const isMobile = useMemo(() => {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
-    if (!navigator.share) return false;
-    return window.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
-  }, []);
-
-  // Theme mirror. The hidden card mounts with the current theme so the
-  // captured PNG matches whatever the user is looking at.
-  const [theme, setTheme] = useState(getCurrentTheme);
-  useEffect(() => {
-    // React to live theme changes (user toggles mid-view)
-    const observer = new MutationObserver(() => setTheme(getCurrentTheme()));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, []);
-
-  const themeBg = theme === 'light' ? '#f0f2f7' : '#04080f';
-
-  // Count how many headshots we expect to fetch. On slow mobile networks the
-  // fetches can take several seconds, so the Share/Copy handlers wait for
-  // this count to be matched before generating the blob.
-  const expectedHeadshotCount = useMemo(
-    () => myPicks.filter((p) => byId.get(p.player_id)?.headshot_url).length,
-    [myPicks, byId]
-  );
-
-  // Pre-fetch the team logo and all prospect headshots as base64 data URLs.
-  // This way the ExportCard's <img> tags reference inlined data URLs that
-  // html-to-image captures without any network fetching — eliminates CORS,
-  // stale cache, and theme-timing issues in one shot.
-  const [teamLogoDataUrl, setTeamLogoDataUrl] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    const url = proxyImageUrl(teamLogoEspnUrl(userTeam));
-    fetch(url)
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((blob) => {
-        if (!blob || cancelled) return;
-        const reader = new FileReader();
-        reader.onloadend = () => { if (!cancelled) setTeamLogoDataUrl(reader.result); };
-        reader.readAsDataURL(blob);
-      })
-      .catch(() => { /* fall back to empty = badge fallback */ });
-    return () => { cancelled = true; };
-  }, [userTeam]);
-
-  const [headshotDataUrls, setHeadshotDataUrls] = useState({});
-  useEffect(() => {
-    let cancelled = false;
-    const toFetch = myPicks
-      .map((p) => {
-        const player = byId.get(p.player_id);
-        return player?.headshot_url ? { id: p.player_id, url: player.headshot_url } : null;
-      })
-      .filter(Boolean);
-    Promise.all(
-      toFetch.map(({ id, url }) =>
-        fetch(proxyImageUrl(url))
-          .then((r) => (r.ok ? r.blob() : null))
-          .then(
-            (blob) =>
-              new Promise((resolve) => {
-                if (!blob) return resolve([id, null]);
-                const reader = new FileReader();
-                reader.onloadend = () => resolve([id, reader.result]);
-                reader.readAsDataURL(blob);
-              })
-          )
-          .catch(() => [id, null])
-      )
-    ).then((pairs) => {
-      if (cancelled) return;
-      const map = {};
-      for (const [id, dataUrl] of pairs) if (dataUrl) map[id] = dataUrl;
-      setHeadshotDataUrls(map);
-    });
-    return () => { cancelled = true; };
-  }, [myPicks, byId]);
-
-  // Refs mirror state so async handlers can poll for readiness without
-  // capturing stale closure values.
-  const logoReadyRef = useRef(!!teamLogoDataUrl);
-  const headshotCountRef = useRef(Object.keys(headshotDataUrls).length);
-  useEffect(() => { logoReadyRef.current = !!teamLogoDataUrl; }, [teamLogoDataUrl]);
-  useEffect(() => { headshotCountRef.current = Object.keys(headshotDataUrls).length; }, [headshotDataUrls]);
-
-  async function waitForImages(timeoutMs = 6000) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const logoReady = logoReadyRef.current;
-      const headshotsReady = headshotCountRef.current >= expectedHeadshotCount;
-      if (logoReady && headshotsReady) return true;
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    return false; // Timed out — proceed anyway with whatever loaded
-  }
-
-  async function generateBlob() {
-    if (!exportRef.current) return null;
-    // Wait for all <img> inside the card to finish loading before capture,
-    // so the first click doesn't grab a half-loaded screenshot.
-    const imgs = exportRef.current.querySelectorAll('img');
-    await Promise.all(
-      Array.from(imgs).map((img) =>
-        img.complete && img.naturalHeight > 0
-          ? Promise.resolve()
-          : new Promise((resolve) => {
-              img.addEventListener('load', resolve, { once: true });
-              img.addEventListener('error', resolve, { once: true });
-            })
-      )
-    );
-    const toPng = await loadToPng();
-    const dataUrl = await toPng(exportRef.current, {
-      // cacheBust forces html-to-image to append a unique query param to
-      // every image URL, defeating any stale browser cache. Necessary
-      // because switching themes was producing wrong-theme captures.
-      cacheBust: true,
-      pixelRatio: 2,
-      backgroundColor: themeBg,
-    });
-    const res = await fetch(dataUrl);
-    return res.blob();
-  }
-
-  // Pre-render the blob as soon as the card has data + the DOM is ready so
-  // Share has something to hand off instantly. Re-render whenever the theme,
-  // the underlying mock, or the inlined image data URLs change (images load
-  // asynchronously after mount, so the first render is usually text-only).
-  const headshotsLoadedCount = Object.keys(headshotDataUrls).length;
-  useEffect(() => {
-    let cancelled = false;
-    cachedBlobRef.current = null;
-    // Give the DOM a tick to mount the ExportCard with the latest data URLs,
-    // then render. Slightly longer delay gives React time to commit.
-    const t = setTimeout(() => {
-      generateBlob()
-        .then((blob) => { if (!cancelled) cachedBlobRef.current = blob; })
-        .catch((e) => { console.warn('[pre-render]', e); });
-    }, 500);
-    return () => { cancelled = true; clearTimeout(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedMock.id, theme, teamLogoDataUrl, headshotsLoadedCount,
-      // Re-render when trades change so the cached blob always includes them.
-      Array.isArray(savedMock.trades) ? savedMock.trades.length : 0]);
-
-  const fileName = `${userTeam.toLowerCase()}-mock-${new Date(savedMock.submitted_at).toISOString().slice(0, 10)}.png`;
-
-  function handleCopy() {
-    // CRITICAL: navigator.clipboard.write MUST be called synchronously from
-    // within the user gesture. Pass a Promise<Blob> so the gesture stays
-    // alive while html-to-image finishes rendering.
-    if (!navigator.clipboard || !window.ClipboardItem) {
-      toast.error('Clipboard unsupported — use Share instead');
-      return;
-    }
-    setExporting(true);
-    // Always re-generate fresh so we pick up any data URLs that finished
-    // loading after the pre-render. Cached blobs were producing stale
-    // captures on slow networks where images hadn't loaded yet when the
-    // pre-render ran.
-    const blobPromise = (async () => {
-      await waitForImages();
-      cachedBlobRef.current = null;
-      const blob = await generateBlob();
-      if (!blob) throw new Error('render failed');
-      cachedBlobRef.current = blob;
-      return blob;
-    })();
-    navigator.clipboard
-      .write([new ClipboardItem({ 'image/png': blobPromise })])
-      .then(() => {
-        toast.success('Copied — paste into Discord with Ctrl+V');
-      })
-      .catch((e) => {
-        console.error('[copy]', e);
-        if (e.name === 'NotAllowedError' || e.message?.includes('focused')) {
-          toast.error('Click the page first, then tap Copy');
-        } else {
-          toast.error('Copy failed — try Share instead');
-        }
-      })
-      .finally(() => setExporting(false));
-  }
-
-  function triggerDownload(blob) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = fileName;
-    link.href = url;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  // Smart share: on mobile (touch, no hover) use the native share sheet; on
-  // desktop use clipboard copy (Windows' share-to-Discord flow is broken —
-  // Discord pops its own server/channel picker instead of pasting into the
-  // current chat, so Ctrl+V is the only reliable path).
-  function handleShare() {
-    if (isMobile) {
-      handleMobileShare();
-    } else {
-      handleCopy();
-    }
-  }
-
-  async function handleMobileShare() {
-    setExporting(true);
-    try {
-      // Wait for all data URLs to finish loading before capturing. On slow
-      // mobile networks the pre-render can run before images arrive, and
-      // the cached blob ends up missing all the photos.
-      await waitForImages();
-      cachedBlobRef.current = null;
-      const blob = await generateBlob();
-      if (blob) cachedBlobRef.current = blob;
-      if (!blob) throw new Error('render failed');
-
-      const file = new File([blob], fileName, { type: 'image/png' });
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: savedMock.title || `${userTeam} Team Mock`,
-            text: `My ${userTeam} mock draft — MockDraft Showdown`,
-          });
-          return;
-        } catch (e) {
-          if (e.name === 'AbortError') return;
-          console.warn('[share] share failed, downloading instead:', e);
-        }
-      }
-      triggerDownload(blob);
-      toast.success('Downloaded — share it with the squad');
-    } catch (e) {
-      console.error('[share]', e);
-      toast.error('Could not generate image');
-    } finally {
-      setExporting(false);
-    }
-  }
+  // ── Share export ──
+  const {
+    exportRef, exporting, handleShare, isMobile,
+    theme, teamLogoDataUrl, headshotDataUrls,
+  } = useShareExport({
+    myPicks,
+    byId,
+    userTeam,
+    mockTitle: savedMock.title || `${userTeam} Team Mock`,
+    submittedAt: savedMock.submitted_at,
+    trades: Array.isArray(savedMock.trades) ? savedMock.trades : [],
+  });
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-32">
-      {/* Off-screen export card — positioned far offscreen so it renders but
-          stays invisible; html-to-image captures it into a PNG on demand. */}
+      {/* Hidden export card — kept in-viewport with opacity:0 so mobile
+          browsers still decode images; html-to-image captures it on demand. */}
       <div
         style={{
           position: 'fixed',
           top: 0,
-          left: -10000,
+          left: 0,
+          opacity: 0,
           zIndex: -1,
           pointerEvents: 'none',
         }}
@@ -828,8 +588,8 @@ const ExportCard = forwardRef(function ExportCard(
                     padding: 14,
                     borderRadius: 12,
                     background: C.surface,
-                    borderLeft: `4px solid ${color}`,
                     border: `1px solid ${C.subtle}`,
+                    borderLeft: `4px solid ${color}`,
                   }}
                 >
                   {headshotDataUrl ? (
@@ -1055,6 +815,246 @@ const ExportCard = forwardRef(function ExportCard(
   );
 });
 
+// ─── Share Export Hook ──────────────────────────────────────────────────────
+// Encapsulates PNG export infrastructure shared by SavedView and ResultsView.
+// Pre-fetches all images as base64 data URLs, renders the off-screen
+// ExportCard to PNG via html-to-image, and provides platform-smart share
+// (mobile native share sheet / desktop clipboard copy).
+function useShareExport({ myPicks, byId, userTeam, mockTitle, submittedAt, trades }) {
+  const exportRef = useRef(null);
+  const [exporting, setExporting] = useState(false);
+  const cachedBlobRef = useRef(null);
+
+  // Mobile detection: touch-primary device with no hover. Desktops with
+  // trackpads report hover:hover; phones/tablets report hover:none.
+  const isMobile = useMemo(() => {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    if (!navigator.share) return false;
+    return window.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
+  }, []);
+
+  // Theme mirror. The hidden card mounts with the current theme so the
+  // captured PNG matches whatever the user is looking at.
+  const [theme, setTheme] = useState(getCurrentTheme);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTheme(getCurrentTheme()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+  const themeBg = theme === 'light' ? '#f0f2f7' : '#04080f';
+
+  // Count how many headshots we expect to fetch so the share handlers can
+  // wait for this count to be matched before generating the blob.
+  const expectedHeadshotCount = useMemo(
+    () => myPicks.filter((p) => byId.get(p.player_id)?.headshot_url).length,
+    [myPicks, byId]
+  );
+
+  // Pre-fetch the team logo as a base64 data URL so the ExportCard's <img>
+  // references inlined data that html-to-image captures without network
+  // fetching — eliminates CORS, stale cache, and theme-timing issues.
+  const [teamLogoDataUrl, setTeamLogoDataUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const url = proxyImageUrl(teamLogoEspnUrl(userTeam));
+    fetch(url)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((blob) => {
+        if (!blob || cancelled) return;
+        const reader = new FileReader();
+        reader.onloadend = () => { if (!cancelled) setTeamLogoDataUrl(reader.result); };
+        reader.readAsDataURL(blob);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [userTeam]);
+
+  // Pre-fetch all prospect headshots as base64 data URLs.
+  const [headshotDataUrls, setHeadshotDataUrls] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const toFetch = myPicks
+      .map((p) => {
+        const player = byId.get(p.player_id);
+        return player?.headshot_url ? { id: p.player_id, url: player.headshot_url } : null;
+      })
+      .filter(Boolean);
+    Promise.all(
+      toFetch.map(({ id, url }) =>
+        fetch(proxyImageUrl(url))
+          .then((r) => (r.ok ? r.blob() : null))
+          .then(
+            (blob) =>
+              new Promise((resolve) => {
+                if (!blob) return resolve([id, null]);
+                const reader = new FileReader();
+                reader.onloadend = () => resolve([id, reader.result]);
+                reader.readAsDataURL(blob);
+              })
+          )
+          .catch(() => [id, null])
+      )
+    ).then((pairs) => {
+      if (cancelled) return;
+      const map = {};
+      for (const [id, dataUrl] of pairs) if (dataUrl) map[id] = dataUrl;
+      setHeadshotDataUrls(map);
+    });
+    return () => { cancelled = true; };
+  }, [myPicks, byId]);
+
+  // Refs mirror state so async handlers can poll for readiness without
+  // capturing stale closure values.
+  const logoReadyRef = useRef(!!teamLogoDataUrl);
+  const headshotCountRef = useRef(Object.keys(headshotDataUrls).length);
+  useEffect(() => { logoReadyRef.current = !!teamLogoDataUrl; }, [teamLogoDataUrl]);
+  useEffect(() => { headshotCountRef.current = Object.keys(headshotDataUrls).length; }, [headshotDataUrls]);
+
+  async function waitForImages(timeoutMs = 6000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (logoReadyRef.current && headshotCountRef.current >= expectedHeadshotCount) return true;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return false;
+  }
+
+  async function generateBlob() {
+    if (!exportRef.current) return null;
+    // Wait for all <img> inside the card to finish loading before capture.
+    const imgs = exportRef.current.querySelectorAll('img');
+    await Promise.all(
+      Array.from(imgs).map((img) =>
+        img.complete && img.naturalHeight > 0
+          ? Promise.resolve()
+          : new Promise((resolve) => {
+              img.addEventListener('load', resolve, { once: true });
+              img.addEventListener('error', resolve, { once: true });
+            })
+      )
+    );
+    const toPng = await loadToPng();
+    // No cacheBust — images are already inlined as base64 data URLs, so
+    // there's nothing to cache-bust. cacheBust appends query params to all
+    // image URLs during DOM cloning, which can corrupt data: URLs on mobile
+    // and cause images to silently fail to decode.
+    const dataUrl = await toPng(exportRef.current, {
+      pixelRatio: 2,
+      backgroundColor: themeBg,
+    });
+    const res = await fetch(dataUrl);
+    return res.blob();
+  }
+
+  // Pre-render the blob as soon as the card has data + the DOM is ready so
+  // Share has something to hand off instantly. Re-render whenever the theme
+  // or inlined image data URLs change.
+  const headshotsLoadedCount = Object.keys(headshotDataUrls).length;
+  useEffect(() => {
+    let cancelled = false;
+    cachedBlobRef.current = null;
+    const t = setTimeout(() => {
+      generateBlob()
+        .then((blob) => { if (!cancelled) cachedBlobRef.current = blob; })
+        .catch((e) => { console.warn('[pre-render]', e); });
+    }, 500);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme, teamLogoDataUrl, headshotsLoadedCount, trades.length]);
+
+  const fileName = `${userTeam.toLowerCase()}-mock-${new Date(submittedAt).toISOString().slice(0, 10)}.png`;
+
+  function handleCopy() {
+    // CRITICAL: navigator.clipboard.write MUST be called synchronously from
+    // within the user gesture. Pass a Promise<Blob> so the gesture stays
+    // alive while html-to-image finishes rendering.
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      toast.error('Clipboard unsupported — use Share instead');
+      return;
+    }
+    setExporting(true);
+    const blobPromise = (async () => {
+      await waitForImages();
+      cachedBlobRef.current = null;
+      const blob = await generateBlob();
+      if (!blob) throw new Error('render failed');
+      cachedBlobRef.current = blob;
+      return blob;
+    })();
+    navigator.clipboard
+      .write([new ClipboardItem({ 'image/png': blobPromise })])
+      .then(() => { toast.success('Copied — paste into Discord with Ctrl+V'); })
+      .catch((e) => {
+        console.error('[copy]', e);
+        if (e.name === 'NotAllowedError' || e.message?.includes('focused')) {
+          toast.error('Click the page first, then tap Copy');
+        } else {
+          toast.error('Copy failed — try Share instead');
+        }
+      })
+      .finally(() => setExporting(false));
+  }
+
+  function triggerDownload(blob) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = url;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Smart share: on mobile (touch, no hover) use the native share sheet; on
+  // desktop use clipboard copy.
+  function handleShare() {
+    if (isMobile) handleMobileShare();
+    else handleCopy();
+  }
+
+  async function handleMobileShare() {
+    setExporting(true);
+    try {
+      await waitForImages();
+      cachedBlobRef.current = null;
+      const blob = await generateBlob();
+      if (blob) cachedBlobRef.current = blob;
+      if (!blob) throw new Error('render failed');
+      const file = new File([blob], fileName, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: mockTitle,
+            text: `My ${userTeam} mock draft — MockDraft Showdown`,
+          });
+          return;
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+          console.warn('[share] share failed, downloading instead:', e);
+        }
+      }
+      triggerDownload(blob);
+      toast.success('Downloaded — share it with the squad');
+    } catch (e) {
+      console.error('[share]', e);
+      toast.error('Could not generate image');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return {
+    exportRef,
+    exporting,
+    handleShare,
+    isMobile,
+    theme,
+    teamLogoDataUrl,
+    headshotDataUrls,
+    fileName,
+  };
+}
+
 // ─── Post-draft Results View ──────────────────────────────────────────────────
 // Shown right after the draft finishes. Shows only the user's picks (not the
 // full 262-pick board), any trades made during the mock, and save/share CTAs.
@@ -1104,221 +1104,31 @@ function ResultsView({
   }, [myPicksOnly]);
   const rounds = Object.keys(myPicksByRound).map(Number).sort((a, b) => a - b);
 
-  // ── PNG Export infrastructure (mirrors SavedView) ──────────────────────────
-  const exportRef = useRef(null);
-  const [exporting, setExporting] = useState(false);
-  const cachedBlobRef = useRef(null);
-
-  const isMobile = useMemo(() => {
-    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
-    if (!navigator.share) return false;
-    return window.matchMedia?.('(hover: none) and (pointer: coarse)').matches === true;
-  }, []);
-
-  const [theme, setTheme] = useState(getCurrentTheme);
-  useEffect(() => {
-    const observer = new MutationObserver(() => setTheme(getCurrentTheme()));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, []);
-  const themeBg = theme === 'light' ? '#f0f2f7' : '#04080f';
-
-  // Construct a mock-like object for ExportCard
+  // ── Share export ──
   const mockForExport = useMemo(() => ({
     title: title || `${team} Team Mock`,
     submitted_at: new Date().toISOString(),
     team_abbr: team,
   }), [title, team]);
 
-  // Pre-fetch team logo + headshots as data URLs for ExportCard
-  const expectedHeadshotCount = useMemo(
-    () => myPicksOnly.filter((p) => byId.get(p.player_id)?.headshot_url).length,
-    [myPicksOnly, byId]
-  );
-
-  const [teamLogoDataUrl, setTeamLogoDataUrl] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    const url = proxyImageUrl(teamLogoEspnUrl(team));
-    fetch(url)
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((blob) => {
-        if (!blob || cancelled) return;
-        const reader = new FileReader();
-        reader.onloadend = () => { if (!cancelled) setTeamLogoDataUrl(reader.result); };
-        reader.readAsDataURL(blob);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [team]);
-
-  const [headshotDataUrls, setHeadshotDataUrls] = useState({});
-  useEffect(() => {
-    let cancelled = false;
-    const toFetch = myPicksOnly
-      .map((p) => {
-        const player = byId.get(p.player_id);
-        return player?.headshot_url ? { id: p.player_id, url: player.headshot_url } : null;
-      })
-      .filter(Boolean);
-    Promise.all(
-      toFetch.map(({ id, url }) =>
-        fetch(proxyImageUrl(url))
-          .then((r) => (r.ok ? r.blob() : null))
-          .then(
-            (blob) =>
-              new Promise((resolve) => {
-                if (!blob) return resolve([id, null]);
-                const reader = new FileReader();
-                reader.onloadend = () => resolve([id, reader.result]);
-                reader.readAsDataURL(blob);
-              })
-          )
-          .catch(() => [id, null])
-      )
-    ).then((pairs) => {
-      if (cancelled) return;
-      const map = {};
-      for (const [id, dataUrl] of pairs) if (dataUrl) map[id] = dataUrl;
-      setHeadshotDataUrls(map);
-    });
-    return () => { cancelled = true; };
-  }, [myPicksOnly, byId]);
-
-  const logoReadyRef = useRef(!!teamLogoDataUrl);
-  const headshotCountRef = useRef(Object.keys(headshotDataUrls).length);
-  useEffect(() => { logoReadyRef.current = !!teamLogoDataUrl; }, [teamLogoDataUrl]);
-  useEffect(() => { headshotCountRef.current = Object.keys(headshotDataUrls).length; }, [headshotDataUrls]);
-
-  async function waitForImages(timeoutMs = 6000) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      if (logoReadyRef.current && headshotCountRef.current >= expectedHeadshotCount) return true;
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    return false;
-  }
-
-  async function generateBlob() {
-    if (!exportRef.current) return null;
-    const imgs = exportRef.current.querySelectorAll('img');
-    await Promise.all(
-      Array.from(imgs).map((img) =>
-        img.complete && img.naturalHeight > 0
-          ? Promise.resolve()
-          : new Promise((resolve) => {
-              img.addEventListener('load', resolve, { once: true });
-              img.addEventListener('error', resolve, { once: true });
-            })
-      )
-    );
-    const toPng = await loadToPng();
-    const dataUrl = await toPng(exportRef.current, {
-      cacheBust: true,
-      pixelRatio: 2,
-      backgroundColor: themeBg,
-    });
-    const res = await fetch(dataUrl);
-    return res.blob();
-  }
-
-  // Pre-render the blob once images have loaded so Share has something
-  // ready immediately instead of generating on-click (which can miss images
-  // that haven't inlined yet on slow mobile networks).
-  const headshotsLoadedCount = Object.keys(headshotDataUrls).length;
-  useEffect(() => {
-    let cancelled = false;
-    cachedBlobRef.current = null;
-    const t = setTimeout(() => {
-      generateBlob()
-        .then((blob) => { if (!cancelled) cachedBlobRef.current = blob; })
-        .catch(() => {});
-    }, 500);
-    return () => { cancelled = true; clearTimeout(t); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme, teamLogoDataUrl, headshotsLoadedCount, trades.length]);
-
-  const fileName = `${team.toLowerCase()}-mock-${new Date().toISOString().slice(0, 10)}.png`;
-
-  function handleCopy() {
-    if (!navigator.clipboard || !window.ClipboardItem) {
-      toast.error('Clipboard unsupported — use Share instead');
-      return;
-    }
-    setExporting(true);
-    const blobPromise = (async () => {
-      await waitForImages();
-      cachedBlobRef.current = null;
-      const blob = await generateBlob();
-      if (!blob) throw new Error('render failed');
-      cachedBlobRef.current = blob;
-      return blob;
-    })();
-    navigator.clipboard
-      .write([new ClipboardItem({ 'image/png': blobPromise })])
-      .then(() => { toast.success('Copied — paste into Discord with Ctrl+V'); })
-      .catch((e) => {
-        console.error('[copy]', e);
-        if (e.name === 'NotAllowedError' || e.message?.includes('focused')) {
-          toast.error('Click the page first, then tap Copy');
-        } else {
-          toast.error('Copy failed — try Share instead');
-        }
-      })
-      .finally(() => setExporting(false));
-  }
-
-  function triggerDownload(blob) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = fileName;
-    link.href = url;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  function handleShare() {
-    if (isMobile) handleMobileShare();
-    else handleCopy();
-  }
-
-  async function handleMobileShare() {
-    setExporting(true);
-    try {
-      await waitForImages();
-      cachedBlobRef.current = null;
-      const blob = await generateBlob();
-      if (!blob) throw new Error('render failed');
-      cachedBlobRef.current = blob;
-      const file = new File([blob], fileName, { type: 'image/png' });
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: title || `${team} Team Mock`,
-            text: `My ${team} mock draft — MockDraft Showdown`,
-          });
-          return;
-        } catch (e) {
-          if (e.name === 'AbortError') return;
-        }
-      }
-      triggerDownload(blob);
-      toast.success('Downloaded — share it with the squad');
-    } catch (e) {
-      console.error('[share]', e);
-      toast.error('Could not generate image');
-    } finally {
-      setExporting(false);
-    }
-  }
-
+  const {
+    exportRef, exporting, handleShare, isMobile,
+    theme, teamLogoDataUrl, headshotDataUrls,
+  } = useShareExport({
+    myPicks: myPicksOnly,
+    byId,
+    userTeam: team,
+    mockTitle: title || `${team} Team Mock`,
+    submittedAt: new Date().toISOString(),
+    trades,
+  });
 
   return (
     <div className="flex flex-col pb-24">
-      {/* Off-screen export card for PNG generation */}
+      {/* Hidden export card — kept in-viewport with opacity:0 so mobile
+          browsers still decode images; html-to-image captures it on demand. */}
       <div
-        style={{ position: 'fixed', top: 0, left: -10000, zIndex: -1, pointerEvents: 'none' }}
+        style={{ position: 'fixed', top: 0, left: 0, opacity: 0, zIndex: -1, pointerEvents: 'none' }}
         aria-hidden
       >
         <ExportCard
