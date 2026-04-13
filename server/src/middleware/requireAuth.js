@@ -19,17 +19,17 @@ export function signRefreshToken(userId) {
   return jwt.sign({ sub: userId, type: 'refresh' }, SECRET(), { expiresIn: REFRESH_TTL });
 }
 
-// Cookie options. In production, API requests are proxied through Netlify
-// (_redirects rewrite) so cookies are same-origin — SameSite=Lax is correct
-// and avoids the cross-site cookie restrictions that mobile browsers enforce
-// (Safari ITP, private browsing, etc.). Secure is set in production because
-// the proxy connection is HTTPS end-to-end.
+// Cookie options. The frontend (Netlify) and API (Railway) are on different
+// origins, so we need SameSite=None; Secure in production to allow cookies
+// to be sent with cross-origin fetch requests (credentials: 'include').
+// In development (localhost), SameSite=Lax is fine because both services
+// share the same host, and Secure is omitted since localhost uses HTTP.
 function cookieOpts(maxAgeMs) {
   const isProd = process.env.NODE_ENV === 'production';
   return {
     httpOnly: true,
     secure: isProd,
-    sameSite: 'lax',
+    sameSite: isProd ? 'none' : 'lax',
     path: '/',
     maxAge: maxAgeMs,
   };

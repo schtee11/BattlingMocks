@@ -1,8 +1,0 @@
-# Proxy API requests to the Railway backend so cookies are same-origin.
-# This eliminates cross-site cookie issues on mobile browsers (Safari ITP,
-# private browsing, etc.). :VITE_API_URL is substituted by Netlify at
-# deploy time from the build environment variable.
-/api/*  :VITE_API_URL/api/:splat  200
-
-# SPA fallback — must come after the proxy rule.
-/*  /index.html  200
