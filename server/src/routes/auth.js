@@ -90,10 +90,7 @@ function getRedirectUri(req, provider) {
   const envUri = process.env[provider.envRedirectUri];
   if (envUri) return envUri;
   const proto = req.get('x-forwarded-proto') || req.protocol;
-  // Prefer X-Forwarded-Host so that when requests arrive through a reverse
-  // proxy (Netlify rewrite), the callback URL points back through the proxy
-  // rather than directly at the upstream host.
-  const host = req.get('x-forwarded-host') || req.get('host');
+  const host = req.get('host');
   return `${proto}://${host}${provider.defaultCallbackPath}`;
 }
 
