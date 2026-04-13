@@ -136,7 +136,7 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
 
   // ── Share export ──
   const {
-    exportRef, exporting, handleShare, isMobile,
+    exportRef, exporting, handleShare, handleCopy, isMobile,
     theme, teamLogoDataUrl, headshotDataUrls,
   } = useShareExport({
     myPicks,
@@ -234,8 +234,18 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
             className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg text-bg-deep transition hover:brightness-110 disabled:opacity-50"
             style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
           >
-            {exporting ? 'Rendering…' : 'Share'}
+            {exporting ? 'Rendering…' : isMobile ? 'Share' : 'Copy'}
           </button>
+          {isMobile && (
+            <button
+              onClick={handleCopy}
+              disabled={exporting}
+              title="Copy image to clipboard"
+              className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition disabled:opacity-50"
+            >
+              Copy
+            </button>
+          )}
           <button
             onClick={onRestart}
             className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition"
@@ -1047,6 +1057,7 @@ function useShareExport({ myPicks, byId, userTeam, mockTitle, submittedAt, trade
     exportRef,
     exporting,
     handleShare,
+    handleCopy,
     isMobile,
     theme,
     teamLogoDataUrl,
@@ -1112,7 +1123,7 @@ function ResultsView({
   }), [title, team]);
 
   const {
-    exportRef, exporting, handleShare, isMobile,
+    exportRef, exporting, handleShare, handleCopy, isMobile,
     theme, teamLogoDataUrl, headshotDataUrls,
   } = useShareExport({
     myPicks: myPicksOnly,
@@ -1185,6 +1196,15 @@ function ResultsView({
               >
                 {exporting ? '…' : 'Share'}
               </button>
+              {isMobile && (
+                <button
+                  onClick={handleCopy}
+                  disabled={exporting}
+                  className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-3 py-2.5 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition disabled:opacity-50"
+                >
+                  Copy
+                </button>
+              )}
             </div>
             <div className="flex gap-3 mt-3">
               <button
@@ -1219,8 +1239,18 @@ function ResultsView({
                 title={isMobile ? 'Share via share sheet' : 'Copy image — paste into Discord with Ctrl+V'}
                 className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.12em] px-3 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
               >
-                {exporting ? '…' : 'Share'}
+                {exporting ? '…' : isMobile ? 'Share' : 'Copy'}
               </button>
+              {isMobile && (
+                <button
+                  onClick={handleCopy}
+                  disabled={exporting}
+                  title="Copy image to clipboard"
+                  className="shrink-0 font-display font-bold text-[11px] uppercase tracking-[0.12em] px-3 py-2 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition disabled:opacity-50"
+                >
+                  Copy
+                </button>
+              )}
               {saved ? (
                 <button
                   onClick={onDone}
@@ -1437,13 +1467,24 @@ function ResultsView({
                 Done →
               </button>
             ) : (
-              <button
-                onClick={handleShare}
-                disabled={exporting}
-                className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
-              >
-                {exporting ? '…' : 'Share'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleShare}
+                  disabled={exporting}
+                  className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-accent/40 text-text-primary hover:bg-accent/[0.08] transition disabled:opacity-50"
+                >
+                  {exporting ? '…' : 'Share'}
+                </button>
+                {isMobile && (
+                  <button
+                    onClick={handleCopy}
+                    disabled={exporting}
+                    className="font-display font-bold text-[11px] uppercase tracking-[0.12em] px-4 py-2 rounded-lg border border-border-subtle text-text-secondary hover:border-border-focus hover:text-text-primary transition disabled:opacity-50"
+                  >
+                    Copy
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
