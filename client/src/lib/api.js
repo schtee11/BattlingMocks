@@ -33,7 +33,9 @@ async function request(path, { method = 'GET', body, adminKey } = {}) {
   if (!res.ok) {
     let err;
     try { err = await res.json(); } catch { err = { error: res.statusText }; }
-    throw new Error(err.error || 'request failed');
+    const error = new Error(err.error || 'request failed');
+    error.status = res.status;
+    throw error;
   }
   if (res.status === 204) return null;
   return res.json();

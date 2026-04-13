@@ -34,8 +34,15 @@ async function hydrateFromServer() {
   try {
     const user = await api.getMe();
     write(user);
-  } catch {
-    // No valid session cookie — keep whatever localStorage had (or null).
+  } catch (err) {
+    // 401 = server is reachable but the session is invalid or missing
+    // (e.g. user logged in before JWT cookies were introduced). Clear the
+    // stale localStorage entry so they're prompted to sign in again.
+    if (err?.status === 401) {
+      write(null);
+    }
+    // For network errors or 5xx keep whatever localStorage had (offline /
+    // transient fault) so the user isn't unnecessarily logged out.
   }
 }
 
