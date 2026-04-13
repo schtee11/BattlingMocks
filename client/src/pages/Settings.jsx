@@ -60,7 +60,7 @@ function ProviderIcon({ provider, className }) {
 }
 
 export default function Settings() {
-  const { user, signOut, setUser } = useAuth();
+  const { user, signOut } = useAuth();
   const nav = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -83,16 +83,17 @@ export default function Settings() {
         if (!cancelled) setData(res);
       } catch (e) {
         if (cancelled) return;
-        // If the server returns 401 the JWT session is gone (expired or
-        // mobile browser blocking third-party cookies). Clear the stale
-        // localStorage so the user is prompted to sign in again instead of
-        // being stuck on a page that can never load.
+        // 401 on mobile usually means third-party cookies are blocked
+        // (Safari ITP, private browsing). Show a friendlier message
+        // instead of the raw "authentication required" from the server.
         if (e.status === 401) {
-          toast.error('Session expired — please sign in again.');
-          setUser(null);
-          return;
+          setError(
+            'Your session could not be verified. Try signing out and back in. ' +
+            'If the issue persists, your browser may be blocking third-party cookies needed for this page.'
+          );
+        } else {
+          setError(e.message || 'Could not load linked accounts.');
         }
-        setError(e.message || 'Could not load linked accounts.');
       } finally {
         if (!cancelled) setLoading(false);
       }

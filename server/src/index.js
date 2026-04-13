@@ -24,6 +24,13 @@ import { pool } from './db/pool.js';
 dotenv.config();
 
 const app = express();
+
+// Trust the first reverse proxy (Railway / Render / etc.) so that
+// express-rate-limit reads the real client IP from X-Forwarded-For
+// instead of always seeing the proxy's IP. Without this, rate-limit
+// throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on every request.
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
