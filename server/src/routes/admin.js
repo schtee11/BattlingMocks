@@ -787,7 +787,7 @@ router.get('/volume-stats', async (req, res) => {
       FROM draft_sessions
       WHERE draft_year = $1
         AND started_at >= NOW() - INTERVAL '30 days'
-      GROUP BY (started_at AT TIME ZONE 'America/New_York')::date
+      GROUP BY TO_CHAR(started_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD')
       ORDER BY day DESC
     `, [year]);
 
