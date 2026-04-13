@@ -23,6 +23,17 @@ import { pool } from './db/pool.js';
 
 dotenv.config();
 
+// Fail fast if required environment variables are missing. This surfaces a
+// clear error at startup rather than a cryptic runtime failure (e.g. the
+// "secretOrPrivateKey must have a value" JWT error when JWT_SECRET is unset).
+const REQUIRED_ENV = ['JWT_SECRET', 'DATABASE_URL'];
+const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missingEnv.length > 0) {
+  console.error(`[startup] FATAL: missing required environment variables: ${missingEnv.join(', ')}`);
+  console.error('[startup] Set them in your .env file (local) or deployment dashboard (production).');
+  process.exit(1);
+}
+
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());

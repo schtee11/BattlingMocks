@@ -1,6 +1,10 @@
 import jwt from 'jsonwebtoken';
 
-const SECRET = () => process.env.JWT_SECRET;
+const SECRET = () => {
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error('JWT_SECRET environment variable is not set');
+  return s;
+};
 
 // Cookie names. Access token is short-lived; refresh token is long-lived.
 export const ACCESS_COOKIE = 'mds_access';
