@@ -103,6 +103,7 @@ export default function Admin() {
   const [consensusTeam, setConsensusTeam] = useState('');
   const [consensusTeamData, setConsensusTeamData] = useState(null);
   const [consensusTeamLoading, setConsensusTeamLoading] = useState(false);
+  const [consensusPosFilter, setConsensusPosFilter] = useState('ALL');
 
   // Volume stats tab
   const [volumeStats, setVolumeStats] = useState(null);
@@ -740,6 +741,18 @@ export default function Admin() {
         return acc;
       }, {})
     : {};
+
+  // Derive the unique positions present in the r1 consensus data for filter pills
+  const consensusPositions = consensusR1?.players
+    ? [...new Set(consensusR1.players.map((p) => p.position))].sort()
+    : [];
+
+  // Apply position filter client-side
+  const filteredConsensusPlayers = consensusR1?.players
+    ? (consensusPosFilter === 'ALL'
+        ? consensusR1.players
+        : consensusR1.players.filter((p) => p.position === consensusPosFilter))
+    : [];
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 route-fade">
@@ -1466,7 +1479,8 @@ export default function Admin() {
             {consensusTeam && !consensusTeamLoading && consensusTeamData?.picks?.length > 0 && (
               <div className="space-y-5">
                 <p className="text-text-muted text-[11px]">
-                  {consensusTeamData.total_team_mocks} team mock{consensusTeamData.total_team_mocks !== 1 ? 's' : ''} included {consensusTeam} picks
+                  <span className="text-text-primary font-semibold">{consensusTeamData.total_team_mocks}</span>{' '}
+                  GM{consensusTeamData.total_team_mocks !== 1 ? 's' : ''} drafted {consensusTeam} — showing top choices at each pick slot
                 </p>
                 {Object.entries(teamPicksByRound)
                   .sort(([a], [b]) => Number(a) - Number(b))
@@ -1489,10 +1503,13 @@ export default function Admin() {
                             {/* Pick slot header */}
                             <div className="flex items-center justify-between px-3 py-1.5 bg-bg-elevated border-b border-border-subtle">
                               <span className="font-mono font-bold text-[12px] text-text-primary">
-                                Pick {pick.pick_number}
+                                R{pick.round} · Pick #{pick.pick_number}
                               </span>
                               <span className="text-[10px] text-text-muted font-mono">
-                                {pick.slot_total}/{consensusTeamData.total_team_mocks} mocks
+                                {consensusTeamData.total_team_mocks} GMs
+                                {pick.slot_total < consensusTeamData.total_team_mocks && (
+                                  <span className="text-text-muted/60"> (data for {pick.slot_total})</span>
+                                )}
                               </span>
                             </div>
                             {/* Player options */}
@@ -1508,12 +1525,13 @@ export default function Admin() {
                                       size="sm"
                                     />
                                     <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1 mb-1">
+                                      <div className="flex items-center gap-1 mb-0.5">
                                         <span className="text-[12px] font-semibold text-text-primary truncate">
                                           {opt.name}
                                         </span>
                                         <PositionBadge position={opt.position} />
                                       </div>
+                                      <div className="text-[10px] text-text-muted mb-1">{opt.school}</div>
                                       <div className="flex items-center gap-1.5">
                                         <div className="flex-1 h-1 rounded-full bg-white/[0.06]">
                                           <div
@@ -1525,7 +1543,7 @@ export default function Admin() {
                                             }}
                                           />
                                         </div>
-                                        <span className="font-mono text-[11px] text-text-secondary tabular-nums shrink-0 w-9 text-right">
+                                        <span className="font-mono font-semibold text-[12px] tabular-nums shrink-0 w-9 text-right" style={{ color: hex }}>
                                           {opt.pct}%
                                         </span>
                                       </div>
@@ -1551,14 +1569,47 @@ export default function Admin() {
               </h3>
               <p className="text-text-muted text-[11px] mt-0.5">
                 {consensusR1
-                  ? `Based on ${consensusR1.total_mocks} team mock${consensusR1.total_mocks !== 1 ? 's' : ''} · all rounds`
+                  ? `Players drafted most often across ${consensusR1.total_mocks} team mock${consensusR1.total_mocks !== 1 ? 's' : ''} · all rounds`
                   : 'Most-drafted players across all saved team mocks'}
               </p>
             </div>
 
+            {/* Position filter pills */}
+            {!consensusLoading && consensusPositions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                <button
+                  onClick={() => setConsensusPosFilter('ALL')}
+                  className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-display font-semibold uppercase tracking-[0.1em] border transition-all ${
+                    consensusPosFilter === 'ALL'
+                      ? 'bg-accent/[0.15] border-accent/50 text-accent'
+                      : 'border-border-subtle text-text-muted hover:text-text-primary hover:border-border-focus'
+                  }`}
+                >
+                  All
+                </button>
+                {consensusPositions.map((pos) => {
+                  const hex = posHex(pos);
+                  const isActive = consensusPosFilter === pos;
+                  return (
+                    <button
+                      key={pos}
+                      onClick={() => setConsensusPosFilter(pos)}
+                      className="px-2.5 py-0.5 rounded-full text-[10.5px] font-display font-semibold uppercase tracking-[0.1em] border transition-all"
+                      style={isActive
+                        ? { backgroundColor: `${hex}22`, borderColor: `${hex}88`, color: hex }
+                        : { borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }
+                      }
+                    >
+                      {pos}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {consensusLoading && (
               <div className="space-y-2">
-                {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-16 w-full" />)}
               </div>
             )}
 
@@ -1566,40 +1617,63 @@ export default function Admin() {
               <p className="text-text-muted text-sm text-center py-6">No team mocks saved yet.</p>
             )}
 
-            {!consensusLoading && consensusR1?.players?.length > 0 && (
+            {!consensusLoading && filteredConsensusPlayers.length === 0 && consensusR1?.players?.length > 0 && (
+              <p className="text-text-muted text-sm text-center py-6">No players at that position yet.</p>
+            )}
+
+            {!consensusLoading && filteredConsensusPlayers.length > 0 && (
               <div className="divide-y divide-border-subtle">
-                {consensusR1.players.map((p, i) => {
+                {filteredConsensusPlayers.map((p, i) => {
                   const pct = consensusR1.total_mocks > 0
                     ? Math.round((p.pick_count / consensusR1.total_mocks) * 100)
                     : 0;
+                  const hex = posHex(p.position);
+                  // Expert rank chip: compare avg draft slot to consensus rank
+                  const delta = p.consensus_rank ? Math.round(p.avg_pick) - p.consensus_rank : null;
+                  const rankChip = delta !== null && Math.abs(delta) >= 3
+                    ? delta >= 3
+                      ? { label: `Value — expert rank #${p.consensus_rank}`, color: '#22d3ee' }
+                      : { label: `Reaches early — expert rank #${p.consensus_rank}`, color: '#f59e0b' }
+                    : null;
                   return (
-                    <div key={p.id} className="flex items-center gap-3 py-2.5 hover:bg-white/[0.02] rounded px-1">
-                      <span className="font-mono text-[11px] text-text-muted w-5 text-right shrink-0">{i + 1}</span>
-                      <PlayerHeadshot url={p.headshot_url} name={p.name} position={p.position} size="sm" />
-                      <div className="min-w-0 w-28 shrink-0">
-                        <div className="text-[12px] font-semibold text-text-primary truncate">{p.name}</div>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <PositionBadge position={p.position} />
-                          <span className="text-text-muted text-[10px] truncate">{p.school}</span>
+                    <div key={p.id} className="py-3 hover:bg-white/[0.02] rounded px-1">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-[11px] text-text-muted w-5 text-right shrink-0">{i + 1}</span>
+                        <PlayerHeadshot url={p.headshot_url} name={p.name} position={p.position} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[12px] font-semibold text-text-primary">{p.name}</span>
+                            <PositionBadge position={p.position} />
+                            <span className="text-text-muted text-[10px]">{p.school}</span>
+                            {rankChip && (
+                              <span
+                                className="text-[10px] font-mono px-1.5 py-px rounded"
+                                style={{ backgroundColor: `${rankChip.color}18`, color: rankChip.color, border: `1px solid ${rankChip.color}44` }}
+                              >
+                                {rankChip.label}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <div className="flex-1 h-1.5 rounded-full bg-white/[0.06]">
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{ width: `${pct}%`, backgroundColor: hex, boxShadow: `0 0 6px -1px ${hex}66` }}
+                              />
+                            </div>
+                            <span className="font-mono text-[11px] font-semibold tabular-nums shrink-0" style={{ color: hex }}>
+                              {pct}%
+                            </span>
+                          </div>
+                          <div className="mt-1 font-mono text-[10px] text-text-muted tabular-nums">
+                            Drafted in {p.pick_count} of {consensusR1.total_mocks} mocks
+                            {' · '}Avg pick: #{p.avg_pick}
+                            {p.earliest_pick != null && p.latest_pick != null && (
+                              <> · Range: #{p.earliest_pick}–#{p.latest_pick}</>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex-1 flex items-center gap-2 min-w-0">
-                        <div className="flex-1 h-1.5 rounded-full bg-white/[0.06]">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{
-                              width: `${pct}%`,
-                              background: 'linear-gradient(90deg, var(--accent), #3b82f6)',
-                            }}
-                          />
-                        </div>
-                        <span className="font-mono text-[11px] text-text-muted tabular-nums shrink-0">
-                          {p.pick_count}/{consensusR1.total_mocks}
-                        </span>
-                      </div>
-                      <span className="font-mono text-[11px] text-text-secondary shrink-0 w-14 text-right">
-                        Avg #{p.avg_pick}
-                      </span>
                     </div>
                   );
                 })}
@@ -1609,9 +1683,15 @@ export default function Admin() {
 
           {/* ── Position Distribution ── */}
           <Card className="p-5">
-            <h3 className="font-display font-semibold text-text-primary text-sm uppercase tracking-[0.12em] mb-4">
-              Position Distribution
-            </h3>
+            <div className="mb-4">
+              <h3 className="font-display font-semibold text-text-primary text-sm uppercase tracking-[0.12em]">
+                Position Distribution
+              </h3>
+              <p className="text-text-muted text-[11px] mt-0.5">
+                All user picks across completed team mocks
+                {consensusPos?.total_r1_picks > 0 && ` · ${consensusPos.total_r1_picks.toLocaleString()} total picks`}
+              </p>
+            </div>
 
             {consensusLoading && (
               <div className="space-y-2">
@@ -1643,8 +1723,8 @@ export default function Admin() {
                           }}
                         />
                       </div>
-                      <span className="font-mono text-[11px] text-text-muted tabular-nums w-20 text-right shrink-0">
-                        {pos.pick_count} picks · {Math.round(pct)}%
+                      <span className="font-mono text-[11px] text-text-muted tabular-nums w-24 text-right shrink-0">
+                        {Math.round(pct)}% · {pos.pick_count} picks
                       </span>
                     </div>
                   );
