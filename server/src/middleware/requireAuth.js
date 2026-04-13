@@ -59,11 +59,20 @@ function verifyToken(token) {
   }
 }
 
+// Extract a Bearer token from the Authorization header (if present).
+function bearerToken(req) {
+  const h = req.get('authorization');
+  return h?.startsWith('Bearer ') ? h.slice(7) : null;
+}
+
 // Middleware: require a valid access token. Sets req.userId.
+// Checks cookies first, then falls back to an Authorization: Bearer header
+// so mobile browsers that block cross-origin cookies (Safari ITP, private
+// browsing) can still authenticate via a token stored in localStorage.
 // If the access token is expired but a valid refresh token exists, silently
 // refreshes the access token and sets a new cookie.
 export function requireAuth(req, res, next) {
-  const accessToken = req.cookies?.[ACCESS_COOKIE];
+  const accessToken = req.cookies?.[ACCESS_COOKIE] || bearerToken(req);
   const refreshToken = req.cookies?.[REFRESH_COOKIE];
 
   // Try the access token first.
@@ -91,7 +100,7 @@ export function requireAuth(req, res, next) {
 // Middleware: optional auth. Populates req.userId if a valid token exists,
 // but does not reject unauthenticated requests.
 export function optionalAuth(req, _res, next) {
-  const accessToken = req.cookies?.[ACCESS_COOKIE];
+  const accessToken = req.cookies?.[ACCESS_COOKIE] || bearerToken(req);
   if (accessToken) {
     const payload = verifyToken(accessToken);
     if (payload?.sub) {
