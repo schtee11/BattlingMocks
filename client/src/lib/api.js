@@ -21,6 +21,22 @@ export function proxyImageUrl(url) {
   return `${BASE}/api/proxy/image?url=${encodeURIComponent(url)}`;
 }
 
+// Fallback access token for mobile browsers where cross-origin cookies are
+// blocked (Safari ITP, private browsing). Stored in localStorage and sent
+// as an Authorization: Bearer header. Desktop browsers still use cookies.
+const TOKEN_KEY = 'mds_token';
+
+export function setAccessToken(token) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {}
+}
+
+export function getAccessToken() {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+
 async function request(path, { method = 'GET', body, adminKey } = {}) {
   const headers = {};
   // Only set Content-Type when there's a body to send. Sending it on GET
@@ -29,6 +45,10 @@ async function request(path, { method = 'GET', body, adminKey } = {}) {
   // browsers that have strict third-party cookie policies.
   if (body) headers['Content-Type'] = 'application/json';
   if (adminKey) headers['X-Admin-Key'] = adminKey;
+  // Send the stored access token as a Bearer header so authenticated
+  // requests work even when cross-origin cookies are blocked.
+  const token = getAccessToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,

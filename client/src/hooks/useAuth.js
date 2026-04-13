@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/api.js';
+import { api, setAccessToken } from '../lib/api.js';
 
 const KEY = 'mds_user';
 const listeners = new Set();
@@ -78,6 +78,7 @@ export function useAuth() {
     setUser: write,
     signOut: async () => {
       try { await api.signOut(); } catch {}
+      setAccessToken(null);
       write(null);
     },
   };

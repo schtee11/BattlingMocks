@@ -312,10 +312,13 @@ router.get('/:provider/callback', async (req, res, next) => {
     }
 
     // Set HttpOnly JWT cookies so the server can validate subsequent requests.
-    setAuthCookies(res, user.id);
-    // The id is also passed in the hash so the frontend can identify the user
-    // on first load (the cookie is HttpOnly and unreadable by JS).
-    return redirectToFrontend(res, `/auth/callback#id=${user.id}`);
+    const { refresh } = setAuthCookies(res, user.id);
+    // The id + a long-lived token are passed in the hash so the frontend can
+    // store the token for mobile browsers where cross-origin cookies are
+    // blocked (Safari ITP, private browsing). The hash fragment is never sent
+    // to servers or logged by proxies. Desktop browsers that support cookies
+    // will use cookies; the token is a fallback sent as Authorization: Bearer.
+    return redirectToFrontend(res, `/auth/callback#id=${user.id}&token=${refresh}`);
   } catch (e) {
     console.error(`[${providerKey} auth]`, e);
     return redirectToFrontend(res, '/auth/callback#error=auth_failed');

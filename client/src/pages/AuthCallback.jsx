@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { api } from '../lib/api.js';
+import { api, setAccessToken } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { prettyName } from '../lib/displayName.js';
 import { Card } from '../components/ui/Card.jsx';
@@ -55,8 +55,13 @@ export default function AuthCallback() {
     const params = new URLSearchParams(hash);
     const err = params.get('error');
     const id = params.get('id');
+    const token = params.get('token');
     const linked = params.get('linked');
     const provider = params.get('provider');
+
+    // Store the access token so it can be sent as a Bearer header on mobile
+    // browsers where cross-origin cookies are blocked.
+    if (token) setAccessToken(token);
 
     if (err) {
       setError(ERRORS[err] || { title: 'Sign-in error', body: err });
