@@ -2771,6 +2771,7 @@ export default function TeamMock() {
   function handleSaved() {
     // Refresh list, drop out of draft mode
     setTeam(null);
+    setShowPickerExplicit(false);
     loadSavedMocks();
   }
 
