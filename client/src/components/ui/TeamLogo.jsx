@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { teamLogoUrl } from '../../lib/teams.js';
+import { playerImageUrl } from '../../lib/api.js';
 
 const SIZES = {
   xs: 'w-5 h-5',
@@ -30,7 +31,10 @@ export function TeamLogo({ abbr, size = 'sm', className = '' }) {
 
   return (
     <img
-      src={url}
+      // Route the ESPN CDN team logo through our server-side proxy so
+      // mobile Safari actually renders it — see PlayerHeadshot for the
+      // full rationale.
+      src={playerImageUrl(url)}
       alt={`${abbr} logo`}
       loading="lazy"
       decoding="async"

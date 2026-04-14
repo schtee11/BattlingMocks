@@ -36,12 +36,18 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
 // Global rate limiter: 100 requests per minute per IP.
+// Excludes the image proxy — loading a page with 50 board rows can easily
+// issue 50+ proxy GETs, and they're cheap (served with long-lived
+// Cache-Control, whitelisted to ESPN CDN only). Counting them toward the
+// 100/min budget would starve the real API calls and surface as the
+// "Load failed" fetch error on mobile.
 app.use(
   rateLimit({
     windowMs: 60 * 1000,
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.path.startsWith('/api/proxy/image'),
     message: { error: 'too many requests, please try again later' },
   })
 );

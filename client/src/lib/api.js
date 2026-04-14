@@ -21,6 +21,23 @@ export function proxyImageUrl(url) {
   return `${BASE}/api/proxy/image?url=${encodeURIComponent(url)}`;
 }
 
+// Wrap ESPN CDN images so the browser loads them via our server proxy.
+// ESPN's CDN serves placeholder silhouettes (or no image at all) to clients
+// it considers bot-like — which on iOS / mobile Safari with a no-referrer
+// policy is almost everyone. The proxy sends a real Chrome UA + ESPN
+// referer, so images come back correctly on every platform. Non-ESPN URLs
+// (local assets, gravatars, etc.) fall through unchanged.
+export function playerImageUrl(url) {
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname;
+    if (/(^|\.)espncdn\.com$/i.test(host)) return proxyImageUrl(url);
+  } catch {
+    // Not a parseable URL — treat as already-final (e.g. a data: URL).
+  }
+  return url;
+}
+
 // Fallback access token for mobile browsers where cross-origin cookies are
 // blocked (Safari ITP, private browsing). Stored in localStorage and sent
 // as an Authorization: Bearer header. Desktop browsers still use cookies.
