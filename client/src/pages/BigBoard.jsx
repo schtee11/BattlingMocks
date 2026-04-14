@@ -15,7 +15,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { CSS, getEventCoordinates } from '@dnd-kit/utilities';
 import { api, proxyImageUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
@@ -28,6 +28,22 @@ import { usePageMeta } from '../hooks/usePageMeta.js';
 // Lazy-load html-to-image to keep initial bundle small
 const loadToPng = () => import('html-to-image').then((m) => m.toPng);
 
+// Modifier: snaps the drag overlay so its center tracks the pointer.
+// This guarantees the ghost appears "under" the cursor regardless of which
+// part of the row was grabbed. Applied only to DragOverlay (not DndContext),
+// so collision-detection / sort order calculation is unaffected.
+function snapCenterToCursor({ activatorEvent, draggingNodeRect, transform }) {
+  if (draggingNodeRect && activatorEvent) {
+    const coords = getEventCoordinates(activatorEvent);
+    if (!coords) return transform;
+    return {
+      ...transform,
+      x: transform.x + coords.x - (draggingNodeRect.left + draggingNodeRect.width / 2),
+      y: transform.y + coords.y - (draggingNodeRect.top + draggingNodeRect.height / 2),
+    };
+  }
+  return transform;
+}
 
 // ─── Theme helpers (mirrors TeamMock.jsx) ────────────────────────────────────
 const EXPORT_THEMES = {
@@ -566,7 +582,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
             </SortableContext>
             {/* dropAnimation={null} removes the snap-back on release so the
                 list feels instant. The item simply settles in its new slot. */}
-            <DragOverlay dropAnimation={null}>
+            <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
               {activePlayer && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-accent bg-bg-surface shadow-glow opacity-95">
                   <PlayerHeadshot url={activePlayer.headshot_url} name={activePlayer.name} position={activePlayer.position} size="xs" />
