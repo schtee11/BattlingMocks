@@ -180,7 +180,7 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
 
       {/* Footer */}
       <div style={{ marginTop: 22, textAlign: 'center', fontSize: 10, color: C.muted, letterSpacing: 1 }}>
-        BATTLINGMOCKS.COM
+        MOCKDRAFTSHOWDOWN.COM
       </div>
     </div>
   );
