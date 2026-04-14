@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   closestCenter,
@@ -318,7 +319,7 @@ function SortableBoardItem({ player, rank, onRemove }) {
       style={style}
       {...attributes}
       {...listeners}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/40 group cursor-grab active:cursor-grabbing touch-none select-none"
+      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/40 group cursor-grab active:cursor-grabbing select-none"
     >
       {/* Grip icon — decorative only; the entire row is the drag activator */}
       <span className="shrink-0 text-text-muted" aria-hidden>
@@ -343,7 +344,7 @@ function SortableBoardItem({ player, rank, onRemove }) {
       <button
         onClick={() => onRemove(player.id)}
         onPointerDown={(e) => e.stopPropagation()}
-        className="shrink-0 ml-1 text-text-muted hover:text-red-400 transition opacity-0 group-hover:opacity-100 cursor-pointer"
+        className="shrink-0 ml-1 text-text-muted hover:text-red-400 transition opacity-60 md:opacity-0 md:group-hover:opacity-100 cursor-pointer"
         aria-label={`Remove ${player.name}`}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -409,9 +410,13 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
     return list;
   }, [allPlayers, boardIds, posFilter, search]);
 
-  // distance:2 gives an instant feel — 2px of movement confirms intent
-  // without any perceptible lag before the drag begins.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 2 } }));
+  // Mouse: 2px distance for instant feel.
+  // Touch: 200ms hold + 8px tolerance so normal scroll works; drag starts on long-press.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 2 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+  const [mobileTab, setMobileTab] = useState('available');
   const sortableIds = useMemo(() => boardPlayers.map((p) => `board-${p.id}`), [boardPlayers]);
 
   function handleAddPlayer(player) {
@@ -500,10 +505,41 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
         </div>
       </div>
 
-      {/* Two-panel body */}
+      {/* Mobile tab switcher — hidden on md+ where both panels show side-by-side */}
+      <div className="md:hidden flex shrink-0 border-b border-border-subtle">
+        <button
+          onClick={() => setMobileTab('available')}
+          className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${
+            mobileTab === 'available'
+              ? 'text-accent border-b-2 border-accent -mb-px'
+              : 'text-text-muted'
+          }`}
+        >
+          Prospects
+          <span className="ml-1.5 text-[11px] font-mono opacity-70">({available.length})</span>
+        </button>
+        <button
+          onClick={() => setMobileTab('board')}
+          className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${
+            mobileTab === 'board'
+              ? 'text-accent border-b-2 border-accent -mb-px'
+              : 'text-text-muted'
+          }`}
+        >
+          My Board
+          <span className="ml-1.5 text-[11px] font-mono opacity-70">({boardPlayers.length})</span>
+        </button>
+      </div>
+
+      {/* Two-panel body.
+          Desktop: side-by-side (both panels always visible).
+          Mobile: single column, active tab is shown, inactive is hidden. */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* Left — Available */}
-        <div className="w-1/2 flex flex-col border-r border-border-subtle min-h-0">
+
+        {/* Left — Available prospects */}
+        <div className={`flex-col md:border-r border-border-subtle min-h-0 w-full md:w-1/2 ${
+          mobileTab === 'available' ? 'flex' : 'hidden md:flex'
+        }`}>
           <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -541,19 +577,30 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
                 </li>
               )
               : available.map((p) => (
-                <AvailablePlayerRow key={p.id} player={p} onAdd={handleAddPlayer} />
+                <AvailablePlayerRow
+                  key={p.id}
+                  player={p}
+                  onAdd={(player) => {
+                    handleAddPlayer(player);
+                    // On mobile, switch to board tab after adding so the user
+                    // can see the player was added.
+                    setMobileTab('board');
+                  }}
+                />
               ))
             }
           </ul>
         </div>
 
-        {/* Right — Board */}
-        <div className="w-1/2 flex flex-col min-h-0">
+        {/* Right — My Board */}
+        <div className={`flex-col min-h-0 w-full md:w-1/2 ${
+          mobileTab === 'board' ? 'flex' : 'hidden md:flex'
+        }`}>
           <div className="px-3 pt-3 pb-2 shrink-0">
             <div className="text-[10px] text-text-muted px-1">
               {boardPlayers.length > 0
-                ? `${boardPlayers.length} ranked — drag to reorder, click × to remove`
-                : 'Click + on any player to add them to your board'}
+                ? `${boardPlayers.length} ranked — hold & drag to reorder`
+                : 'Tap + on any prospect to add them to your board'}
             </div>
           </div>
           <DndContext
@@ -769,7 +816,7 @@ export default function BigBoard() {
 
   if (editing !== null) {
     return (
-      <div className="h-screen flex flex-col overflow-hidden">
+      <div className="h-full flex flex-col overflow-hidden">
         <BoardEditor
           board={editing}
           allPlayers={allPlayers}
