@@ -830,4 +830,76 @@ router.get('/volume-stats', async (req, res) => {
   }
 });
 
+// ---------- User Boards activity dashboard ----------
+router.get('/boards', async (req, res) => {
+  try {
+    const { rows: [overview] } = await pool.query(`
+      SELECT
+        COUNT(DISTINCT ub.id)::int                          AS total_boards,
+        COUNT(DISTINCT ub.user_id)::int                     AS unique_users,
+        COUNT(ubr.board_id)::int                            AS total_rankings,
+        ROUND(
+          CASE WHEN COUNT(DISTINCT ub.id) > 0
+            THEN COUNT(ubr.board_id)::numeric / COUNT(DISTINCT ub.id)
+            ELSE 0
+          END, 1
+        )                                                   AS avg_rankings_per_board,
+        MIN(ub.created_at)                                  AS earliest_board,
+        MAX(ub.created_at)                                  AS latest_board
+      FROM user_boards ub
+      LEFT JOIN user_board_rankings ubr ON ubr.board_id = ub.id
+    `);
+
+    const { rows: recentBoards } = await pool.query(`
+      SELECT
+        ub.id,
+        ub.title,
+        ub.created_at,
+        ub.updated_at,
+        u.display_name,
+        u.avatar_url,
+        COUNT(ubr.board_id)::int AS ranking_count
+      FROM user_boards ub
+      LEFT JOIN users u ON u.id = ub.user_id
+      LEFT JOIN user_board_rankings ubr ON ubr.board_id = ub.id
+      GROUP BY ub.id, ub.title, ub.created_at, ub.updated_at, u.display_name, u.avatar_url
+      ORDER BY ub.created_at DESC
+      LIMIT 30
+    `);
+
+    const { rows: topUsers } = await pool.query(`
+      SELECT
+        u.display_name,
+        u.avatar_url,
+        COUNT(ub.id)::int                      AS board_count,
+        SUM(sub.ranking_count)::int            AS total_rankings
+      FROM users u
+      JOIN user_boards ub ON ub.user_id = u.id
+      LEFT JOIN (
+        SELECT board_id, COUNT(*)::int AS ranking_count
+        FROM user_board_rankings
+        GROUP BY board_id
+      ) sub ON sub.board_id = ub.id
+      GROUP BY u.id, u.display_name, u.avatar_url
+      ORDER BY board_count DESC, total_rankings DESC
+      LIMIT 15
+    `);
+
+    const { rows: daily } = await pool.query(`
+      SELECT
+        TO_CHAR(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
+        COUNT(*)::int AS boards_created
+      FROM user_boards
+      WHERE created_at >= NOW() - INTERVAL '30 days'
+      GROUP BY TO_CHAR(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD')
+      ORDER BY day DESC
+    `);
+
+    res.json({ overview, recentBoards, topUsers, daily });
+  } catch (e) {
+    console.error('[admin/boards]', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
 export default router;

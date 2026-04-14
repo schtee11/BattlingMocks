@@ -274,4 +274,6 @@ export const api = {
     request('/api/admin/lock', { method: 'POST', body: { is_locked }, adminKey: key }),
   volumeStats: (key, year = 2026) =>
     request(`/api/admin/volume-stats?year=${year}`, { adminKey: key }),
+  adminBoardStats: (key) =>
+    request('/api/admin/boards', { adminKey: key }),
 };
