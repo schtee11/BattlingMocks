@@ -477,9 +477,10 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
   });
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col w-full max-w-6xl mx-auto">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-bg-surface/30 shrink-0 flex-wrap">
+    <div className="h-full flex flex-col">
+      {/* Toolbar — max-w-6xl centering applied here, not on the root, so
+          the root's h-full chain is not disrupted by cross-axis auto margins */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-bg-surface/30 shrink-0 flex-wrap max-w-6xl w-full mx-auto">
         <button onClick={onBack} className="text-text-muted hover:text-text-primary transition shrink-0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="m15 18-6-6 6-6" />
@@ -511,7 +512,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
       </div>
 
       {/* Mobile tab switcher — hidden on md+ where both panels show side-by-side */}
-      <div className="md:hidden flex shrink-0 border-b border-border-subtle">
+      <div className="md:hidden flex shrink-0 border-b border-border-subtle max-w-6xl w-full mx-auto">
         <button
           onClick={() => setMobileTab('available')}
           className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${
@@ -539,7 +540,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
       {/* Two-panel body.
           Desktop: side-by-side (both panels always visible).
           Mobile: single column, active tab is shown, inactive is hidden. */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden max-w-6xl w-full mx-auto">
 
         {/* Left — Available prospects */}
         <div className={`flex-col md:border-r border-border-subtle min-h-0 w-full md:w-1/2 ${
@@ -821,7 +822,7 @@ export default function BigBoard() {
 
   if (editing !== null) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="h-full flex flex-col" style={{ overflow: 'hidden' }}>
         <BoardEditor
           board={editing}
           allPlayers={allPlayers}
