@@ -539,8 +539,14 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
 
       {/* Two-panel body.
           Desktop: side-by-side (both panels always visible).
-          Mobile: single column, active tab is shown, inactive is hidden. */}
-      <div className="flex flex-1 min-h-0 overflow-hidden max-w-6xl w-full mx-auto">
+          Mobile: single column, active tab is shown, inactive is hidden.
+          The outer div owns the flex-1 height grow; the inner div owns the
+          max-width centering. Keeping them separate avoids the interaction
+          between `mx-auto` cross-axis centering and `flex-1 min-h-0` main-axis
+          height resolution that was causing a bottom cutoff under `zoom: 1.25`
+          on 1440p displays. Matches TeamMock.jsx's working pattern. */}
+      <div className="flex-1 min-h-0 overflow-hidden flex justify-center">
+        <div className="flex w-full max-w-6xl h-full overflow-hidden">
 
         {/* Left — Available prospects */}
         <div className={`flex-col md:border-r border-border-subtle min-h-0 w-full md:w-1/2 ${
@@ -645,6 +651,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
               )}
             </DragOverlay>
           </DndContext>
+        </div>
         </div>
       </div>
 
