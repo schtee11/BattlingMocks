@@ -477,7 +477,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
   });
 
   return (
-    <div className="flex flex-col h-full w-full max-w-6xl mx-auto">
+    <div className="flex-1 min-h-0 flex flex-col w-full max-w-6xl mx-auto">
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-bg-surface/30 shrink-0 flex-wrap">
         <button onClick={onBack} className="text-text-muted hover:text-text-primary transition shrink-0">
@@ -821,7 +821,7 @@ export default function BigBoard() {
 
   if (editing !== null) {
     return (
-      <div className="h-full flex flex-col overflow-hidden">
+      <div className="h-full flex flex-col">
         <BoardEditor
           board={editing}
           allPlayers={allPlayers}
