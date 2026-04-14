@@ -104,6 +104,7 @@ export default function Admin() {
   const [consensusTeamData, setConsensusTeamData] = useState(null);
   const [consensusTeamLoading, setConsensusTeamLoading] = useState(false);
   const [consensusPosFilter, setConsensusPosFilter] = useState('ALL');
+  const [expandedRounds, setExpandedRounds] = useState(new Set());
 
   // Volume stats tab
   const [volumeStats, setVolumeStats] = useState(null);
@@ -245,6 +246,7 @@ export default function Admin() {
     if (consensusTeam === abbr) return;
     setConsensusTeam(abbr);
     setConsensusTeamData(null);
+    setExpandedRounds(new Set());
     setConsensusTeamLoading(true);
     api.getTeamPickBreakdown(abbr)
       .then(setConsensusTeamData)
@@ -1516,39 +1518,74 @@ export default function Admin() {
                           <div className="flex-1 h-px bg-border-subtle" />
                         </div>
                         {/* Player list */}
-                        <div className="divide-y divide-border-subtle">
-                          {players.map((p) => {
-                            const hex = posHex(p.position);
-                            const pct = consensusTeamData.total_team_mocks > 0
-                              ? Math.round((p.pick_count / consensusTeamData.total_team_mocks) * 100)
-                              : 0;
-                            // Bar width relative to the top pick so #1 always fills
-                            const barW = Math.round((p.pick_count / topCount) * 100);
-                            return (
-                              <div key={p.player_id} className="flex items-center gap-3 py-2 px-1 hover:bg-white/[0.02] rounded">
-                                <PositionBadge position={p.position} />
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-[12px] font-semibold text-text-primary truncate">{p.name}</div>
-                                  <div className="text-[10px] text-text-muted truncate">{p.school}</div>
-                                </div>
-                                <div className="w-24 shrink-0">
-                                  <div className="h-1 w-full rounded-full bg-white/[0.06]">
-                                    <div
-                                      className="h-full rounded-full transition-all duration-500"
-                                      style={{ width: `${barW}%`, backgroundColor: hex, boxShadow: `0 0 6px -1px ${hex}66` }}
-                                    />
-                                  </div>
-                                </div>
-                                <span
-                                  className="font-mono font-semibold text-[13px] tabular-nums w-10 text-right shrink-0"
-                                  style={{ color: hex }}
-                                >
-                                  {pct}%
-                                </span>
+                        {(() => {
+                          const LIMIT = 5;
+                          const isExpanded = expandedRounds.has(round);
+                          const visible = isExpanded ? players : players.slice(0, LIMIT);
+                          const hasMore = players.length > LIMIT;
+                          return (
+                            <>
+                              <div className="divide-y divide-border-subtle">
+                                {visible.map((p) => {
+                                  const hex = posHex(p.position);
+                                  const pct = consensusTeamData.total_team_mocks > 0
+                                    ? Math.round((p.pick_count / consensusTeamData.total_team_mocks) * 100)
+                                    : 0;
+                                  const barW = Math.round((p.pick_count / topCount) * 100);
+                                  return (
+                                    <div key={p.player_id} className="flex items-center gap-3 py-2 px-1 hover:bg-white/[0.02] rounded">
+                                      <PositionBadge position={p.position} />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="text-[12px] font-semibold text-text-primary truncate">{p.name}</div>
+                                        <div className="text-[10px] text-text-muted truncate">{p.school}</div>
+                                      </div>
+                                      <div className="w-24 shrink-0">
+                                        <div className="h-1 w-full rounded-full bg-white/[0.06]">
+                                          <div
+                                            className="h-full rounded-full transition-all duration-500"
+                                            style={{ width: `${barW}%`, backgroundColor: hex, boxShadow: `0 0 6px -1px ${hex}66` }}
+                                          />
+                                        </div>
+                                      </div>
+                                      <span
+                                        className="font-mono font-semibold text-[13px] tabular-nums w-10 text-right shrink-0"
+                                        style={{ color: hex }}
+                                      >
+                                        {pct}%
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            );
-                          })}
-                        </div>
+                              {hasMore && (
+                                <button
+                                  onClick={() => setExpandedRounds((prev) => {
+                                    const next = new Set(prev);
+                                    if (isExpanded) next.delete(round);
+                                    else next.add(round);
+                                    return next;
+                                  })}
+                                  className="flex items-center gap-1 mt-1 px-1 text-[10.5px] text-text-muted hover:text-text-primary transition-colors"
+                                >
+                                  <svg
+                                    className={`w-3 h-3 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                                    viewBox="0 0 12 12"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  >
+                                    <polyline points="2 4 6 8 10 4" />
+                                  </svg>
+                                  {isExpanded
+                                    ? 'Show less'
+                                    : `${players.length - LIMIT} more player${players.length - LIMIT !== 1 ? 's' : ''}`}
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     );
                   })}
