@@ -300,15 +300,12 @@ function SortableBoardItem({ player, rank, onRemove }) {
     <li
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/40 group"
+      {...attributes}
+      {...listeners}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/40 group cursor-grab active:cursor-grabbing touch-none select-none"
     >
-      {/* Drag handle */}
-      <button
-        {...attributes}
-        {...listeners}
-        className="shrink-0 text-text-muted hover:text-text-secondary cursor-grab active:cursor-grabbing touch-none"
-        aria-label="Drag to reorder"
-      >
+      {/* Grip icon — decorative only; the entire row is the drag activator */}
+      <span className="shrink-0 text-text-muted" aria-hidden>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
           <rect x="2" y="2" width="3" height="3" rx="1" />
           <rect x="9" y="2" width="3" height="3" rx="1" />
@@ -317,7 +314,7 @@ function SortableBoardItem({ player, rank, onRemove }) {
           <rect x="2" y="10" width="3" height="3" rx="1" />
           <rect x="9" y="10" width="3" height="3" rx="1" />
         </svg>
-      </button>
+      </span>
       <span className="font-mono text-[10px] text-text-muted w-5 shrink-0 text-right">{rank}</span>
       <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="xs" />
       <div className="flex-1 min-w-0">
@@ -325,9 +322,12 @@ function SortableBoardItem({ player, rank, onRemove }) {
         <div className="text-[10.5px] text-text-muted truncate">{player.school}</div>
       </div>
       <PositionBadge position={player.position} />
+      {/* stopPropagation prevents the row's drag listeners from firing when
+          the user clicks the remove button */}
       <button
         onClick={() => onRemove(player.id)}
-        className="shrink-0 ml-1 text-text-muted hover:text-red-400 transition opacity-0 group-hover:opacity-100"
+        onPointerDown={(e) => e.stopPropagation()}
+        className="shrink-0 ml-1 text-text-muted hover:text-red-400 transition opacity-0 group-hover:opacity-100 cursor-pointer"
         aria-label={`Remove ${player.name}`}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
