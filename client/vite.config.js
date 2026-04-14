@@ -7,5 +7,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    environmentMatchGlobs: [
+      // Use jsdom for component/page smoke tests
+      ['src/pages/**/*.test.*', 'jsdom'],
+    ],
   },
 });
