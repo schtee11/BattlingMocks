@@ -2462,10 +2462,53 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       <div className="flex flex-col md:hidden" style={{ flex: 1, overflow: 'hidden' }}>
         {/* Fixed top: status banner + action bar */}
         <div className="shrink-0 border-b border-border-subtle">
-          <StatusBanner compact />
-          {/* Pre-draft settings — always visible so user can adjust before starting */}
-          {phase === PHASE_READY && (
-            <div className="px-3 pb-3 pt-1 space-y-2">
+          {phase === PHASE_READY ? (
+            /* ── Mobile pre-draft panel ──────────────────────────────────
+               Clean stacked layout: team identity → optional board
+               selector → sliders → full-width start button.
+               Replaces the cramped flex-wrap StatusBanner for this phase. */
+            <div className="px-3 py-3 space-y-3">
+              {/* Team identity row */}
+              <div className="flex items-center gap-2.5">
+                <TeamLogo abbr={team} size="sm" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Drafting for</div>
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <span className="font-display font-bold text-[14px] text-text-primary shrink-0">
+                      {team} · {userSlotCount} picks
+                    </span>
+                    {liveOrder
+                      .filter((s) => s.team === team)
+                      .map((s) => (
+                        <span
+                          key={s.pick_number}
+                          className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-bold rounded font-mono shrink-0"
+                          style={{ backgroundColor: 'rgba(0,229,255,0.10)', color: 'var(--accent)', boxShadow: 'inset 0 0 0 1px rgba(0,229,255,0.22)' }}
+                        >
+                          {s.pick_number}
+                        </span>
+                      ))
+                    }
+                  </div>
+                </div>
+              </div>
+              {/* Board selector — only when the user has saved boards */}
+              {userBoards.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Board</span>
+                  <select
+                    value={selectedBoardId}
+                    onChange={(e) => setSelectedBoardId(e.target.value)}
+                    className="flex-1 bg-bg-deep/80 border border-border-subtle rounded-md px-2 py-1.5 text-text-primary text-[11px] font-display uppercase tracking-wide focus:border-accent outline-none"
+                  >
+                    <option value="">Default</option>
+                    {userBoards.map((b) => (
+                      <option key={b.id} value={b.id}>{b.title}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {/* Speed slider */}
               <div className="flex items-center gap-2">
                 <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Speed</span>
                 <input type="range" min="0" max={SPEED_STEPS.length - 1} step="1" value={speedIdx}
@@ -2473,6 +2516,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                   className="flex-1 h-1 accent-accent cursor-pointer" />
                 <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{SPEED_LABELS[speedIdx]}</span>
               </div>
+              {/* Chaos slider */}
               <div className="flex items-center gap-2">
                 <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Chaos</span>
                 <input type="range" min="0" max="1" step="0.05" value={randomness}
@@ -2480,7 +2524,17 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                   className="flex-1 h-1 accent-accent cursor-pointer" />
                 <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
               </div>
+              {/* Full-width start button */}
+              <button
+                onClick={start}
+                className="w-full font-display font-bold uppercase tracking-[0.14em] text-[12px] text-bg-deep rounded-lg px-4 py-3 transition hover:brightness-110 active:scale-[0.99]"
+                style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+              >
+                Start Mock Draft
+              </button>
             </div>
+          ) : (
+            <StatusBanner compact />
           )}
           {/* During-draft action bar: Pause/Resume + Trade + gear icon */}
           {phase !== PHASE_READY && phase !== PHASE_DONE && (
