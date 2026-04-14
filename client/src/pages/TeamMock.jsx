@@ -1524,9 +1524,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
 
-  // Use the board-ordered player list when one is active; fall back to default.
-  const effectivePlayers = activePlayers ?? players;
-  const byId = useMemo(() => new Map(effectivePlayers.map((p) => [p.id, p])), [effectivePlayers]);
+  const byId = useMemo(() => new Map((activePlayers ?? players).map((p) => [p.id, p])), [activePlayers, players]);
   const userSlotCount = useMemo(
     () => liveOrder.filter((s) => s.team === team).length,
     [liveOrder, team]
@@ -1568,6 +1566,10 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       .then((list) => setUserBoards(Array.isArray(list) ? list : []))
       .catch(() => {});
   }, [user]);
+
+  // Use the board-ordered player list when one is active; fall back to default.
+  // Declared here — AFTER activePlayers useState — to avoid temporal dead zone.
+  const effectivePlayers = activePlayers ?? players;
 
   // ── Draft-session telemetry (Phase 5) ───────────────────────────────────
   // Fire-and-forget logging of every pick (user + bot) into draft_sessions /
