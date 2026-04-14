@@ -63,11 +63,7 @@ export default function Navbar() {
   };
 
   const visibleLinks = user
-    ? [
-        ...NAV_LINKS,
-        { to: '/my-mock', label: 'My Mock', description: 'Your submission' },
-        { to: '/my-board', label: 'My Board', description: 'Custom rankings' },
-      ]
+    ? [...NAV_LINKS, { to: '/my-mock', label: 'My Mock', description: 'Your submission' }]
     : NAV_LINKS;
 
   return (

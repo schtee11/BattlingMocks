@@ -184,16 +184,6 @@ export const api = {
   completeDraftSession: (sessionId) =>
     request(`/api/draft-sessions/${sessionId}`, { method: 'PATCH' }),
 
-  // Big Boards (Phase 8)
-  listBoards: () => request('/api/boards'),
-  createBoard: (title, rankings) =>
-    request('/api/boards', { method: 'POST', body: { title, rankings } }),
-  getBoardById: (id) => request(`/api/boards/${id}`),
-  updateBoard: (id, { title, rankings } = {}) =>
-    request(`/api/boards/${id}`, { method: 'PUT', body: { title, rankings } }),
-  deleteBoard: (id) => request(`/api/boards/${id}`, { method: 'DELETE' }),
-  getBoardTop50: (id) => request(`/api/boards/${id}/top50`),
-
   // admin
   adminGetAlgoConfig: (key) => request('/api/admin/algo-config', { adminKey: key }),
   adminSaveAlgoConfig: (key, config) =>

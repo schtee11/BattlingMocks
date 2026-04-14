@@ -96,9 +96,6 @@ export default function Draft() {
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
-  // Custom big board (Phase 8) — re-orders the prospect sidebar
-  const [userBoards, setUserBoards] = useState([]);
-  const [selectedBoardId, setSelectedBoardId] = useState('');
 
   // Persist resize across reloads
   useEffect(() => {
@@ -179,35 +176,6 @@ export default function Draft() {
       }
     })();
   }, [user, nav]);
-
-  // Load the user's boards so they can optionally reorder the prospect sidebar.
-  useEffect(() => {
-    if (!user) return;
-    api.listBoards()
-      .then((list) => setUserBoards(Array.isArray(list) ? list : []))
-      .catch(() => {});
-  }, [user]);
-
-  // When a board is selected, replace the player list with the board-ordered list.
-  // When cleared (empty string), restore the original player list.
-  async function handleBoardChange(boardId) {
-    setSelectedBoardId(boardId);
-    if (!boardId) {
-      // Reload default player order
-      try {
-        const list = await api.getPlayers();
-        setPlayers(list);
-      } catch { /* keep current */ }
-      return;
-    }
-    try {
-      const data = await api.getBoardById(boardId);
-      if (data?.players?.length) setPlayers(data.players);
-    } catch (e) {
-      toast.error('Could not load board — showing default order');
-      setSelectedBoardId('');
-    }
-  }
 
   const playerById = useMemo(() => {
     const m = new Map();
@@ -591,7 +559,7 @@ export default function Draft() {
           <ProgressBar picks={picks} playerById={playerById} />
         </div>
         {!locked && (
-          <div className="mt-4 space-y-2">
+          <div className="mt-4">
             <Card className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
               <div>
                 <div className="caption text-[10px]">Submission deadline</div>
@@ -601,30 +569,6 @@ export default function Draft() {
               </div>
               <CountdownTimer target={DRAFT_START_2026} compact />
             </Card>
-            {userBoards.length > 0 && (
-              <Card className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
-                <div className="caption text-[10px] shrink-0">Prospect Board</div>
-                {filledCount > 0 ? (
-                  <span className="text-[11px] text-text-muted">
-                    {selectedBoardId
-                      ? (userBoards.find((b) => String(b.id) === selectedBoardId)?.title ?? 'Custom Board')
-                      : 'Default'}{' '}
-                    · locked once picks are made
-                  </span>
-                ) : (
-                  <select
-                    value={selectedBoardId}
-                    onChange={(e) => handleBoardChange(e.target.value)}
-                    className="bg-bg-deep/70 border border-border-subtle rounded-md px-2 py-1 text-text-primary text-[11px] font-display uppercase tracking-wide focus:border-accent outline-none"
-                  >
-                    <option value="">Default</option>
-                    {userBoards.map((b) => (
-                      <option key={b.id} value={b.id}>{b.title}</option>
-                    ))}
-                  </select>
-                )}
-              </Card>
-            )}
           </div>
         )}
       </div>

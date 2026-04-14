@@ -17,7 +17,6 @@ const AuthCallback = lazy(() => import('./pages/AuthCallback.jsx'));
 const NotFound = lazy(() => import('./pages/NotFound.jsx'));
 const Live = lazy(() => import('./pages/Live.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
-const BigBoard = lazy(() => import('./pages/BigBoard.jsx'));
 
 function RouteLoader() {
   return (
@@ -52,7 +51,6 @@ export default function App() {
               <Route path="/live" element={<Live />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/settings" element={<Settings />} />
-              <Route path="/my-board" element={<BigBoard />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
