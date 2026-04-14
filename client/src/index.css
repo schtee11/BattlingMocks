@@ -146,13 +146,15 @@ html[data-theme="light"] { color-scheme: light; }
 
 /* Scale up on large monitors.
    zoom on html scales everything (px, rem, fixed sizes) uniformly.
-   height compensation: 80% CSS × zoom 1.25 = 100% visual = fills viewport.
-   App.jsx uses h-full (not min-h-screen/vh) so the height chain stays
-   inside the zoomed coordinate space and controls are never clipped. */
+   IMPORTANT: do NOT add `height: calc(100% / 1.25)` here. The `zoom` property
+   already rescales percentage heights inside the zoomed coordinate space,
+   so a manual `/ 1.25` applies the scale factor twice — html renders at
+   only 80% of viewport and everything below the h-full chain appears cut
+   off on 1440p+ displays. Default `height: 100%` (inherited from the
+   shared rule above) is correct. */
 @media (min-width: 1440px) {
   html {
     zoom: 1.25;
-    height: calc(100% / 1.25);
   }
 }
 
