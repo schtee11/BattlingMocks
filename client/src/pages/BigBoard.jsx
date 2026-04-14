@@ -4,8 +4,7 @@ import toast from 'react-hot-toast';
 import {
   DndContext,
   DragOverlay,
-  MouseSensor,
-  TouchSensor,
+  PointerSensor,
   useSensor,
   useSensors,
   closestCenter,
@@ -317,12 +316,20 @@ function SortableBoardItem({ player, rank, onRemove }) {
     <li
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/40 group cursor-grab active:cursor-grabbing select-none"
+      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/40 group select-none"
     >
-      {/* Grip icon — decorative only; the entire row is the drag activator */}
-      <span className="shrink-0 text-text-muted" aria-hidden>
+      {/* Drag handle — touch-action:none is scoped here so only the handle
+          initiates drag. The rest of the row stays scrollable on mobile.
+          snapCenterToCursor on DragOverlay corrects the visual offset.
+          Padding enlarges the touch target to ~44px on mobile. */}
+      <span
+        {...attributes}
+        {...listeners}
+        className="shrink-0 text-text-muted cursor-grab active:cursor-grabbing touch-none p-2 -mx-1 -my-2"
+        aria-label="Drag to reorder"
+        role="button"
+        tabIndex={0}
+      >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
           <rect x="2" y="2" width="3" height="3" rx="1" />
           <rect x="9" y="2" width="3" height="3" rx="1" />
@@ -410,12 +417,10 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
     return list;
   }, [allPlayers, boardIds, posFilter, search]);
 
-  // Mouse: 2px distance for instant feel.
-  // Touch: 200ms hold + 8px tolerance so normal scroll works; drag starts on long-press.
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 2 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
-  );
+  // The handle has touch-action:none so the browser won't intercept its touch
+  // events for scroll. PointerSensor with distance:2 works cleanly for both
+  // mouse and touch — no delay needed because the handle is the only initiator.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 2 } }));
   const [mobileTab, setMobileTab] = useState('available');
   const sortableIds = useMemo(() => boardPlayers.map((p) => `board-${p.id}`), [boardPlayers]);
 
