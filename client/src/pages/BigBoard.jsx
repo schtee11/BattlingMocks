@@ -477,10 +477,11 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
   });
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Toolbar — max-w-6xl centering applied here, not on the root, so
-          the root's h-full chain is not disrupted by cross-axis auto margins */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-bg-surface/30 shrink-0 flex-wrap max-w-6xl w-full mx-auto">
+    <div className="flex flex-col h-full">
+      {/* Toolbar — full width (matches TeamMock header pattern). Inner content
+          is centered via max-w-6xl on an inner child, not on the toolbar itself,
+          so the toolbar's shrink-0 height behavior stays clean. */}
+      <div className="border-b border-border-subtle bg-bg-surface/30 shrink-0"><div className="flex items-center gap-3 px-4 py-3 max-w-6xl w-full mx-auto flex-wrap">
         <button onClick={onBack} className="text-text-muted hover:text-text-primary transition shrink-0">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="m15 18-6-6 6-6" />
@@ -509,10 +510,11 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
             {saving ? 'Saving…' : 'Save Board'}
           </Button>
         </div>
+        </div>
       </div>
 
       {/* Mobile tab switcher — hidden on md+ where both panels show side-by-side */}
-      <div className="md:hidden flex shrink-0 border-b border-border-subtle max-w-6xl w-full mx-auto">
+      <div className="md:hidden border-b border-border-subtle shrink-0"><div className="flex max-w-6xl w-full mx-auto">
         <button
           onClick={() => setMobileTab('available')}
           className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${
@@ -535,18 +537,15 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
           My Board
           <span className="ml-1.5 text-[11px] font-mono opacity-70">({boardPlayers.length})</span>
         </button>
+        </div>
       </div>
 
-      {/* Two-panel body.
-          Desktop: side-by-side (both panels always visible).
-          Mobile: single column, active tab is shown, inactive is hidden.
-          The outer div owns the flex-1 height grow; the inner div owns the
-          max-width centering. Keeping them separate avoids the interaction
-          between `mx-auto` cross-axis centering and `flex-1 min-h-0` main-axis
-          height resolution that was causing a bottom cutoff under `zoom: 1.25`
-          on 1440p displays. Matches TeamMock.jsx's working pattern. */}
-      <div className="flex-1 min-h-0 overflow-hidden flex justify-center">
-        <div className="flex w-full max-w-6xl h-full overflow-hidden">
+      {/* Two-panel body — matches TeamMock.jsx's exact working pattern.
+          Just `flex-1 overflow-hidden` — no max-w, no min-h, no mx-auto.
+          The panels stretch edge-to-edge on wide screens (same as TeamMock)
+          so the flex-1 height grow has nothing to fight with. Any max-width
+          centering needed for readability happens inside each panel's content. */}
+      <div className="flex flex-1 overflow-hidden">
 
         {/* Left — Available prospects */}
         <div className={`flex-col md:border-r border-border-subtle min-h-0 w-full md:w-1/2 ${
@@ -651,7 +650,6 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
               )}
             </DragOverlay>
           </DndContext>
-        </div>
         </div>
       </div>
 
