@@ -28,6 +28,12 @@ import { usePageMeta } from '../hooks/usePageMeta.js';
 // Lazy-load html-to-image to keep initial bundle small
 const loadToPng = () => import('html-to-image').then((m) => m.toPng);
 
+// Inline modifier: restrict dragging to the vertical axis only.
+// @dnd-kit/modifiers is not installed, so we provide the same logic here.
+function restrictToVerticalAxis({ transform }) {
+  return { ...transform, x: 0 };
+}
+
 // ─── Theme helpers (mirrors TeamMock.jsx) ────────────────────────────────────
 const EXPORT_THEMES = {
   dark: {
@@ -77,6 +83,7 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
         color: C.text,
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
         boxSizing: 'border-box',
+        overflow: 'hidden',
       }}
     >
       {/* Header */}
@@ -112,9 +119,14 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, width: 20, textAlign: 'right', flexShrink: 0 }}>
                 {i + 1}
               </div>
-              {headshot ? (
+              {/* Prefer the pre-fetched base64 data URL (no CORS needed at
+                  capture time). Fall back to the proxy URL with
+                  crossOrigin="anonymous" so html-to-image can still read
+                  the pixels — the proxy sets Access-Control-Allow-Origin:* */}
+              {(headshot || p.headshot_url) ? (
                 <img
-                  src={headshot}
+                  src={headshot || proxyImageUrl(p.headshot_url)}
+                  crossOrigin="anonymous"
                   alt=""
                   style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, background: `${color}22` }}
                 />
@@ -208,7 +220,9 @@ function useTop50Export({ players, boardTitle }) {
       while (!headshotsFetchedRef.current && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 100));
       }
-      // Wait for any <img> elements inside the card to finish loading.
+      // Wait for all <img> elements inside the card to finish loading.
+      // This covers both the pre-fetched base64 src AND the proxy-URL
+      // fallback imgs that html-to-image will fetch at capture time.
       const imgs = exportRef.current.querySelectorAll('img');
       await Promise.all(
         Array.from(imgs).map((img) =>
@@ -217,14 +231,17 @@ function useTop50Export({ players, boardTitle }) {
             : new Promise((resolve) => {
                 img.addEventListener('load', resolve, { once: true });
                 img.addEventListener('error', resolve, { once: true });
+                // Safety timeout — don't block forever if one image hangs
+                setTimeout(resolve, 5000);
               })
         )
       );
       const toPng = await loadToPng();
-      // cacheBust: false — images are already inlined as base64 data URLs so
-      // there's nothing to cache-bust. Appending query params to data: URLs
-      // can corrupt them and silently drop images in the capture.
-      const dataUrl = await toPng(exportRef.current, { pixelRatio: 2, cacheBust: false });
+      // cacheBust:false — images are base64 data URLs; appending ?_cb=... to
+      // them corrupts the data: URI and silently drops images.
+      // width:900 — explicit capture width so the PNG is never narrower than
+      // the card even if the element is in an off-screen fixed container.
+      const dataUrl = await toPng(exportRef.current, { pixelRatio: 2, cacheBust: false, width: 900 });
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       const fileName = `bigboard-top50-${new Date().toISOString().slice(0, 10)}.png`;
@@ -363,7 +380,9 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
     return list;
   }, [allPlayers, boardIds, posFilter, search]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  // distance:2 gives an instant feel — 2px of movement confirms intent
+  // without any perceptible lag before the drag begins.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 2 } }));
   const sortableIds = useMemo(() => boardPlayers.map((p) => `board-${p.id}`), [boardPlayers]);
 
   function handleAddPlayer(player) {
@@ -511,6 +530,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis]}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
@@ -532,7 +552,9 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
                 )}
               </ul>
             </SortableContext>
-            <DragOverlay>
+            {/* dropAnimation={null} removes the snap-back on release so the
+                list feels instant. The item simply settles in its new slot. */}
+            <DragOverlay dropAnimation={null}>
               {activePlayer && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-accent bg-bg-surface shadow-glow opacity-95">
                   <PlayerHeadshot url={activePlayer.headshot_url} name={activePlayer.name} position={activePlayer.position} size="xs" />
@@ -545,9 +567,11 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
         </div>
       </div>
 
-      {/* Hidden export card — kept in-viewport with opacity:0 so browsers
-          still decode images; html-to-image captures it on demand. */}
-      <div style={{ position: 'fixed', top: 0, left: 0, opacity: 0, zIndex: -1, pointerEvents: 'none' }} aria-hidden>
+      {/* Hidden export card — positioned off-screen so it doesn't affect
+          page layout. We pass explicit width:900 to toPng so the capture is
+          never viewport-constrained (fixed+top/left would clip on narrow
+          screens and cut off the rightmost column). */}
+      <div style={{ position: 'fixed', left: -9999, top: -9999, pointerEvents: 'none' }} aria-hidden>
         <Top50ExportCard
           ref={exportRef}
           players={boardPlayers}
