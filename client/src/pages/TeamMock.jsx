@@ -1524,6 +1524,19 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
 
+  // ── Custom big board (Phase 8) ───────────────────────────────────────────
+  // Declared here — before effectivePlayers and byId — so activePlayers is
+  // initialized before it is referenced (avoids temporal dead zone).
+  const [userBoards, setUserBoards] = useState([]);
+  const [selectedBoardId, setSelectedBoardId] = useState('');
+  const [activePlayers, setActivePlayers] = useState(null);
+  useEffect(() => {
+    if (!user) return;
+    api.listBoards()
+      .then((list) => setUserBoards(Array.isArray(list) ? list : []))
+      .catch(() => {});
+  }, [user]);
+
   // Use the board-ordered player list when one is active; fall back to default.
   const effectivePlayers = activePlayers ?? players;
   const byId = useMemo(() => new Map(effectivePlayers.map((p) => [p.id, p])), [effectivePlayers]);
@@ -1554,20 +1567,6 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // progress — losing a half-finished mock would be a terrible surprise.
   const [showRestart, setShowRestart] = useState(false);
   const [showChangeTeam, setShowChangeTeam] = useState(false);
-
-  // ── Custom big board (Phase 8) ───────────────────────────────────────────
-  // Loaded once on mount; only shown in PHASE_READY so the user can pick a
-  // board before the draft starts. Locked once PHASE_RUNNING begins.
-  const [userBoards, setUserBoards] = useState([]);
-  const [selectedBoardId, setSelectedBoardId] = useState('');
-  // activePlayers: null = use default players prop, otherwise the board-ordered list
-  const [activePlayers, setActivePlayers] = useState(null);
-  useEffect(() => {
-    if (!user) return;
-    api.listBoards()
-      .then((list) => setUserBoards(Array.isArray(list) ? list : []))
-      .catch(() => {});
-  }, [user]);
 
   // ── Draft-session telemetry (Phase 5) ───────────────────────────────────
   // Fire-and-forget logging of every pick (user + bot) into draft_sessions /
