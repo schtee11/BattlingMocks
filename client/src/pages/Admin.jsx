@@ -735,11 +735,31 @@ export default function Admin() {
     : null;
 
   // Group team pick breakdown by round for rendering
-  const teamPicksByRound = consensusTeamData?.picks
-    ? consensusTeamData.picks.reduce((acc, pick) => {
-        (acc[pick.round] = acc[pick.round] || []).push(pick);
-        return acc;
-      }, {})
+  // Aggregate all player options across pick slots within each round,
+  // summing pick_count so that a player drafted at any slot in that round
+  // counts once. Sorted by total pick_count desc.
+  const playersByRound = consensusTeamData?.picks
+    ? (() => {
+        const byRound = {};
+        for (const pick of consensusTeamData.picks) {
+          const r = pick.round;
+          if (!byRound[r]) byRound[r] = new Map();
+          for (const opt of pick.options) {
+            const existing = byRound[r].get(opt.player_id);
+            if (existing) {
+              existing.pick_count += opt.pick_count;
+            } else {
+              byRound[r].set(opt.player_id, { ...opt });
+            }
+          }
+        }
+        // Convert each round's map to a sorted array
+        const result = {};
+        for (const [r, map] of Object.entries(byRound)) {
+          result[r] = [...map.values()].sort((a, b) => b.pick_count - a.pick_count);
+        }
+        return result;
+      })()
     : {};
 
   // Derive the unique positions present in the r1 consensus data for filter pills
@@ -1482,112 +1502,56 @@ export default function Admin() {
                   <span className="text-text-primary font-semibold">{consensusTeamData.total_team_mocks}</span>{' '}
                   GM{consensusTeamData.total_team_mocks !== 1 ? 's' : ''} drafted {consensusTeam}
                 </p>
-                {Object.entries(teamPicksByRound)
+                {Object.entries(playersByRound)
                   .sort(([a], [b]) => Number(a) - Number(b))
-                  .map(([round, picks]) => (
-                    <div key={round}>
-                      {/* Round header */}
-                      <div className="flex items-center gap-2 mb-2.5">
-                        <span className="font-display font-bold text-[10px] uppercase tracking-[0.18em] text-text-muted px-2 py-0.5 rounded border border-border-subtle">
-                          Round {round}
-                        </span>
-                        <div className="flex-1 h-px bg-border-subtle" />
-                        <span className="font-mono text-[10px] text-text-muted/60">
-                          {picks.length} pick{picks.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      {/* Pick cards */}
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {picks.map((pick) => {
-                          const top = pick.options[0];
-                          const topHex = top ? posHex(top.position) : null;
-                          return (
-                            <div
-                              key={pick.pick_number}
-                              className="rounded-lg border border-border-subtle bg-bg-deep overflow-hidden"
-                            >
-                              {/* Minimal pick header */}
-                              <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
-                                <span className="font-mono text-[11px] text-text-muted">
-                                  Pick{' '}
-                                  <span className="text-text-primary font-bold">#{pick.pick_number}</span>
-                                </span>
-                                <span className="font-mono text-[10px] text-text-muted/60">
-                                  {pick.slot_total < consensusTeamData.total_team_mocks
-                                    ? `${pick.slot_total} GMs`
-                                    : `${consensusTeamData.total_team_mocks} GMs`}
+                  .map(([round, players]) => {
+                    const topCount = players[0]?.pick_count ?? 1;
+                    return (
+                      <div key={round}>
+                        {/* Round header */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-display font-bold text-[10px] uppercase tracking-[0.18em] text-text-muted px-2 py-0.5 rounded border border-border-subtle">
+                            Round {round}
+                          </span>
+                          <div className="flex-1 h-px bg-border-subtle" />
+                        </div>
+                        {/* Player list */}
+                        <div className="divide-y divide-border-subtle">
+                          {players.map((p) => {
+                            const hex = posHex(p.position);
+                            const pct = consensusTeamData.total_team_mocks > 0
+                              ? Math.round((p.pick_count / consensusTeamData.total_team_mocks) * 100)
+                              : 0;
+                            // Bar width relative to the top pick so #1 always fills
+                            const barW = Math.round((p.pick_count / topCount) * 100);
+                            return (
+                              <div key={p.player_id} className="flex items-center gap-3 py-2 px-1 hover:bg-white/[0.02] rounded">
+                                <PositionBadge position={p.position} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-[12px] font-semibold text-text-primary truncate">{p.name}</div>
+                                  <div className="text-[10px] text-text-muted truncate">{p.school}</div>
+                                </div>
+                                <div className="w-24 shrink-0">
+                                  <div className="h-1 w-full rounded-full bg-white/[0.06]">
+                                    <div
+                                      className="h-full rounded-full transition-all duration-500"
+                                      style={{ width: `${barW}%`, backgroundColor: hex, boxShadow: `0 0 6px -1px ${hex}66` }}
+                                    />
+                                  </div>
+                                </div>
+                                <span
+                                  className="font-mono font-semibold text-[13px] tabular-nums w-10 text-right shrink-0"
+                                  style={{ color: hex }}
+                                >
+                                  {pct}%
                                 </span>
                               </div>
-
-                              {top ? (
-                                <>
-                                  {/* Hero — top pick */}
-                                  <div className="px-3 pt-2.5 pb-2">
-                                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                                      <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-1 mb-0.5">
-                                          <PositionBadge position={top.position} />
-                                        </div>
-                                        <div className="text-[13px] font-semibold text-text-primary leading-tight truncate">
-                                          {top.name}
-                                        </div>
-                                        <div className="text-[10px] text-text-muted mt-0.5 truncate">{top.school}</div>
-                                      </div>
-                                      <span
-                                        className="font-mono font-bold text-[20px] tabular-nums leading-none shrink-0"
-                                        style={{ color: topHex }}
-                                      >
-                                        {top.pct}%
-                                      </span>
-                                    </div>
-                                    <div className="h-1.5 w-full rounded-full bg-white/[0.06]">
-                                      <div
-                                        className="h-full rounded-full transition-all duration-500"
-                                        style={{
-                                          width: `${top.pct}%`,
-                                          backgroundColor: topHex,
-                                          boxShadow: `0 0 8px -2px ${topHex}88`,
-                                        }}
-                                      />
-                                    </div>
-                                  </div>
-
-                                  {/* Alternatives */}
-                                  {pick.options.length > 1 && (
-                                    <div className="border-t border-border-subtle/40 px-3 py-1.5 space-y-1">
-                                      {pick.options.slice(1).map((opt) => {
-                                        const hex = posHex(opt.position);
-                                        return (
-                                          <div key={opt.player_id} className="flex items-center gap-1.5">
-                                            <PositionBadge position={opt.position} />
-                                            <span className="text-[11px] text-text-muted truncate flex-1">{opt.name}</span>
-                                            <div className="w-8 h-0.5 rounded-full bg-white/[0.06] shrink-0">
-                                              <div
-                                                className="h-full rounded-full"
-                                                style={{ width: `${opt.pct}%`, backgroundColor: hex }}
-                                              />
-                                            </div>
-                                            <span
-                                              className="font-mono text-[10px] tabular-nums w-7 text-right shrink-0"
-                                              style={{ color: hex }}
-                                            >
-                                              {opt.pct}%
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <p className="px-3 py-4 text-[11px] text-text-muted text-center">No data</p>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </Card>
