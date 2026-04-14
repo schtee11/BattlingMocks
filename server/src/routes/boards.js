@@ -90,10 +90,18 @@ router.post('/', createBoardSchema, async (req, res) => {
         return res.status(422).json({ error: `Unknown player ids: ${missing.join(', ')}` });
       }
 
-      const values = rankings.map((r) => `(${boardId}, ${r.player_id}, ${r.rank})`).join(',');
+      // Build a parameterized bulk INSERT to avoid any risk of SQL injection.
+      // boardId is a server-generated integer (never user input), but
+      // player_id and rank come from the request body so we use $N placeholders.
+      const placeholders = rankings.map((_, i) => {
+        const b = i * 3;
+        return `($${b + 1}, $${b + 2}, $${b + 3})`;
+      }).join(', ');
+      const params = rankings.flatMap((r) => [boardId, r.player_id, r.rank]);
       await client.query(
-        `INSERT INTO user_board_rankings (board_id, player_id, rank) VALUES ${values}
-         ON CONFLICT (board_id, player_id) DO UPDATE SET rank = EXCLUDED.rank`
+        `INSERT INTO user_board_rankings (board_id, player_id, rank) VALUES ${placeholders}
+         ON CONFLICT (board_id, player_id) DO UPDATE SET rank = EXCLUDED.rank`,
+        params
       );
     }
 
@@ -223,12 +231,17 @@ router.put('/:id', updateBoardSchema, async (req, res) => {
         }
       }
 
-      // Replace all rankings for this board atomically
+      // Replace all rankings for this board atomically using parameterized query.
       await client.query('DELETE FROM user_board_rankings WHERE board_id = $1', [boardId]);
       if (rankings.length > 0) {
-        const values = rankings.map((r) => `(${boardId}, ${r.player_id}, ${r.rank})`).join(',');
+        const placeholders = rankings.map((_, i) => {
+          const b = i * 3;
+          return `($${b + 1}, $${b + 2}, $${b + 3})`;
+        }).join(', ');
+        const params = rankings.flatMap((r) => [boardId, r.player_id, r.rank]);
         await client.query(
-          `INSERT INTO user_board_rankings (board_id, player_id, rank) VALUES ${values}`
+          `INSERT INTO user_board_rankings (board_id, player_id, rank) VALUES ${placeholders}`,
+          params
         );
       }
 

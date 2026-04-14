@@ -298,8 +298,11 @@ function SortableBoardItem({ player, rank, onRemove }) {
 function AvailablePlayerRow({ player, onAdd }) {
   return (
     <li
-      onClick={() => onAdd(player)}
       className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/30 hover:border-accent hover:bg-accent/[0.04] cursor-pointer transition-all duration-100 group"
+      onClick={() => onAdd(player)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAdd(player); } }}
     >
       <span className="font-mono text-[10px] text-text-muted w-6 shrink-0 text-right">
         {player.consensus_rank ?? ''}
@@ -310,15 +313,14 @@ function AvailablePlayerRow({ player, onAdd }) {
         <div className="text-[10.5px] text-text-muted truncate">{player.school}</div>
       </div>
       <PositionBadge position={player.position} />
-      <button
-        onClick={(e) => { e.stopPropagation(); onAdd(player); }}
-        className="shrink-0 ml-1 text-text-muted hover:text-accent transition opacity-0 group-hover:opacity-100"
-        aria-label={`Add ${player.name} to board`}
+      <span
+        className="shrink-0 ml-1 text-text-muted group-hover:text-accent transition opacity-0 group-hover:opacity-100"
+        aria-hidden="true"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <path d="M12 5v14M5 12h14" />
         </svg>
-      </button>
+      </span>
     </li>
   );
 }
@@ -692,9 +694,8 @@ export default function BigBoard() {
     setBoards((prev) => prev.filter((b) => b.id !== id));
   }
 
-  // Still loading auth
-  if (user === undefined) return null;
-  if (user === null) return null;
+  // Still loading auth or guest (redirect handled by useEffect above)
+  if (!user) return null;
 
   if (editing !== null) {
     return (

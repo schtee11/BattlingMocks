@@ -1675,7 +1675,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       ]);
     }, delay);
     return () => clearTimeout(timer);
-  }, [phase, currentSlot, picks, players, team, randomness, speedIdx]);
+  }, [phase, currentSlot, picks, effectivePlayers, team, randomness, speedIdx]);
 
   // Auto-switch mobile to Prospects tab when it's the user's turn to pick
   useEffect(() => {
