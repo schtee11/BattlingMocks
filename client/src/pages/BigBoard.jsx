@@ -121,8 +121,10 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
 
       {/* 4-column flexbox-wrap layout.
           Each card has a fixed pixel width so there is no ambiguity for
-          the renderer — no fr units, no calc(), just concrete numbers. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: CARD_GAP }}>
+          the renderer — no fr units, no calc(), just concrete numbers.
+          justifyContent: center is a no-op on full rows (4×CARD_W + 3×GAP
+          == container width) and centers the trailing partial row (49/50). */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: CARD_GAP, justifyContent: 'center' }}>
         {top50.map((p, i) => {
           const color = posHex(p.position);
           const headshot = headshotDataUrls[p.id];
