@@ -2055,7 +2055,7 @@ export default function Admin() {
                     {boardStats.topUsers.map((u, i) => (
                       <div key={u.display_name} className="flex items-center gap-2">
                         <span className="font-mono text-[10px] text-text-muted w-5 text-right shrink-0">{i + 1}.</span>
-                        <Avatar src={u.avatar_url} name={u.display_name} size={20} />
+                        <Avatar url={u.avatar_url} name={u.display_name} size="sm" />
                         <span className="text-xs font-medium text-text-primary flex-1 truncate">{u.display_name}</span>
                         <span className="text-[11px] text-text-muted shrink-0">
                           {u.board_count} {u.board_count === 1 ? 'board' : 'boards'} · {u.total_rankings ?? 0} rankings
@@ -2112,7 +2112,7 @@ export default function Admin() {
                       const wasEdited = Math.abs(updated - created) > 5000;
                       return (
                         <div key={b.id} className="flex items-center gap-2 py-1.5 border-b border-border-subtle/50 last:border-0">
-                          <Avatar src={b.avatar_url} name={b.display_name} size={20} />
+                          <Avatar url={b.avatar_url} name={b.display_name} size="sm" />
                           <span className="text-xs font-medium text-text-primary shrink-0 w-28 truncate">{b.display_name}</span>
                           <span className="text-xs text-text-secondary flex-1 truncate">{b.title || 'Untitled Board'}</span>
                           <span className="text-[10px] text-text-muted shrink-0">{b.ranking_count} ranked</span>

@@ -39,8 +39,8 @@ export default function App() {
     <div className="h-full flex flex-col text-text-primary">
       <Navbar />
       <div className="flex-1 min-h-0">
-      <ErrorBoundary>
-        <div key={location.pathname} className="route-fade h-full">
+      <ErrorBoundary key={location.pathname}>
+        <div className="route-fade h-full">
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<Home />} />
