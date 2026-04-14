@@ -1537,6 +1537,19 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       .catch(() => {});
   }, [user]);
 
+  // Eagerly fetch the selected board so the prospect sidebar reorders as
+  // soon as the user picks a board — before they click Start.
+  useEffect(() => {
+    if (!selectedBoardId) { setActivePlayers(null); return; }
+    let cancelled = false;
+    api.getBoardById(selectedBoardId)
+      .then((data) => {
+        if (!cancelled && data?.players?.length) setActivePlayers(data.players);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedBoardId]);
+
   // Use the board-ordered player list when one is active; fall back to default.
   const effectivePlayers = activePlayers ?? players;
   const byId = useMemo(() => new Map(effectivePlayers.map((p) => [p.id, p])), [effectivePlayers]);
@@ -1821,21 +1834,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }, [phase, picks]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
-  async function start() {
-    // If a custom board is selected, fetch the full ordered player list and
-    // apply it before the draft engine fires. The board endpoint returns
-    // players with sequential rank 1..N so the bot naturally uses the user's
-    // preferences via its exponential-decay base score.
-    if (selectedBoardId) {
-      try {
-        const data = await api.getBoardById(selectedBoardId);
-        if (data?.players?.length) {
-          setActivePlayers(data.players);
-        }
-      } catch {
-        toast.error('Could not load custom board — using default ranking');
-      }
-    }
+  function start() {
+    // activePlayers is already set by the selectedBoardId useEffect above;
+    // simply kick the draft engine into motion.
     setPhase(PHASE_RUNNING);
   }
   function pause() { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); }

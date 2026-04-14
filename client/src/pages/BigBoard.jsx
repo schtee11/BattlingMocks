@@ -150,6 +150,9 @@ function useTop50Export({ players, boardTitle }) {
   const [exporting, setExporting] = useState(false);
   const [theme, setTheme] = useState(getCurrentTheme);
   const [headshotDataUrls, setHeadshotDataUrls] = useState({});
+  // Tracks whether the current headshot fetch batch has completed (success or fail).
+  // Used as a ref so handleExport can poll for it without stale-closure issues.
+  const headshotsFetchedRef = useRef(false);
 
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(getCurrentTheme()));
@@ -161,6 +164,7 @@ function useTop50Export({ players, boardTitle }) {
 
   useEffect(() => {
     if (!top50.length) return;
+    headshotsFetchedRef.current = false;
     let cancelled = false;
     const toFetch = top50.filter((p) => p.headshot_url);
     Promise.all(
@@ -183,6 +187,7 @@ function useTop50Export({ players, boardTitle }) {
       const map = {};
       for (const [id, url] of pairs) if (url) map[id] = url;
       setHeadshotDataUrls(map);
+      headshotsFetchedRef.current = true;
     });
     return () => { cancelled = true; };
   }, [top50]);
@@ -197,7 +202,13 @@ function useTop50Export({ players, boardTitle }) {
     if (!exportRef.current || !top50.length) return;
     setExporting(true);
     try {
-      // Wait for images to load
+      // Wait up to 8 s for the background headshot pre-fetch to complete.
+      // If it times out we still proceed — some players will show initials.
+      const deadline = Date.now() + 8000;
+      while (!headshotsFetchedRef.current && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      // Wait for any <img> elements inside the card to finish loading.
       const imgs = exportRef.current.querySelectorAll('img');
       await Promise.all(
         Array.from(imgs).map((img) =>
@@ -210,7 +221,10 @@ function useTop50Export({ players, boardTitle }) {
         )
       );
       const toPng = await loadToPng();
-      const dataUrl = await toPng(exportRef.current, { pixelRatio: 2 });
+      // cacheBust: false — images are already inlined as base64 data URLs so
+      // there's nothing to cache-bust. Appending query params to data: URLs
+      // can corrupt them and silently drop images in the capture.
+      const dataUrl = await toPng(exportRef.current, { pixelRatio: 2, cacheBust: false });
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       const fileName = `bigboard-top50-${new Date().toISOString().slice(0, 10)}.png`;
@@ -247,7 +261,7 @@ function SortableBoardItem({ player, rank, onRemove }) {
     id: `board-${player.id}`,
   });
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
   };
@@ -531,8 +545,9 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
         </div>
       </div>
 
-      {/* Hidden export card */}
-      <div style={{ position: 'fixed', left: -9999, top: -9999, pointerEvents: 'none' }}>
+      {/* Hidden export card — kept in-viewport with opacity:0 so browsers
+          still decode images; html-to-image captures it on demand. */}
+      <div style={{ position: 'fixed', top: 0, left: 0, opacity: 0, zIndex: -1, pointerEvents: 'none' }} aria-hidden>
         <Top50ExportCard
           ref={exportRef}
           players={boardPlayers}
