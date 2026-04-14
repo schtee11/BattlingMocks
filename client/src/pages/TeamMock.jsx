@@ -1524,22 +1524,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
 
-  // ── Custom big board (Phase 8) ───────────────────────────────────────────
-  // Declared here — before effectivePlayers and byId — so activePlayers is
-  // initialized before it is referenced (avoids temporal dead zone).
-  const [userBoards, setUserBoards] = useState([]);
-  const [selectedBoardId, setSelectedBoardId] = useState('');
-  const [activePlayers, setActivePlayers] = useState(null);
-  useEffect(() => {
-    if (!user) return;
-    api.listBoards()
-      .then((list) => setUserBoards(Array.isArray(list) ? list : []))
-      .catch(() => {});
-  }, [user]);
-
-  // Use the board-ordered player list when one is active; fall back to default.
-  const effectivePlayers = activePlayers ?? players;
-  const byId = useMemo(() => new Map(effectivePlayers.map((p) => [p.id, p])), [effectivePlayers]);
+  const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
   const userSlotCount = useMemo(
     () => liveOrder.filter((s) => s.team === team).length,
     [liveOrder, team]
