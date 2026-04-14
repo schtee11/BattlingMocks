@@ -2796,31 +2796,50 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         </div>
 
         {/* Bottom tab bar */}
-        <div className="shrink-0 border-t border-border-subtle bg-bg-deep/95 flex" style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div className="shrink-0 bg-bg-deep/95 flex border-t border-border-subtle"
+          style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           {[
-            { key: 'board', label: 'Board', badge: `${picks.length}` },
-            { key: 'picks', label: 'My Picks', badge: `${myPicks.length}` },
-            { key: 'prospects', label: 'Prospects', badge: phase === PHASE_ON_CLOCK ? '!' : null },
+            {
+              key: 'board',
+              label: 'Board',
+              badge: picks.length > 0 ? String(picks.length) : null,
+              icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>,
+            },
+            {
+              key: 'picks',
+              label: 'My Picks',
+              badge: myPicks.length > 0 ? `${myPicks.length}/${userSlotCount}` : null,
+              icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>,
+            },
+            {
+              key: 'prospects',
+              label: 'Prospects',
+              badge: phase === PHASE_ON_CLOCK ? '!' : null,
+              urgent: phase === PHASE_ON_CLOCK,
+              icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>,
+            },
           ].map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setMobileTab(t.key)}
-              className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition ${
+            <button key={t.key} onClick={() => setMobileTab(t.key)}
+              className={`flex-1 pt-2 pb-1 flex flex-col items-center gap-0.5 transition-colors relative ${
                 mobileTab === t.key ? 'text-accent' : 'text-text-muted'
               }`}
             >
-              <span className="font-display text-[11px] font-bold uppercase tracking-[0.12em]">
+              {/* top border indicator */}
+              {mobileTab === t.key && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-accent" />}
+              <div className={`relative ${t.urgent && mobileTab !== t.key ? 'animate-pulse' : ''}`}>
+                {t.icon}
+                {t.badge && (
+                  <span className={`absolute -top-1 -right-2 min-w-[14px] h-[14px] rounded-full flex items-center justify-center text-[8px] font-bold font-mono px-0.5 ${
+                    t.urgent ? 'bg-gold text-bg-deep' : 'bg-bg-elevated text-text-muted'
+                  }`}
+                  style={t.urgent ? { background: 'var(--gold)' } : undefined}>
+                    {t.badge}
+                  </span>
+                )}
+              </div>
+              <span className={`font-display text-[9px] font-bold uppercase tracking-[0.1em] ${mobileTab === t.key ? 'text-accent' : 'text-text-muted'}`}>
                 {t.label}
               </span>
-              {t.badge && (
-                <span className={`font-mono text-[9px] ${
-                  t.key === 'prospects' && phase === PHASE_ON_CLOCK
-                    ? 'text-accent animate-pulse'
-                    : 'text-text-muted'
-                }`}>
-                  {t.badge}
-                </span>
-              )}
             </button>
           ))}
         </div>
