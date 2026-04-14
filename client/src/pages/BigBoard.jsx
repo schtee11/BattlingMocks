@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   DndContext,
@@ -765,6 +765,11 @@ export default function BigBoard() {
   const { user } = useAuth();
   const nav = useNavigate();
 
+  // Editor state is mirrored to ?b=<id> (or ?b=new) so a refresh restores
+  // whichever board the user had open.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editParam = searchParams.get('b');
+
   // Redirect guests
   useEffect(() => {
     if (user === null) nav('/join', { replace: true });
@@ -773,8 +778,10 @@ export default function BigBoard() {
   const [boards, setBoards] = useState([]);
   const [loadingBoards, setLoadingBoards] = useState(true);
   const [allPlayers, setAllPlayers] = useState(null);
-  // editing: null = list view, {} = new board, board object = edit existing
+  // editing: null = list view, object = editor (new board or existing)
   const [editing, setEditing] = useState(null);
+  // Loading state for the initial restore-from-URL fetch
+  const [restoringFromUrl, setRestoringFromUrl] = useState(!!editParam);
 
   // Load boards + all players
   useEffect(() => {
@@ -788,31 +795,77 @@ export default function BigBoard() {
       .catch(() => setAllPlayers([]));
   }, [user]);
 
-  // When opening a board for editing, fetch its full rankings
-  async function handleOpenBoard(boardMeta) {
-    const loadToast = toast.loading('Loading board…');
-    try {
-      const data = await api.getBoardById(boardMeta.id);
-      // data.players has the full ordered list; we only want the user-ranked ones
-      // (the API returns all players merged, but we want just the explicit rankings
-      //  so the editor starts with the user's ranked slice, not all 713 players)
-      const explicitlyRanked = (data.players || []).filter(
-        (_, i) => i < (boardMeta.rank_count || 0)
-      );
-      toast.dismiss(loadToast);
-      setEditing({ id: boardMeta.id, title: boardMeta.title, rankings: explicitlyRanked });
-    } catch (e) {
-      toast.dismiss(loadToast);
-      toast.error(e?.message || 'Failed to load board');
+  // Sync editor state with the ?b=… URL param. Runs on mount (restore after
+  // refresh) and whenever the param changes (e.g. browser back button).
+  useEffect(() => {
+    if (!user) return;
+    if (editParam === null) {
+      setEditing(null);
+      setRestoringFromUrl(false);
+      return;
     }
+    if (editParam === 'new') {
+      setEditing({ id: null, title: 'My Board', rankings: [] });
+      setRestoringFromUrl(false);
+      return;
+    }
+    // Existing-board case: fetch rankings if we don't already have them
+    const boardId = Number(editParam);
+    if (!Number.isFinite(boardId)) {
+      // Invalid param — drop it
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    if (editing?.id === boardId) { setRestoringFromUrl(false); return; }
+    let cancelled = false;
+    // Show a toast only for in-app navigations (when we're NOT gating render).
+    // On initial hard-refresh restore, `restoringFromUrl` already gates the
+    // UI to a blank screen, so a toast would be redundant and noisy.
+    const loadToast = restoringFromUrl ? null : toast.loading('Loading board…');
+    api.getBoardById(boardId)
+      .then((data) => {
+        if (cancelled) return;
+        // API returns { board: { id, title }, players: [...all merged...] }
+        // where explicitly-ranked players carry a `user_rank` field and
+        // auto-completed fill-ins don't. The user's actual picks are
+        // exactly those with a user_rank, preserved in order.
+        const explicitlyRanked = (data.players || []).filter((p) => p.user_rank != null);
+        setEditing({
+          id: boardId,
+          title: data.board?.title || 'My Board',
+          rankings: explicitlyRanked,
+        });
+        if (loadToast) toast.dismiss(loadToast);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        if (loadToast) toast.dismiss(loadToast);
+        toast.error(e?.message || 'Board not found');
+        setSearchParams({}, { replace: true });
+      })
+      .finally(() => { if (!cancelled) setRestoringFromUrl(false); });
+    return () => { cancelled = true; if (loadToast) toast.dismiss(loadToast); };
+    // editing?.id / restoringFromUrl intentionally omitted — we only re-run
+    // when the URL param or user changes, not when we populate `editing`
+    // ourselves or flip the restore flag.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editParam, user]);
+
+  function handleOpenBoard(boardMeta) {
+    // Navigate via URL — the effect above fetches + populates `editing`
+    setSearchParams({ b: String(boardMeta.id) });
   }
 
   function handleNewBoard() {
-    setEditing({ id: null, title: 'My Board', rankings: [] });
+    setSearchParams({ b: 'new' });
+  }
+
+  function handleBack() {
+    setSearchParams({});
   }
 
   function handleSaved() {
-    setEditing(null);
+    setSearchParams({});
     setLoadingBoards(true);
     api.listBoards()
       .then((list) => setBoards(Array.isArray(list) ? list : []))
@@ -827,6 +880,10 @@ export default function BigBoard() {
   // Still loading auth or guest (redirect handled by useEffect above)
   if (!user) return null;
 
+  // If restoring from ?b=<id> on a hard refresh, render nothing until the
+  // board data arrives — avoids a flash of the list view.
+  if (restoringFromUrl) return null;
+
   if (editing !== null) {
     return (
       <div className="h-full flex flex-col" style={{ overflow: 'hidden' }}>
@@ -834,7 +891,7 @@ export default function BigBoard() {
           board={editing}
           allPlayers={allPlayers}
           onSaved={handleSaved}
-          onBack={() => setEditing(null)}
+          onBack={handleBack}
         />
       </div>
     );
