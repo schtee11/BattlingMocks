@@ -28,11 +28,6 @@ import { usePageMeta } from '../hooks/usePageMeta.js';
 // Lazy-load html-to-image to keep initial bundle small
 const loadToPng = () => import('html-to-image').then((m) => m.toPng);
 
-// Inline modifier: restrict dragging to the vertical axis only.
-// @dnd-kit/modifiers is not installed, so we provide the same logic here.
-function restrictToVerticalAxis({ transform }) {
-  return { ...transform, x: 0 };
-}
 
 // ─── Theme helpers (mirrors TeamMock.jsx) ────────────────────────────────────
 const EXPORT_THEMES = {
@@ -548,7 +543,6 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
-            modifiers={[restrictToVerticalAxis]}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
