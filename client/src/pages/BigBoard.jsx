@@ -586,12 +586,13 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
       </div>
 
       {/* Hidden export card.
-          visibility:hidden keeps it in the document flow (so layout is
-          computed) without affecting the visual. height:0 + overflow:hidden
-          prevents it from pushing other elements down. The card renders at
-          its natural 900px width with no fixed/absolute positioning, so
-          html-to-image reads a clean, unclipped offsetWidth. */}
-      <div style={{ visibility: 'hidden', height: 0, overflow: 'hidden', pointerEvents: 'none' }} aria-hidden>
+          opacity:0 hides the card without inheriting to children (visibility
+          would propagate and make the canvas capture blank). position:fixed
+          removes it from document flow so the 900px card never causes a
+          horizontal overflow that displaces draggable items on the page.
+          top:0 left:0 keeps the element in-viewport so browsers fully decode
+          images — same pattern as TeamMock's working export card. */}
+      <div style={{ position: 'fixed', top: 0, left: 0, opacity: 0, zIndex: -1, pointerEvents: 'none' }} aria-hidden>
         <Top50ExportCard
           ref={exportRef}
           players={boardPlayers}
