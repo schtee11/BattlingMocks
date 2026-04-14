@@ -63,6 +63,17 @@ function getCurrentTheme() {
 }
 
 // ─── Top-50 Export Card ───────────────────────────────────────────────────────
+// Layout: 4 columns × 13 rows (50 players).
+// Uses flexbox-wrap with explicit pixel widths rather than CSS grid so that
+// html-to-image's SVG foreignObject renderer — which has known quirks with
+// fr units — produces a reliable, non-clipped result.
+//
+// Inner width:  900 - 2×40 = 820px
+// Gap between items: 8px horizontal, 8px vertical
+// Per-item width:  (820 - 3×8) / 4 = 199px  (set exactly via style.width)
+const CARD_W = 199; // explicit pixel width avoids fr-unit issues in html-to-image
+const CARD_GAP = 8;
+
 const Top50ExportCard = forwardRef(function Top50ExportCard(
   { players, boardTitle, theme, headshotDataUrls = {} },
   ref
@@ -87,7 +98,7 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
       }}
     >
       {/* Header */}
-      <div style={{ marginBottom: 28, borderBottom: `1px solid ${C.subtle}`, paddingBottom: 20 }}>
+      <div style={{ marginBottom: 24, borderBottom: `1px solid ${C.subtle}`, paddingBottom: 18 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 3, textTransform: 'uppercase', color: C.accent, marginBottom: 6 }}>
           MockDraft Showdown
         </div>
@@ -97,8 +108,10 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
         <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{dateStr}</div>
       </div>
 
-      {/* 5-column grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+      {/* 4-column flexbox-wrap layout.
+          Each card has a fixed pixel width so there is no ambiguity for
+          the renderer — no fr units, no calc(), just concrete numbers. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: CARD_GAP }}>
         {top50.map((p, i) => {
           const color = posHex(p.position);
           const headshot = headshotDataUrls[p.id];
@@ -107,40 +120,44 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
             <div
               key={p.id}
               style={{
+                width: CARD_W,
                 background: C.surface,
                 borderRadius: 10,
-                padding: '10px 10px 8px',
+                padding: '9px 10px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
                 border: `1px solid ${C.subtle}`,
+                boxSizing: 'border-box',
+                overflow: 'hidden',
               }}
             >
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, width: 20, textAlign: 'right', flexShrink: 0 }}>
+              {/* Rank */}
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, width: 22, textAlign: 'right', flexShrink: 0 }}>
                 {i + 1}
               </div>
-              {/* Prefer the pre-fetched base64 data URL (no CORS needed at
-                  capture time). Fall back to the proxy URL with
-                  crossOrigin="anonymous" so html-to-image can still read
-                  the pixels — the proxy sets Access-Control-Allow-Origin:* */}
+              {/* Headshot — prefer pre-fetched base64; fall back to proxy URL
+                  (Access-Control-Allow-Origin:* so html-to-image can read it) */}
               {(headshot || p.headshot_url) ? (
                 <img
                   src={headshot || proxyImageUrl(p.headshot_url)}
                   crossOrigin="anonymous"
                   alt=""
-                  style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, background: `${color}22` }}
+                  style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, background: `${color}22` }}
                 />
               ) : (
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: `${color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 900, color, flexShrink: 0 }}>
+                <div style={{ width: 34, height: 34, borderRadius: '50%', background: `${color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 900, color, flexShrink: 0 }}>
                   {initial}
                 </div>
               )}
+              {/* Name / position / school — flex:1 + minWidth:0 enables
+                  overflow:hidden + ellipsis on the child divs */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {p.name}
                 </div>
-                <div style={{ fontSize: 10, color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  {p.position}
+                <div style={{ fontSize: 10, color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {p.position}{p.school ? ` · ${p.school}` : ''}
                 </div>
               </div>
             </div>
@@ -149,7 +166,7 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
       </div>
 
       {/* Footer */}
-      <div style={{ marginTop: 24, textAlign: 'center', fontSize: 10, color: C.muted, letterSpacing: 1 }}>
+      <div style={{ marginTop: 22, textAlign: 'center', fontSize: 10, color: C.muted, letterSpacing: 1 }}>
         BATTLINGMOCKS.COM
       </div>
     </div>
@@ -239,9 +256,10 @@ function useTop50Export({ players, boardTitle }) {
       const toPng = await loadToPng();
       // cacheBust:false — images are base64 data URLs; appending ?_cb=... to
       // them corrupts the data: URI and silently drops images.
-      // width:900 — explicit capture width so the PNG is never narrower than
-      // the card even if the element is in an off-screen fixed container.
-      const dataUrl = await toPng(exportRef.current, { pixelRatio: 2, cacheBust: false, width: 900 });
+      // No explicit width — the element is in normal flow so html-to-image
+      // reads its natural offsetWidth (900 px) without any fixed-position
+      // or viewport-clipping ambiguity.
+      const dataUrl = await toPng(exportRef.current, { pixelRatio: 2, cacheBust: false });
       const res = await fetch(dataUrl);
       const blob = await res.blob();
       const fileName = `bigboard-top50-${new Date().toISOString().slice(0, 10)}.png`;
@@ -567,11 +585,13 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
         </div>
       </div>
 
-      {/* Hidden export card — positioned off-screen so it doesn't affect
-          page layout. We pass explicit width:900 to toPng so the capture is
-          never viewport-constrained (fixed+top/left would clip on narrow
-          screens and cut off the rightmost column). */}
-      <div style={{ position: 'fixed', left: -9999, top: -9999, pointerEvents: 'none' }} aria-hidden>
+      {/* Hidden export card.
+          visibility:hidden keeps it in the document flow (so layout is
+          computed) without affecting the visual. height:0 + overflow:hidden
+          prevents it from pushing other elements down. The card renders at
+          its natural 900px width with no fixed/absolute positioning, so
+          html-to-image reads a clean, unclipped offsetWidth. */}
+      <div style={{ visibility: 'hidden', height: 0, overflow: 'hidden', pointerEvents: 'none' }} aria-hidden>
         <Top50ExportCard
           ref={exportRef}
           players={boardPlayers}
