@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   DndContext,
@@ -400,7 +400,7 @@ function AvailablePlayerRow({ player, onAdd }) {
 }
 
 // ─── Board Editor ─────────────────────────────────────────────────────────────
-function BoardEditor({ board, allPlayers, onSaved, onBack }) {
+function BoardEditor({ board, allPlayers, user, onSaved, onBack }) {
   const [title, setTitle] = useState(board?.title || 'My Board');
   const [boardPlayers, setBoardPlayers] = useState(() => {
     if (!board?.rankings) return [];
@@ -457,6 +457,10 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
     : null;
 
   async function handleSave() {
+    if (!user) {
+      toast.error('Sign in to save your board');
+      return;
+    }
     if (!title.trim()) { toast.error('Please enter a board name'); return; }
     setSaving(true);
     try {
@@ -513,7 +517,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
             </Button>
           )}
           <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save Board'}
+            {!user ? 'Sign in to save' : saving ? 'Saving…' : 'Save Board'}
           </Button>
         </div>
         </div>
@@ -680,7 +684,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
 }
 
 // ─── Board List View ──────────────────────────────────────────────────────────
-function BoardListView({ boards, loading, onNew, onOpen, onDelete }) {
+function BoardListView({ boards, loading, user, onNew, onOpen, onDelete }) {
   const [deleting, setDeleting] = useState(null);
 
   async function confirmDelete(board) {
@@ -717,7 +721,14 @@ function BoardListView({ boards, loading, onNew, onOpen, onDelete }) {
         </div>
       ) : boards.length === 0 ? (
         <div className="text-center py-16 border-2 border-dashed border-border-subtle rounded-2xl">
-          <div className="text-text-muted text-sm mb-4">You haven't created any boards yet.</div>
+          {!user ? (
+            <>
+              <div className="text-text-muted text-sm mb-1">Build your own prospect rankings.</div>
+              <div className="text-text-muted text-[12px] mb-4 opacity-70">Sign in to save boards between sessions.</div>
+            </>
+          ) : (
+            <div className="text-text-muted text-sm mb-4">You haven't created any boards yet.</div>
+          )}
           <Button onClick={onNew}>Create Your First Board</Button>
         </div>
       ) : (
@@ -767,17 +778,11 @@ export default function BigBoard() {
   });
 
   const { user } = useAuth();
-  const nav = useNavigate();
 
   // Editor state is mirrored to ?b=<id> (or ?b=new) so a refresh restores
   // whichever board the user had open.
   const [searchParams, setSearchParams] = useSearchParams();
   const editParam = searchParams.get('b');
-
-  // Redirect guests
-  useEffect(() => {
-    if (user === null) nav('/join', { replace: true });
-  }, [user, nav]);
 
   const [boards, setBoards] = useState([]);
   const [loadingBoards, setLoadingBoards] = useState(true);
@@ -787,22 +792,27 @@ export default function BigBoard() {
   // Loading state for the initial restore-from-URL fetch
   const [restoringFromUrl, setRestoringFromUrl] = useState(!!editParam);
 
-  // Load boards + all players
+  // Load players for everyone (public endpoint); load saved boards only for
+  // logged-in users. Guests can still build boards — they just can't save them.
   useEffect(() => {
-    if (!user) return;
+    api.getPlayers()
+      .then((list) => setAllPlayers(Array.isArray(list) ? list : []))
+      .catch(() => setAllPlayers([]));
+    if (!user) {
+      setLoadingBoards(false);
+      return;
+    }
     api.listBoards()
       .then((list) => setBoards(Array.isArray(list) ? list : []))
       .catch(() => setBoards([]))
       .finally(() => setLoadingBoards(false));
-    api.getPlayers()
-      .then((list) => setAllPlayers(Array.isArray(list) ? list : []))
-      .catch(() => setAllPlayers([]));
   }, [user]);
 
   // Sync editor state with the ?b=… URL param. Runs on mount (restore after
   // refresh) and whenever the param changes (e.g. browser back button).
   useEffect(() => {
-    if (!user) return;
+    // Wait for auth to settle — user is undefined while loading
+    if (user === undefined) return;
     if (editParam === null) {
       setEditing(null);
       setRestoringFromUrl(false);
@@ -810,6 +820,12 @@ export default function BigBoard() {
     }
     if (editParam === 'new') {
       setEditing({ id: null, title: 'My Board', rankings: [] });
+      setRestoringFromUrl(false);
+      return;
+    }
+    // Existing-board IDs are only valid for logged-in users
+    if (!user) {
+      setSearchParams({}, { replace: true });
       setRestoringFromUrl(false);
       return;
     }
@@ -881,8 +897,8 @@ export default function BigBoard() {
     setBoards((prev) => prev.filter((b) => b.id !== id));
   }
 
-  // Still loading auth or guest (redirect handled by useEffect above)
-  if (!user) return null;
+  // Still loading auth — don't flash list view with wrong state
+  if (user === undefined) return null;
 
   // If restoring from ?b=<id> on a hard refresh, render nothing until the
   // board data arrives — avoids a flash of the list view.
@@ -894,6 +910,7 @@ export default function BigBoard() {
         <BoardEditor
           board={editing}
           allPlayers={allPlayers}
+          user={user}
           onSaved={handleSaved}
           onBack={handleBack}
         />
@@ -905,6 +922,7 @@ export default function BigBoard() {
     <BoardListView
       boards={boards}
       loading={loadingBoards}
+      user={user}
       onNew={handleNewBoard}
       onOpen={handleOpenBoard}
       onDelete={handleDeletedBoard}

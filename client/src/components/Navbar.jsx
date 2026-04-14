@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { to: '/team-mock', label: 'Team Mock', description: 'GM all 7 rounds' },
   { to: '/leaderboard', label: 'Leaderboard', description: 'Live standings' },
   { to: '/live', label: 'Live', description: 'Draft night' },
+  { to: '/my-board', label: 'My Board', description: 'Custom rankings' },
 ];
 
 export default function Navbar() {
@@ -66,7 +67,6 @@ export default function Navbar() {
     ? [
         ...NAV_LINKS,
         { to: '/my-mock', label: 'My Mock', description: 'Your submission' },
-        { to: '/my-board', label: 'My Board', description: 'Custom rankings' },
       ]
     : NAV_LINKS;
 
