@@ -38,6 +38,49 @@ export function playerImageUrl(url) {
   return url;
 }
 
+// Fetches an image and returns a base64 PNG data URL, downsampled so the
+// longest edge is at most `maxSize` px. Used by the share/export flows that
+// inline images into an html-to-image capture.
+//
+// Why downsample: ESPN serves full-size assets (team logos at 500 px, many
+// headshots > 1000 px). html-to-image rasterizes via an SVG <foreignObject>
+// with every image inlined as base64. iOS Safari silently drops images when
+// the SVG payload exceeds its internal rasterization budget — the layout
+// captures fine, but all headshots come out blank. Scaling each image down
+// to roughly its display size keeps the whole capture well under that
+// budget while staying visually indistinguishable at the final resolution.
+//
+// Returns null on fetch/decode failure; throws on AbortError so callers can
+// cancel pending work.
+export async function fetchImageAsDataUrl(url, maxSize = 128, { signal } = {}) {
+  const res = await fetch(url, { signal });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('image decode failed'));
+      i.src = objectUrl;
+    });
+    const w0 = img.naturalWidth;
+    const h0 = img.naturalHeight;
+    if (!w0 || !h0) return null;
+    const scale = Math.min(1, maxSize / Math.max(w0, h0));
+    const w = Math.max(1, Math.round(w0 * scale));
+    const h = Math.max(1, Math.round(h0 * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 // Fallback access token for mobile browsers where cross-origin cookies are
 // blocked (Safari ITP, private browsing). Stored in localStorage and sent
 // as an Authorization: Bearer header. Desktop browsers still use cookies.

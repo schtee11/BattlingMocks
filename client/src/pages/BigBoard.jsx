@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS, getEventCoordinates } from '@dnd-kit/utilities';
-import { api, proxyImageUrl } from '../lib/api.js';
+import { api, proxyImageUrl, fetchImageAsDataUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -266,18 +266,17 @@ function useTop50Export({ players, boardTitle }) {
       while (!cancelled && idx < toFetch.length) {
         const p = toFetch[idx++];
         try {
-          const r = await fetch(proxyImageUrl(p.headshot_url), {
-            signal: controller.signal,
-          });
-          if (!r.ok) continue;
-          const blob = await r.blob();
-          if (cancelled) return;
-          const dataUrl = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result || null);
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(blob);
-          });
+          // Downsample to ~2× display size (34 px card → 96 px max) so the
+          // base64 payload stays tiny. html-to-image on iOS Safari silently
+          // drops inlined images when the SVG foreignObject is too large,
+          // which made the exported PNG show blank circles for every
+          // headshot. 96 px keeps the whole 50-card capture well under the
+          // limit while staying visually indistinguishable at 2× pixelRatio.
+          const dataUrl = await fetchImageAsDataUrl(
+            proxyImageUrl(p.headshot_url),
+            96,
+            { signal: controller.signal }
+          );
           if (cancelled) return;
           if (dataUrl) results[p.id] = dataUrl;
         } catch {

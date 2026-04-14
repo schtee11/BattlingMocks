@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 // Lazy-loaded on first export to keep the initial chunk small
 const loadToPng = () => import('html-to-image').then((m) => m.toPng);
-import { api, proxyImageUrl } from '../lib/api.js';
+import { api, proxyImageUrl, fetchImageAsDataUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam, normalizePos } from '../lib/botPicker.js';
 import { loadAlgoConfig, getAlgoConfig } from '../lib/algoConfig.js';
@@ -860,26 +860,27 @@ function useShareExport({ myPicks, byId, userTeam, mockTitle, submittedAt, trade
     [myPicks, byId]
   );
 
-  // Pre-fetch the team logo as a base64 data URL so the ExportCard's <img>
-  // references inlined data that html-to-image captures without network
-  // fetching — eliminates CORS, stale cache, and theme-timing issues.
+  // Pre-fetch the team logo as a downsampled base64 PNG so the ExportCard's
+  // <img> references inlined data that html-to-image captures without network
+  // fetching — eliminates CORS, stale cache, and theme-timing issues. The
+  // logo is displayed at 96 px so a 192 px source is plenty at 2× pixelRatio
+  // and keeps the SVG foreignObject small enough for iOS Safari's rasterizer
+  // (which silently drops oversized base64 payloads and leaves the logo
+  // blank in the exported PNG).
   const [teamLogoDataUrl, setTeamLogoDataUrl] = useState(null);
   useEffect(() => {
     let cancelled = false;
-    const url = proxyImageUrl(teamLogoEspnUrl(userTeam));
-    fetch(url)
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((blob) => {
-        if (!blob || cancelled) return;
-        const reader = new FileReader();
-        reader.onloadend = () => { if (!cancelled) setTeamLogoDataUrl(reader.result); };
-        reader.readAsDataURL(blob);
-      })
+    fetchImageAsDataUrl(proxyImageUrl(teamLogoEspnUrl(userTeam)), 192)
+      .then((dataUrl) => { if (!cancelled && dataUrl) setTeamLogoDataUrl(dataUrl); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [userTeam]);
 
-  // Pre-fetch all prospect headshots as base64 data URLs.
+  // Pre-fetch all prospect headshots as downsampled base64 PNGs. Same
+  // rationale as the team logo above — inlining the full-res ESPN headshot
+  // bytes blows past iOS Safari's SVG rasterization budget during the
+  // html-to-image capture and every headshot comes out blank. 128 px source
+  // is visually indistinguishable from the 56 px × 2 display size.
   const [headshotDataUrls, setHeadshotDataUrls] = useState({});
   useEffect(() => {
     let cancelled = false;
@@ -891,17 +892,8 @@ function useShareExport({ myPicks, byId, userTeam, mockTitle, submittedAt, trade
       .filter(Boolean);
     Promise.all(
       toFetch.map(({ id, url }) =>
-        fetch(proxyImageUrl(url))
-          .then((r) => (r.ok ? r.blob() : null))
-          .then(
-            (blob) =>
-              new Promise((resolve) => {
-                if (!blob) return resolve([id, null]);
-                const reader = new FileReader();
-                reader.onloadend = () => resolve([id, reader.result]);
-                reader.readAsDataURL(blob);
-              })
-          )
+        fetchImageAsDataUrl(proxyImageUrl(url), 128)
+          .then((dataUrl) => [id, dataUrl])
           .catch(() => [id, null])
       )
     ).then((pairs) => {
