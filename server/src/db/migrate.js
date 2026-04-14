@@ -256,6 +256,27 @@ CREATE INDEX IF NOT EXISTS idx_draft_order_year_pick ON draft_order(draft_year, 
 --     TODO: confirm with WillyT that the unified mocks table is OK long-term.
 --   * team_mock_trades table — trades are persisted as JSONB on mocks.trades.
 -- ---------------------------------------------------------------------------
+
+-- Phase 8: User Big Boards. Each board belongs to one user and stores an
+-- ordered list of explicitly-ranked prospects. Unranked players are
+-- auto-completed at read time using the default consensus_rank ordering, so
+-- the DB only stores what the user actually touched.
+CREATE TABLE IF NOT EXISTS user_boards (
+  id         SERIAL PRIMARY KEY,
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title      VARCHAR(100) NOT NULL DEFAULT 'My Board',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_user_boards_user_id ON user_boards(user_id);
+
+CREATE TABLE IF NOT EXISTS user_board_rankings (
+  board_id  INTEGER NOT NULL REFERENCES user_boards(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  rank      INTEGER NOT NULL,
+  PRIMARY KEY (board_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ubr_board_rank ON user_board_rankings(board_id, rank);
 `;
 
 // Split the migration SQL into individual statements and run them one at a
