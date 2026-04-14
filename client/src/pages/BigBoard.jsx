@@ -318,19 +318,23 @@ function SortableBoardItem({ player, rank, onRemove }) {
     <li
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/40 group select-none"
+      {...attributes}
+      {...listeners}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border-subtle bg-bg-surface/40 group select-none md:cursor-grab md:touch-none"
     >
-      {/* Drag handle — touch-action:none is scoped here so only the handle
-          initiates drag. The rest of the row stays scrollable on mobile.
-          snapCenterToCursor on DragOverlay corrects the visual offset.
-          Padding enlarges the touch target to ~44px on mobile. */}
+      {/* Drag handle — on mobile this is the sole drag initiator: touch-none
+          scoped to the handle so the row body stays scrollable (without it
+          the browser fires pointercancel on scroll gestures and cancels the
+          drag before it starts).
+          On desktop the whole li is draggable (listeners + touch-none on li
+          above); the handle remains a visual affordance. dnd-kit deduplicates
+          via its internal `active` guard when both fire on a desktop click. */}
       <span
-        {...attributes}
         {...listeners}
         className="shrink-0 text-text-muted cursor-grab active:cursor-grabbing touch-none p-2 -mx-1 -my-2"
         aria-label="Drag to reorder"
         role="button"
-        tabIndex={0}
+        tabIndex={-1}
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
           <rect x="2" y="2" width="3" height="3" rx="1" />
