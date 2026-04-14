@@ -86,7 +86,7 @@ const CARD_W = 199; // explicit pixel width avoids fr-unit issues in html-to-ima
 const CARD_GAP = 8;
 
 const Top50ExportCard = forwardRef(function Top50ExportCard(
-  { players, boardTitle, theme, headshotDataUrls = {} },
+  { players, boardTitle, theme, headshotDataUrls = {}, exporting = false },
   ref
 ) {
   const C = EXPORT_THEMES[theme] || EXPORT_THEMES.dark;
@@ -149,11 +149,21 @@ const Top50ExportCard = forwardRef(function Top50ExportCard(
               <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, width: 22, textAlign: 'right', flexShrink: 0 }}>
                 {i + 1}
               </div>
-              {/* Headshot — prefer pre-fetched base64; fall back to proxy URL
-                  (Access-Control-Allow-Origin:* so html-to-image can read it) */}
-              {(headshot || p.headshot_url) ? (
+              {/* Headshot — prefer pre-fetched base64 (no network). Only
+                  fall back to the proxy URL while an export is actively in
+                  flight; otherwise the idle card would fire 50 image
+                  requests every time the editor mounts, saturating mobile
+                  Safari's per-host connection pool and breaking every
+                  subsequent page's API calls with "Load failed". */}
+              {headshot ? (
                 <img
-                  src={headshot || proxyImageUrl(p.headshot_url)}
+                  src={headshot}
+                  alt=""
+                  style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, background: `${color}22` }}
+                />
+              ) : exporting && p.headshot_url ? (
+                <img
+                  src={proxyImageUrl(p.headshot_url)}
                   crossOrigin="anonymous"
                   alt=""
                   style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, background: `${color}22` }}
@@ -195,6 +205,14 @@ function useTop50Export({ players, boardTitle }) {
   // Tracks whether the current headshot fetch batch has completed (success or fail).
   // Used as a ref so handleExport can poll for it without stale-closure issues.
   const headshotsFetchedRef = useRef(false);
+  // Mirror headshotDataUrls into a ref so the prefetch effect below can
+  // consult the latest cache without taking it as a dependency (which would
+  // re-run the effect — and refire network requests — every time a batch
+  // finishes).
+  const headshotDataUrlsRef = useRef(headshotDataUrls);
+  useEffect(() => {
+    headshotDataUrlsRef.current = headshotDataUrls;
+  }, [headshotDataUrls]);
 
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(getCurrentTheme()));
@@ -204,35 +222,88 @@ function useTop50Export({ players, boardTitle }) {
 
   const top50 = useMemo(() => (players || []).slice(0, 50), [players]);
 
+  // Stable signature of the unique headshot URLs in top50. We re-fetch only
+  // when the *set* of URLs changes — reordering within top50 (the common
+  // edit action) must NOT re-fire 50 image-proxy fetches. Mobile Safari's
+  // per-host connection pool (~6) gets pinned by those requests and then
+  // every subsequent API call on the next page fails with "Load failed".
+  const prefetchKey = useMemo(
+    () =>
+      [...new Set(top50.map((p) => p.headshot_url).filter(Boolean))]
+        .sort()
+        .join('|'),
+    [top50]
+  );
+
   useEffect(() => {
-    if (!top50.length) return;
+    if (!top50.length) {
+      headshotsFetchedRef.current = true;
+      return;
+    }
     headshotsFetchedRef.current = false;
+    const controller = new AbortController();
     let cancelled = false;
-    const toFetch = top50.filter((p) => p.headshot_url);
+
+    // Only fetch headshots we don't already have cached in state. Combined
+    // with the stable prefetchKey above, this means re-ranking the same 50
+    // prospects issues zero new network requests.
+    const toFetch = top50.filter(
+      (p) => p.headshot_url && !headshotDataUrlsRef.current[p.id]
+    );
+    if (toFetch.length === 0) {
+      headshotsFetchedRef.current = true;
+      return;
+    }
+
+    // Cap concurrency so we never saturate the mobile connection pool.
+    // Six is the common per-host HTTP/1.1 limit; four keeps headroom for
+    // other API calls that may fire while the user is editing.
+    const CONCURRENCY = 4;
+    let idx = 0;
+    const results = {};
+
+    async function worker() {
+      while (!cancelled && idx < toFetch.length) {
+        const p = toFetch[idx++];
+        try {
+          const r = await fetch(proxyImageUrl(p.headshot_url), {
+            signal: controller.signal,
+          });
+          if (!r.ok) continue;
+          const blob = await r.blob();
+          if (cancelled) return;
+          const dataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result || null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+          if (cancelled) return;
+          if (dataUrl) results[p.id] = dataUrl;
+        } catch {
+          // AbortError on unmount, or network failure — skip this headshot.
+        }
+      }
+    }
+
     Promise.all(
-      toFetch.map((p) =>
-        fetch(proxyImageUrl(p.headshot_url))
-          .then((r) => (r.ok ? r.blob() : null))
-          .then(
-            (blob) =>
-              new Promise((resolve) => {
-                if (!blob) return resolve([p.id, null]);
-                const reader = new FileReader();
-                reader.onloadend = () => resolve([p.id, reader.result]);
-                reader.readAsDataURL(blob);
-              })
-          )
-          .catch(() => [p.id, null])
-      )
-    ).then((pairs) => {
+      Array.from({ length: Math.min(CONCURRENCY, toFetch.length) }, worker)
+    ).then(() => {
       if (cancelled) return;
-      const map = {};
-      for (const [id, url] of pairs) if (url) map[id] = url;
-      setHeadshotDataUrls(map);
+      if (Object.keys(results).length > 0) {
+        setHeadshotDataUrls((prev) => ({ ...prev, ...results }));
+      }
       headshotsFetchedRef.current = true;
     });
-    return () => { cancelled = true; };
-  }, [top50]);
+
+    return () => {
+      cancelled = true;
+      // Aborting the controller cancels in-flight proxy fetches so they
+      // don't keep holding connections open after the user navigates away.
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefetchKey]);
 
   const isMobile = useMemo(() => {
     if (typeof navigator === 'undefined') return false;
@@ -481,10 +552,11 @@ function BoardEditor({ board, allPlayers, user, onSaved, onBack }) {
   }
 
   // Export hook — uses current boardPlayers as the top 50 source
-  const { exportRef, exporting, handleExport, theme, headshotDataUrls } = useTop50Export({
-    players: boardPlayers,
-    boardTitle: title,
-  });
+  const { exportRef, exporting, handleExport, theme, headshotDataUrls } =
+    useTop50Export({
+      players: boardPlayers,
+      boardTitle: title,
+    });
 
   return (
     <div className="flex flex-col h-full">
@@ -677,6 +749,7 @@ function BoardEditor({ board, allPlayers, user, onSaved, onBack }) {
           boardTitle={title}
           theme={theme}
           headshotDataUrls={headshotDataUrls}
+          exporting={exporting}
         />
       </div>
     </div>
