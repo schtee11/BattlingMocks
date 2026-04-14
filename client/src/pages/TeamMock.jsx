@@ -1524,7 +1524,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
 
-  const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
+  // Use the board-ordered player list when one is active; fall back to default.
+  const effectivePlayers = activePlayers ?? players;
+  const byId = useMemo(() => new Map(effectivePlayers.map((p) => [p.id, p])), [effectivePlayers]);
   const userSlotCount = useMemo(
     () => liveOrder.filter((s) => s.team === team).length,
     [liveOrder, team]
@@ -1552,6 +1554,20 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // progress — losing a half-finished mock would be a terrible surprise.
   const [showRestart, setShowRestart] = useState(false);
   const [showChangeTeam, setShowChangeTeam] = useState(false);
+
+  // ── Custom big board (Phase 8) ───────────────────────────────────────────
+  // Loaded once on mount; only shown in PHASE_READY so the user can pick a
+  // board before the draft starts. Locked once PHASE_RUNNING begins.
+  const [userBoards, setUserBoards] = useState([]);
+  const [selectedBoardId, setSelectedBoardId] = useState('');
+  // activePlayers: null = use default players prop, otherwise the board-ordered list
+  const [activePlayers, setActivePlayers] = useState(null);
+  useEffect(() => {
+    if (!user) return;
+    api.listBoards()
+      .then((list) => setUserBoards(Array.isArray(list) ? list : []))
+      .catch(() => {});
+  }, [user]);
 
   // ── Draft-session telemetry (Phase 5) ───────────────────────────────────
   // Fire-and-forget logging of every pick (user + bot) into draft_sessions /
@@ -1627,8 +1643,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     const delay = SPEED_STEPS[speedIdx] ?? 150;
     const timer = setTimeout(() => {
       // Compute the live pool right now, pick, then advance.
+      // effectivePlayers reflects any custom board the user loaded before start.
       const taken = new Set(picks.map((p) => p.player_id));
-      const available = players.filter((p) => !taken.has(p.id));
+      const available = effectivePlayers.filter((p) => !taken.has(p.id));
       const algoCfg = getAlgoConfig();
       const picked = pickForTeam({
         available,
@@ -1636,7 +1653,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         randomness,
         pickNumber: currentSlot.pick_number,
         draftContext: {
-          allPlayers: players,
+          allPlayers: effectivePlayers,
           teamDraftedPos: picks
             .filter((pk) => pk.team === currentSlot.team)
             .map((pk) => normalizePos(byId.get(pk.player_id)?.position || '')),
@@ -1658,7 +1675,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       ]);
     }, delay);
     return () => clearTimeout(timer);
-  }, [phase, currentSlot, picks, players, team, randomness, speedIdx]);
+  }, [phase, currentSlot, picks, effectivePlayers, team, randomness, speedIdx]);
 
   // Auto-switch mobile to Prospects tab when it's the user's turn to pick
   useEffect(() => {
@@ -1805,7 +1822,23 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }, [phase, picks]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
-  function start() { setPhase(PHASE_RUNNING); }
+  async function start() {
+    // If a custom board is selected, fetch the full ordered player list and
+    // apply it before the draft engine fires. The board endpoint returns
+    // players with sequential rank 1..N so the bot naturally uses the user's
+    // preferences via its exponential-decay base score.
+    if (selectedBoardId) {
+      try {
+        const data = await api.getBoardById(selectedBoardId);
+        if (data?.players?.length) {
+          setActivePlayers(data.players);
+        }
+      } catch {
+        toast.error('Could not load custom board — using default ranking');
+      }
+    }
+    setPhase(PHASE_RUNNING);
+  }
   function pause() { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); }
   function resume() { if (phase === PHASE_PAUSED) setPhase(PHASE_RUNNING); }
 
@@ -1839,6 +1872,8 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setPicks([]);
     setTrades([]);
     setSaved(false);
+    setActivePlayers(null);
+    setSelectedBoardId('');
     setPhase(PHASE_READY);
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }
@@ -1942,7 +1977,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   }, [picks]);
 
   const filteredProspects = useMemo(() => {
-    let list = players;
+    let list = effectivePlayers;
     if (!showUsed) list = list.filter((p) => !usedIds.has(p.id));
     if (posFilter !== 'ALL') list = list.filter((p) => p.position === posFilter);
     if (debouncedSearch) {
@@ -1953,7 +1988,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       );
     }
     return list;
-  }, [players, showUsed, usedIds, posFilter, debouncedSearch]);
+  }, [effectivePlayers, showUsed, usedIds, posFilter, debouncedSearch]);
 
   // Draft history — most recent first so users see the latest pick at top
   const recentPicks = useMemo(() => [...picks].reverse(), [picks]);
@@ -1979,7 +2014,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
     if (phase === PHASE_READY) {
       return (
-        <div className={`${compact ? 'px-3 py-2' : 'px-4 py-3'} flex items-center gap-3`}>
+        <div className={`${compact ? 'px-3 py-2' : 'px-4 py-3'} flex items-center gap-3 flex-wrap`}>
           <TeamLogo abbr={team} size={compact ? 'sm' : 'md'} />
           <div className="flex-1 min-w-0">
             <div className="font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">
@@ -2000,6 +2035,21 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               ))}
             </div>
           </div>
+          {userBoards.length > 0 && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="font-display text-[10px] uppercase tracking-[0.12em] text-text-muted">Board:</span>
+              <select
+                value={selectedBoardId}
+                onChange={(e) => setSelectedBoardId(e.target.value)}
+                className="bg-bg-deep/80 border border-border-subtle rounded-md px-2 py-1 text-text-primary text-[11px] font-display uppercase tracking-wide focus:border-accent outline-none"
+              >
+                <option value="">Default</option>
+                {userBoards.map((b) => (
+                  <option key={b.id} value={b.id}>{b.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <button
             onClick={start}
             className="shrink-0 font-display font-bold uppercase tracking-[0.14em] text-[11px] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 active:scale-[0.98]"
