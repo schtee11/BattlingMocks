@@ -2534,62 +2534,126 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               </button>
             </div>
           ) : (
-            <StatusBanner compact />
-          )}
-          {/* During-draft action bar: Pause/Resume + Trade + gear icon */}
-          {phase !== PHASE_READY && phase !== PHASE_DONE && (
-            <div className="px-3 pb-2 flex items-center gap-2">
-              {phase === PHASE_RUNNING && (
-                <button onClick={pause}
-                  className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md border border-border-subtle text-text-primary">
-                  Pause
-                </button>
+            <div>
+              {phase === PHASE_ON_CLOCK ? (
+                /* Gold urgency card */
+                <div style={{ background: 'linear-gradient(135deg, rgba(251,191,36,0.12) 0%, rgba(0,229,255,0.06) 100%)', borderBottom: '1px solid rgba(251,191,36,0.25)' }}>
+                  <div className="px-3 pt-3 pb-2 flex items-start gap-3">
+                    <TeamLogo abbr={team} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-display text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'var(--gold)' }}>
+                        Your Pick
+                      </div>
+                      <div className="font-display font-bold text-[17px] uppercase tracking-[0.06em] text-text-primary leading-tight">
+                        {team} · Pick #{currentSlot?.pick_number}
+                      </div>
+                      <div className="font-display text-[11px] text-text-muted uppercase tracking-wider mt-0.5">
+                        {ROUND_LABELS[currentSlot?.round] || `Round ${currentSlot?.round}`}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right font-mono text-[10px] text-text-muted">
+                      {picks.length}/{liveOrder.length}
+                    </div>
+                  </div>
+                  {/* Team needs row */}
+                  {Array.isArray(currentSlot?.team_needs) && currentSlot.team_needs.length > 0 && (
+                    <div className="px-3 pb-2 flex items-center gap-1.5 flex-wrap">
+                      <span className="font-display text-[9px] uppercase tracking-[0.14em] text-text-muted mr-1">Needs:</span>
+                      {currentSlot.team_needs.slice(0, 6).map((n) => (
+                        <span key={n} className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase font-mono"
+                          style={{ background: `${posHex(n)}22`, color: posHex(n), boxShadow: `inset 0 0 0 1px ${posHex(n)}55` }}>
+                          {n}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Action row */}
+                  <div className="px-3 pb-2.5 flex items-center gap-2">
+                    <button onClick={() => { setPhase(PHASE_PAUSED); setTradeOpen(true); }}
+                      className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md border text-text-primary"
+                      style={{ borderColor: 'rgba(251,191,36,0.4)', background: 'rgba(251,191,36,0.07)' }}>
+                      Trade
+                    </button>
+                    <div className="flex-1" />
+                    <button onClick={() => setSettingsOpen((v) => !v)}
+                      className="w-8 h-8 flex items-center justify-center rounded-md border border-border-subtle text-text-muted">
+                      <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.34 1.804A1 1 0 019.32 1h1.36a1 1 0 01.98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 011.262.125l.962.962a1 1 0 01.125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.294a1 1 0 01.804.98v1.362a1 1 0 01-.804.98l-1.473.295a6.95 6.95 0 01-.587 1.416l.834 1.25a1 1 0 01-.125 1.262l-.962.962a1 1 0 01-1.262.125l-1.25-.834a6.953 6.953 0 01-1.416.587l-.294 1.473a1 1 0 01-.98.804H9.32a1 1 0 01-.98-.804l-.295-1.473a6.957 6.957 0 01-1.416-.587l-1.25.834a1 1 0 01-1.262-.125l-.962-.962a1 1 0 01-.125-1.262l.834-1.25a6.957 6.957 0 01-.587-1.416l-1.473-.294A1 1 0 011 11.18V9.82a1 1 0 01.804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 01.125-1.262l.962-.962A1 1 0 015.38 3.53l1.25.834a6.957 6.957 0 011.416-.587l.294-1.473zM13 10a3 3 0 11-6 0 3 3 0 016 0z" clipRule="evenodd" /></svg>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* RUNNING / PAUSED — compact progress header */
+                <div className="px-3 py-2.5 flex flex-col gap-2" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  <div className="flex items-center gap-2.5">
+                    <TeamLogo abbr={currentSlot?.team || team} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-display text-[10px] uppercase tracking-[0.14em] text-text-muted">
+                        {phase === PHASE_PAUSED ? 'Paused' : 'On the clock'}
+                      </div>
+                      <div className="font-display font-bold text-[13px] text-text-primary truncate">
+                        {currentSlot?.team} · Pick #{currentSlot?.pick_number}
+                        <span className="ml-1.5 text-text-muted font-mono text-[10px]">
+                          {ROUND_LABELS[currentSlot?.round] || `R${currentSlot?.round}`}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="font-mono text-[10px] text-text-muted shrink-0">{picks.length}/{liveOrder.length}</span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-0.5 rounded-full bg-bg-elevated overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-300"
+                      style={{ width: `${(picks.length / Math.max(liveOrder.length, 1)) * 100}%`, background: 'var(--gradient-accent)' }} />
+                  </div>
+                  {/* Controls row */}
+                  <div className="flex items-center gap-2">
+                    {phase === PHASE_RUNNING && (
+                      <button onClick={pause}
+                        className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md border border-border-subtle text-text-primary">
+                        Pause
+                      </button>
+                    )}
+                    {phase === PHASE_PAUSED && (
+                      <button onClick={resume}
+                        className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md text-bg-deep"
+                        style={{ background: 'var(--gradient-accent)' }}>
+                        Resume
+                      </button>
+                    )}
+                    <button onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
+                      className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md border border-accent/40 text-text-primary">
+                      Trade
+                    </button>
+                    <div className="flex-1" />
+                    <button onClick={() => setSettingsOpen((v) => !v)}
+                      className="w-8 h-8 flex items-center justify-center rounded-md border border-border-subtle text-text-muted">
+                      <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.34 1.804A1 1 0 019.32 1h1.36a1 1 0 01.98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 011.262.125l.962.962a1 1 0 01.125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.294a1 1 0 01.804.98v1.362a1 1 0 01-.804.98l-1.473.295a6.95 6.95 0 01-.587 1.416l.834 1.25a1 1 0 01-.125 1.262l-.962.962a1 1 0 01-1.262.125l-1.25-.834a6.953 6.953 0 01-1.416.587l-.294 1.473a1 1 0 01-.98.804H9.32a1 1 0 01-.98-.804l-.295-1.473a6.957 6.957 0 01-1.416-.587l-1.25.834a1 1 0 01-1.262-.125l-.962-.962a1 1 0 01-.125-1.262l.834-1.25a6.957 6.957 0 01-.587-1.416l-1.473-.294A1 1 0 011 11.18V9.82a1 1 0 01.804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 01.125-1.262l.962-.962A1 1 0 015.38 3.53l1.25.834a6.957 6.957 0 011.416-.587l.294-1.473zM13 10a3 3 0 11-6 0 3 3 0 016 0z" clipRule="evenodd" /></svg>
+                    </button>
+                  </div>
+                </div>
               )}
-              {phase === PHASE_PAUSED && (
-                <button onClick={resume}
-                  className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md text-bg-deep"
-                  style={{ background: 'var(--gradient-accent)' }}>
-                  Resume
-                </button>
+              {/* Collapsible settings drawer (during draft only) — same content as before */}
+              {settingsOpen && (
+                <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border-subtle bg-bg-surface/30">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Speed</span>
+                    <input type="range" min="0" max={SPEED_STEPS.length - 1} step="1" value={speedIdx}
+                      onChange={(e) => setSpeedIdx(Number(e.target.value))}
+                      className="flex-1 h-1 accent-accent cursor-pointer" />
+                    <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{SPEED_LABELS[speedIdx]}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Chaos</span>
+                    <input type="range" min="0" max="1" step="0.05" value={randomness}
+                      onChange={(e) => setRandomness(Number(e.target.value))}
+                      className="flex-1 h-1 accent-accent cursor-pointer" />
+                    <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
+                  </div>
+                  <button onClick={requestRestart}
+                    className="w-full font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-muted hover:text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition">
+                    Restart Draft
+                  </button>
+                </div>
               )}
-              <button
-                onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
-                className="font-display text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-md border border-accent/40 text-text-primary">
-                Trade
-              </button>
-              <div className="flex-1" />
-              <button
-                onClick={() => setSettingsOpen((v) => !v)}
-                className="w-8 h-8 flex items-center justify-center rounded-md border border-border-subtle text-text-muted hover:text-text-primary transition"
-                title="Settings"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path fillRule="evenodd" d="M8.34 1.804A1 1 0 019.32 1h1.36a1 1 0 01.98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 011.262.125l.962.962a1 1 0 01.125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.294a1 1 0 01.804.98v1.362a1 1 0 01-.804.98l-1.473.295a6.95 6.95 0 01-.587 1.416l.834 1.25a1 1 0 01-.125 1.262l-.962.962a1 1 0 01-1.262.125l-1.25-.834a6.953 6.953 0 01-1.416.587l-.294 1.473a1 1 0 01-.98.804H9.32a1 1 0 01-.98-.804l-.295-1.473a6.957 6.957 0 01-1.416-.587l-1.25.834a1 1 0 01-1.262-.125l-.962-.962a1 1 0 01-.125-1.262l.834-1.25a6.957 6.957 0 01-.587-1.416l-1.473-.294A1 1 0 011 11.18V9.82a1 1 0 01.804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 01.125-1.262l.962-.962A1 1 0 015.38 3.53l1.25.834a6.957 6.957 0 011.416-.587l.294-1.473zM13 10a3 3 0 11-6 0 3 3 0 016 0z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-          )}
-          {/* Collapsible settings drawer (during draft only) */}
-          {settingsOpen && phase !== PHASE_READY && phase !== PHASE_DONE && (
-            <div className="px-3 pb-3 pt-2 space-y-2 border-t border-border-subtle bg-bg-surface/30">
-              <div className="flex items-center gap-2">
-                <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Speed</span>
-                <input type="range" min="0" max={SPEED_STEPS.length - 1} step="1" value={speedIdx}
-                  onChange={(e) => setSpeedIdx(Number(e.target.value))}
-                  className="flex-1 h-1 accent-accent cursor-pointer" />
-                <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{SPEED_LABELS[speedIdx]}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-display text-[10px] font-semibold uppercase tracking-wider text-text-muted w-12 shrink-0">Chaos</span>
-                <input type="range" min="0" max="1" step="0.05" value={randomness}
-                  onChange={(e) => setRandomness(Number(e.target.value))}
-                  className="flex-1 h-1 accent-accent cursor-pointer" />
-                <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
-              </div>
-              <button onClick={requestRestart}
-                className="w-full font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-muted hover:text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition">
-                Restart Draft
-              </button>
             </div>
           )}
         </div>
@@ -2597,19 +2661,38 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         {/* Tab content — single scroll area per tab */}
         <div className="flex-1 overflow-hidden">
           {mobileTab === 'board' && (
-            <div className="h-full overflow-y-auto overscroll-contain p-2 space-y-1">
+            <div className="h-full overflow-y-auto overscroll-contain p-2 space-y-1.5">
               {recentPicks.length === 0 ? (
                 <div className="text-center text-text-muted text-xs py-8">
                   {phase === PHASE_READY ? 'Tap Start Mock Draft above to begin' : 'Draft in progress…'}
                 </div>
               ) : (
-                recentPicks.map(renderHistoryPick)
+                recentPicks.map((pick) => {
+                  const player = byId.get(pick.player_id);
+                  if (!player) return null;
+                  return (
+                    <div key={pick.pick_number} className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl border transition-all ${
+                      pick.is_user ? 'border-accent/30 bg-accent/[0.05]' : 'border-border-subtle bg-bg-surface/20'
+                    }`} style={pick.is_user ? { borderLeft: `3px solid ${posHex(player?.position)}` } : undefined}>
+                      <span className="font-mono text-[9px] text-text-muted w-6 text-right shrink-0">#{pick.pick_number}</span>
+                      <TeamLogo abbr={pick.team} size="xs" />
+                      <PlayerHeadshot url={player?.headshot_url} name={player?.name} position={player?.position} size="xs" />
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-[12px] font-semibold truncate leading-tight ${pick.is_user ? 'text-text-primary' : 'text-text-secondary'}`}>{player?.name}</div>
+                        <div className="text-[9.5px] text-text-muted">{player?.school}</div>
+                      </div>
+                      {pick.is_user && <span className="shrink-0 font-display text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,229,255,0.12)', color: 'var(--accent)' }}>Your Pick</span>}
+                      {!pick.is_user && <PositionBadge position={player?.position} muted />}
+                    </div>
+                  );
+                })
               )}
             </div>
           )}
 
           {mobileTab === 'picks' && (
             <div className="h-full overflow-y-auto overscroll-contain p-2 space-y-1">
+              {/* Header stat row */}
               <div className="flex items-center gap-2 px-1 py-2">
                 <TeamLogo abbr={team} size="xs" />
                 <span className="font-display text-[11px] font-bold uppercase tracking-wider text-text-primary flex-1">
@@ -2618,6 +2701,11 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 <span className="font-mono text-[10px] text-text-muted">
                   {myPicks.length}/{userSlotCount}
                 </span>
+              </div>
+              {/* Progress bar */}
+              <div className="mx-1 h-1 rounded-full bg-bg-elevated overflow-hidden mb-2">
+                <div className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${(myPicks.length / Math.max(userSlotCount, 1)) * 100}%`, background: 'var(--gradient-accent)' }} />
               </div>
               {myPicks.length === 0 ? (
                 <div className="text-center text-text-muted text-xs py-8">No picks yet</div>
@@ -2648,17 +2736,60 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 </label>
               </div>
               <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none border-b border-border-subtle shrink-0">
-                {FILTERS.map((f) => (
-                  <button key={f} onClick={() => setPosFilter(f)}
-                    className={`shrink-0 px-2 py-0.5 rounded-md font-display text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
-                      posFilter === f ? 'bg-accent text-bg-deep' : 'text-text-muted hover:text-text-primary'
-                    }`}>
-                    {f}
-                  </button>
-                ))}
+                {FILTERS.map((f) => {
+                  const isActive = posFilter === f;
+                  const isNeed = phase === PHASE_ON_CLOCK && !isActive && f !== 'All' && Array.isArray(currentSlot?.team_needs) && currentSlot.team_needs.includes(f);
+                  return (
+                    <button key={f} onClick={() => setPosFilter(f)}
+                      className={`shrink-0 px-2 py-0.5 rounded-md font-display text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
+                        isActive ? 'bg-accent text-bg-deep' : isNeed ? 'border border-yellow-400/40' : 'text-text-muted hover:text-text-primary'
+                      }`}
+                      style={isNeed ? { background: 'rgba(251,191,36,0.15)', color: 'var(--gold)' } : undefined}>
+                      {f}
+                    </button>
+                  );
+                })}
               </div>
-              <ul className="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1">
-                {filteredProspects.map(renderProspect)}
+              <ul className="flex-1 overflow-y-auto overscroll-contain">
+                {filteredProspects.map((p) => {
+                  const taken = pickOrder.has(p.id);
+                  const takenBy = taken ? pickOrder.get(p.id) : null;
+                  const locked = taken || phase !== PHASE_ON_CLOCK;
+                  return (
+                    <li key={p.id} onClick={() => !locked && handleUserPick(p)}
+                      className={`flex items-center gap-3 px-3 py-2.5 border-b border-border-subtle/40 transition-all duration-100 ${
+                        taken ? 'opacity-40 cursor-not-allowed' :
+                        phase === PHASE_ON_CLOCK ? 'cursor-pointer active:bg-accent/10' : 'cursor-default'
+                      }`}
+                      style={phase === PHASE_ON_CLOCK && !taken ? { touchAction: 'manipulation' } : undefined}
+                    >
+                      <span className="font-mono text-[10px] text-text-muted w-6 shrink-0 text-right">{p.rank ?? ''}</span>
+                      <PlayerHeadshot url={p.headshot_url} name={p.name} position={p.position} size="sm" />
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-[13px] font-semibold truncate leading-tight ${taken ? 'line-through text-text-muted' : 'text-text-primary'}`}>
+                          {p.name}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[10px] text-text-muted truncate">
+                            {taken && takenBy ? `${takenBy.team} · #${takenBy.pick_number}` : p.school}
+                          </span>
+                          {!taken && p.projected_round && (
+                            <span className="shrink-0 text-[9px] font-bold font-mono px-1 py-0.5 rounded"
+                              style={{ background: 'rgba(0,229,255,0.1)', color: 'var(--accent)' }}>
+                              R{p.projected_round}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <PositionBadge position={p.position} muted={taken} />
+                      {phase === PHASE_ON_CLOCK && !taken && (
+                        <svg className="shrink-0 text-accent/60" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="m9 18 6-6-6-6"/>
+                        </svg>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
