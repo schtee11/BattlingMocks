@@ -472,7 +472,7 @@ function BoardEditor({ board, allPlayers, onSaved, onBack }) {
   });
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full w-full max-w-6xl mx-auto">
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle bg-bg-surface/30 shrink-0 flex-wrap">
         <button onClick={onBack} className="text-text-muted hover:text-text-primary transition shrink-0">
