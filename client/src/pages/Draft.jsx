@@ -998,7 +998,7 @@ export default function Draft() {
                   )}
                 </span>
               </div>
-              <ProgressBar value={filledCount} max={32} />
+              <ProgressBar picks={picks} playerById={playerById} max={32} />
             </div>
             <Button size="xs" variant="outline" onClick={() => setTradeOpen(true)} disabled={locked} className="shrink-0">
               Simulate Trade
