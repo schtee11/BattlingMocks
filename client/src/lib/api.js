@@ -274,6 +274,12 @@ export const api = {
       body: { prospects },
       adminKey: key,
     }),
+  bulkImportPlayerRanks: (key, ranks, { draft_year } = {}) =>
+    request('/api/admin/player-ranks/bulk-import', {
+      method: 'POST',
+      body: { ranks, draft_year },
+      adminKey: key,
+    }),
   syncProspectsFromEspn: (key, { year = 2026, limit = 400, dry = false } = {}) =>
     request(
       `/api/admin/prospects/sync-from-espn?year=${year}&limit=${limit}${dry ? '&dry=1' : ''}`,

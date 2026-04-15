@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { readFileSync } from 'fs';
 import { pool } from '../db/pool.js';
 import { adminAuth } from '../middleware/adminAuth.js';
-import { importProspects, seedDraftOrder, PROSPECTS_PATH } from '../db/seed.js';
+import { importProspects, seedDraftOrder, normalizePosition, PROSPECTS_PATH } from '../db/seed.js';
 import { fetchRoundOne, fetchAllRounds, fetchProspects, resetLogFlag } from '../services/espnDraft.js';
 import { runScoringOnClient } from '../services/scoring.js';
 import { syncPicksOnce } from '../services/draftSync.js';
@@ -428,6 +428,125 @@ router.post('/prospects/bulk-import', async (req, res) => {
   } catch (e) {
     console.error('[bulk-import]', e);
     res.status(500).json({ error: 'import failed: ' + e.message });
+  }
+});
+
+// ---------- Bulk player rank import from parsed CSV ----------
+// Accepts an array of { name, rank, position?, school?, draft_year?, projected_round? }.
+// Matches on lowercase name. Existing players get their consensus_rank (and
+// optionally projected_round + draft_year) updated. Rows with a position
+// supplied for players that don't yet exist are inserted. Rows without a
+// position for a name that doesn't exist are reported as not_found — we
+// won't guess a position.
+router.post('/player-ranks/bulk-import', async (req, res) => {
+  const body = req.body || {};
+  const list = Array.isArray(body) ? body : body.ranks;
+  if (!Array.isArray(list)) {
+    return res.status(400).json({ error: 'expected array or { ranks: [...] }' });
+  }
+
+  const defaultYear = parseInt(body.draft_year, 10) || null;
+  const invalid = [];
+  const clean = [];
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    if (!r || typeof r !== 'object') {
+      invalid.push({ index: i, reason: 'not an object' });
+      continue;
+    }
+    const name = typeof r.name === 'string' ? r.name.trim() : '';
+    if (!name) {
+      invalid.push({ index: i, reason: 'missing name' });
+      continue;
+    }
+    const rankRaw = r.rank ?? r.consensus_rank ?? r.overall_rank;
+    const rank = Number.parseInt(rankRaw, 10);
+    if (!Number.isFinite(rank) || rank <= 0) {
+      invalid.push({ index: i, reason: 'missing or invalid rank', name });
+      continue;
+    }
+    const yearRaw = r.draft_year ?? r.year ?? defaultYear;
+    const draftYear = yearRaw != null ? Number.parseInt(yearRaw, 10) : null;
+    const projRoundRaw = r.projected_round ?? r.proj_round ?? r.round;
+    const projectedRound = projRoundRaw != null && projRoundRaw !== ''
+      ? Number.parseInt(projRoundRaw, 10)
+      : null;
+
+    clean.push({
+      name,
+      rank,
+      position: r.position ? String(r.position).trim() : null,
+      school: r.school ? String(r.school).trim() : null,
+      draft_year: Number.isFinite(draftYear) ? draftYear : null,
+      projected_round: Number.isFinite(projectedRound) ? projectedRound : null,
+    });
+  }
+
+  if (clean.length === 0) {
+    return res.status(400).json({ error: 'no valid rank rows in payload', invalid });
+  }
+
+  let updated = 0;
+  let inserted = 0;
+  let unchanged = 0;
+  const notFound = [];
+
+  try {
+    for (const row of clean) {
+      const { rows } = await pool.query(
+        'SELECT id, consensus_rank, draft_year, projected_round FROM players WHERE LOWER(name) = LOWER($1) LIMIT 1',
+        [row.name]
+      );
+      if (rows.length) {
+        const cur = rows[0];
+        const nextYear = row.draft_year ?? cur.draft_year;
+        const nextProj = row.projected_round ?? cur.projected_round;
+        if (
+          cur.consensus_rank === row.rank &&
+          cur.draft_year === nextYear &&
+          cur.projected_round === nextProj
+        ) {
+          unchanged++;
+        } else {
+          await pool.query(
+            `UPDATE players
+               SET consensus_rank = $1,
+                   draft_year = COALESCE($2, draft_year),
+                   projected_round = COALESCE($3, projected_round)
+             WHERE id = $4`,
+            [row.rank, row.draft_year, row.projected_round, cur.id]
+          );
+          updated++;
+        }
+      } else if (row.position) {
+        // New player row — only insert when the CSV supplied a position so we
+        // don't create bogus rows with a guessed position.
+        const pos = normalizePosition(row.position);
+        await pool.query(
+          `INSERT INTO players (name, position, school, consensus_rank, draft_year, projected_round)
+           VALUES ($1, $2, $3, $4, COALESCE($5, 2026), $6)`,
+          [row.name, pos, row.school, row.rank, row.draft_year, row.projected_round]
+        );
+        inserted++;
+      } else {
+        notFound.push({ name: row.name, rank: row.rank });
+      }
+    }
+
+    res.json({
+      received: list.length,
+      total: clean.length,
+      inserted,
+      updated,
+      unchanged,
+      not_found_count: notFound.length,
+      not_found: notFound.slice(0, 20),
+      invalid_count: invalid.length,
+      invalid: invalid.slice(0, 10),
+    });
+  } catch (e) {
+    console.error('[player-ranks bulk-import]', e);
+    res.status(500).json({ error: 'rank import failed: ' + e.message });
   }
 });
 
