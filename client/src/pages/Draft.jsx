@@ -546,7 +546,7 @@ export default function Draft() {
     : null;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 route-fade">
+    <div className="h-full flex flex-col overflow-hidden route-fade">
       {/* Hidden export card — kept in-viewport with opacity:0 so mobile
           browsers still decode images; html-to-image captures it on demand. */}
       <div
@@ -573,23 +573,21 @@ export default function Draft() {
         />
       </div>
 
-      {/* Header — desktop only; mobile uses the locked viewport layout below */}
-      <div className="mb-5 hidden md:block">
-        <div className="flex items-end justify-between flex-wrap gap-3">
-          <div>
-            <div className="caption text-accent">War Room · 2026</div>
-            <h1 className="font-display display-xl text-[30px] md:text-[38px] text-text-primary mt-1">
+      {/* Compact desktop header — single row with title, on-the-clock status,
+          countdown, and board selector. All stats/buttons moved to footer. */}
+      <div className="hidden md:block shrink-0 border-b border-border-subtle bg-bg-surface/20">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="caption text-accent text-[10px]">War Room · 2026</div>
+            <h1 className="font-display font-bold text-[22px] text-text-primary leading-none mt-0.5">
               Build Your Mock
             </h1>
-            <p className="text-text-secondary text-[13px] mt-1">
-              Drag, click, or use the Draft button to assign to the team on the clock.
-            </p>
           </div>
-          <div className="flex items-end gap-5">
+          <div className="flex items-center gap-4 flex-wrap">
             {onClockSlot && !locked && (
               <div className="text-right">
-                <div className="caption text-[10px]">On the clock</div>
-                <div className="font-display font-bold uppercase tracking-wide text-text-primary text-[14px] mt-1">
+                <div className="caption text-[9px]">On the clock</div>
+                <div className="font-display font-bold uppercase tracking-wide text-text-primary text-[12px] mt-0.5">
                   Pick <span className="text-accent">{onClockSlot}</span>
                   {orderByPick.get(onClockSlot) && (
                     <span className="text-text-secondary"> · {orderByPick.get(onClockSlot).team}</span>
@@ -597,61 +595,28 @@ export default function Draft() {
                 </div>
               </div>
             )}
-            {!locked && draftOrder.length > 0 && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setTradeOpen(true)}
-                title="Simulate a trade between any two teams"
-              >
-                Simulate Trade
-              </Button>
-            )}
-            <div className="text-right">
-              <div className="caption text-[10px]">Confidence</div>
-              <div className="font-mono font-bold text-[22px] tabular leading-none mt-1 text-gold">
-                {confidentSlots.size}<span className="text-text-muted">/{MAX_CONFIDENCE_PICKS}</span>
-                <span className="ml-1 text-gold text-base">★</span>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="caption text-[10px]">Progress</div>
-              <div className="font-mono font-bold text-4xl tabular leading-none mt-1">
-                <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
-                <span className="text-text-muted">/32</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="mt-3">
-          <ProgressBar picks={picks} playerById={playerById} />
-        </div>
-        {!locked && (
-          <div className="mt-4 space-y-2">
-            <Card className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <div className="caption text-[10px]">Submission deadline</div>
-                <div className="text-text-secondary text-[12px] mt-0.5">
-                  Lock your picks before Round 1 kicks off.
+            {!locked && (
+              <div className="text-right">
+                <div className="caption text-[9px]">Deadline</div>
+                <div className="mt-0.5">
+                  <CountdownTimer target={DRAFT_START_2026} compact />
                 </div>
               </div>
-              <CountdownTimer target={DRAFT_START_2026} compact />
-            </Card>
-            {userBoards.length > 0 && (
-              <Card className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
-                <div className="caption text-[10px] shrink-0">Prospect Board</div>
+            )}
+            {!locked && userBoards.length > 0 && (
+              <div className="text-right">
+                <div className="caption text-[9px]">Prospect Board</div>
                 {filledCount > 0 ? (
-                  <span className="text-[11px] text-text-muted">
+                  <div className="text-[11px] text-text-muted mt-0.5">
                     {selectedBoardId
-                      ? (userBoards.find((b) => String(b.id) === selectedBoardId)?.title ?? 'Custom Board')
-                      : 'Default'}{' '}
-                    · locked once picks are made
-                  </span>
+                      ? (userBoards.find((b) => String(b.id) === selectedBoardId)?.title ?? 'Custom')
+                      : 'Default'}
+                  </div>
                 ) : (
                   <select
                     value={selectedBoardId}
                     onChange={(e) => handleBoardChange(e.target.value)}
-                    className="bg-bg-deep/70 border border-border-subtle rounded-md px-2 py-1 text-text-primary text-[11px] font-display uppercase tracking-wide focus:border-accent outline-none"
+                    className="mt-0.5 bg-bg-deep/70 border border-border-subtle rounded-md px-2 py-0.5 text-text-primary text-[11px] font-display uppercase tracking-wide focus:border-accent outline-none"
                   >
                     <option value="">Default</option>
                     {userBoards.map((b) => (
@@ -659,17 +624,19 @@ export default function Draft() {
                     ))}
                   </select>
                 )}
-              </Card>
+              </div>
             )}
           </div>
-        )}
+        </div>
       </div>
 
       {locked && (
-        <Card className="banner-warn mb-4 px-4 py-3">
-          Submissions are locked. Head to the{' '}
-          <Link to="/leaderboard" className="underline">leaderboard</Link>.
-        </Card>
+        <div className="hidden md:block shrink-0">
+          <Card className="banner-warn mx-4 mt-3 px-4 py-2 text-[13px]">
+            Submissions are locked. Head to the{' '}
+            <Link to="/leaderboard" className="underline">leaderboard</Link>.
+          </Card>
+        </div>
       )}
 
       <DndContext
@@ -904,66 +871,73 @@ export default function Draft() {
           </Card>
         </div>
 
-        {/* ============= DESKTOP LAYOUT ============= */}
-        <div className="hidden md:grid md:grid-cols-2 gap-4">
-          {/* Pick slots */}
-          <Card glass className="p-3 overflow-hidden">
-            <div className="flex items-center justify-between mb-3 px-1">
-              <h2 className="font-display font-bold text-[15px] uppercase tracking-[0.18em] text-text-primary">
-                Round 1 — 2026
-              </h2>
-              <div className="flex gap-1">
-                <Button size="xs" variant="outline" onClick={autoFill} disabled={locked || complete}>
-                  Auto-fill
-                </Button>
-                <Button size="xs" variant="outline" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0}>
-                  Clear
-                </Button>
+        {/* ============= DESKTOP LAYOUT — viewport-locked two-panel grid =============
+            The outer wrapper takes remaining vertical space (flex-1 min-h-0)
+            and hides its own overflow so only the two Cards scroll internally.
+            Each Card is flex-col with a shrink-0 header and a flex-1 min-h-0
+            scrollable body — no max-h vh values that would let the page
+            itself scroll. */}
+        <div className="hidden md:block flex-1 min-h-0 overflow-hidden">
+          <div className="max-w-6xl mx-auto w-full h-full px-4 py-3 grid md:grid-cols-2 gap-3 min-h-0">
+            {/* Pick slots */}
+            <Card glass className="p-3 flex flex-col overflow-hidden min-h-0">
+              <div className="flex items-center justify-between mb-3 px-1 shrink-0">
+                <h2 className="font-display font-bold text-[15px] uppercase tracking-[0.18em] text-text-primary">
+                  Round 1 — 2026
+                </h2>
+                <div className="flex gap-1">
+                  <Button size="xs" variant="outline" onClick={autoFill} disabled={locked || complete}>
+                    Auto-fill
+                  </Button>
+                  <Button size="xs" variant="outline" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0}>
+                    Clear
+                  </Button>
+                </div>
               </div>
-            </div>
-            <ul
-              className="stagger space-y-1.5 max-h-[68vh] overflow-y-auto pr-1"
-              style={{ overscrollBehavior: 'contain' }}
-            >
-              {!players ? (
-                Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-[58px] w-full rounded-lg" />)
-              ) : (
-                Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => (
-                  <PickSlot
-                    key={slot}
-                    slot={slot}
-                    team={orderByPick.get(slot)}
-                    player={picks[slot] ? playerById.get(picks[slot]) : null}
-                    onClear={clearSlot}
-                    onClick={handleSlotClick}
-                    isActive={selectedPlayer != null}
-                    isConfident={confidentSlots.has(slot)}
-                    onToggleConfident={toggleConfidence}
-                  />
-                ))
-              )}
-            </ul>
-          </Card>
+              <ul
+                className="stagger space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1"
+                style={{ overscrollBehavior: 'contain' }}
+              >
+                {!players ? (
+                  Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-[58px] w-full rounded-lg" />)
+                ) : (
+                  Array.from({ length: 32 }, (_, i) => i + 1).map((slot) => (
+                    <PickSlot
+                      key={slot}
+                      slot={slot}
+                      team={orderByPick.get(slot)}
+                      player={picks[slot] ? playerById.get(picks[slot]) : null}
+                      onClear={clearSlot}
+                      onClick={handleSlotClick}
+                      isActive={selectedPlayer != null}
+                      isConfident={confidentSlots.has(slot)}
+                      onToggleConfident={toggleConfidence}
+                    />
+                  ))
+                )}
+              </ul>
+            </Card>
 
-          {/* Prospect list — desktop */}
-          <Card glass className="p-3 flex flex-col max-h-[76vh]">
-            <ProspectListInner
-              players={players}
-              filtered={filteredProspects}
-              grouped={grouped}
-              used={usedPlayerIds}
-              selected={selectedPlayer}
-              onClick={handleProspectClick}
-              onDraft={draftToOnClockCb}
-              onClockSlot={onClockSlot}
-              search={search}
-              setSearch={setSearch}
-              posFilter={posFilter}
-              setPosFilter={setPosFilter}
-              view={view}
-              setView={setView}
-            />
-          </Card>
+            {/* Prospect list — desktop */}
+            <Card glass className="p-3 flex flex-col overflow-hidden min-h-0">
+              <ProspectListInner
+                players={players}
+                filtered={filteredProspects}
+                grouped={grouped}
+                used={usedPlayerIds}
+                selected={selectedPlayer}
+                onClick={handleProspectClick}
+                onDraft={draftToOnClockCb}
+                onClockSlot={onClockSlot}
+                search={search}
+                setSearch={setSearch}
+                posFilter={posFilter}
+                setPosFilter={setPosFilter}
+                view={view}
+                setView={setView}
+              />
+            </Card>
+          </div>
         </div>
 
         {createPortal(
@@ -989,54 +963,71 @@ export default function Draft() {
         )}
       </DndContext>
 
-      {/* Footer / Submit (desktop) */}
-      <div className="mt-5 hidden md:flex items-center justify-between gap-3">
-        <div className="text-[12px] text-text-secondary">
-          <span className="caption text-[10px] mr-2">Tip</span>
-          Drag a prospect onto a slot, or click to select and press{' '}
-          <kbd className="px-1.5 py-0.5 rounded border border-border-subtle bg-bg-surface font-mono text-[10px]">
-            Enter
-          </kbd>{' '}
-          to draft to the clock.
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Export is available to anyone who completed their 32 picks —
-              including users who just want the exercise and don't care
-              about the competition leaderboard. */}
-          <Button
-            size="lg"
-            variant="outline"
-            onClick={handleExportShare}
-            disabled={!complete || exporting}
-            title={
-              !complete
-                ? 'Fill all 32 picks to export'
-                : exportIsMobile
-                ? 'Share a PNG of your Round 1 mock'
-                : 'Copy a PNG of your Round 1 mock to clipboard'
-            }
-          >
-            {exporting ? 'Rendering…' : exportIsMobile ? 'Share Mock' : 'Export Mock'}
-          </Button>
-          {!exportIsMobile && (
-            <Button
-              size="lg"
-              variant="ghost"
-              onClick={handleExportDownload}
-              disabled={!complete || exporting}
-              title="Download PNG"
-            >
-              Download
+      {/* Footer / Submit (desktop) — compact sticky bar at the bottom of the
+          viewport-locked layout. Shows progress, trade/auto-fill actions,
+          and the submit CTA. shrink-0 so it doesn't compress when the
+          panels above get tall. */}
+      <div className="hidden md:block shrink-0 border-t border-border-subtle bg-bg-surface/20">
+        <div className="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-4">
+          <div className="flex-1 min-w-0 flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between text-[10px] mb-1">
+                <span className="caption">Progress</span>
+                <span className="font-mono tabular text-text-secondary">
+                  <span className={complete ? 'text-accent' : 'text-gold'}>{filledCount}</span>
+                  <span className="text-text-muted">/32</span>
+                  {confidentSlots.size > 0 && (
+                    <span className="ml-2 text-gold">
+                      ★ {confidentSlots.size}/{MAX_CONFIDENCE_PICKS}
+                    </span>
+                  )}
+                </span>
+              </div>
+              <ProgressBar value={filledCount} max={32} />
+            </div>
+            <Button size="xs" variant="outline" onClick={() => setTradeOpen(true)} disabled={locked} className="shrink-0">
+              Simulate Trade
             </Button>
-          )}
-          <Button
-            size="xl"
-            onClick={() => setShowConfirm(true)}
-            disabled={!complete || locked || busy}
-            className={`${complete && !submitted ? 'animate-pulse-glow' : ''}`}
-          >
-            {submitted ? 'Mock Submitted ✓' : complete ? 'Submit Mock →' : `${32 - filledCount} picks to go`}
-          </Button>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Export is available to anyone who completed their 32 picks —
+                including users who just want the exercise and don't care
+                about the competition leaderboard. */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExportShare}
+              disabled={!complete || exporting}
+              title={
+                !complete
+                  ? 'Fill all 32 picks to export'
+                  : exportIsMobile
+                  ? 'Share a PNG of your Round 1 mock'
+                  : 'Copy a PNG of your Round 1 mock to clipboard'
+              }
+            >
+              {exporting ? 'Rendering…' : exportIsMobile ? 'Share Mock' : 'Export Mock'}
+            </Button>
+            {!exportIsMobile && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleExportDownload}
+                disabled={!complete || exporting}
+                title="Download PNG"
+              >
+                Download
+              </Button>
+            )}
+            <Button
+              size="md"
+              onClick={() => setShowConfirm(true)}
+              disabled={!complete || locked || busy}
+              className={`${complete && !submitted ? 'animate-pulse-glow' : ''}`}
+            >
+              {submitted ? 'Submitted ✓' : complete ? 'Submit Mock →' : `${32 - filledCount} to go`}
+            </Button>
+          </div>
         </div>
       </div>
 
