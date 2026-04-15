@@ -964,7 +964,7 @@ export default function Draft() {
         </div>
 
         {createPortal(
-          <DragOverlay modifiers={[snapCenterToCursor]} dropAnimation={null}>
+          <DragOverlay dropAnimation={null}>
             {activePlayer ? (
               <div
                 className="px-3 py-2 rounded-lg text-sm text-text-primary font-semibold shadow-glow pointer-events-none select-none"

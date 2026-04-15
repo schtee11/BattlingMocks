@@ -706,7 +706,7 @@ function BoardEditor({ board, allPlayers, user, onSaved, onBack }) {
             </SortableContext>
             {/* dropAnimation={null} removes the snap-back on release so the
                 list feels instant. The item simply settles in its new slot. */}
-            <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
+            <DragOverlay dropAnimation={null}>
               {activePlayer && (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-accent bg-bg-surface shadow-glow opacity-95">
                   <PlayerHeadshot url={activePlayer.headshot_url} name={activePlayer.name} position={activePlayer.position} size="xs" />

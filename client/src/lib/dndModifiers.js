@@ -1,24 +1,23 @@
 // Shared @dnd-kit modifiers.
 //
 // snapCenterToCursor: keeps the dragged element's center locked to the cursor
-// no matter where on the card the user initially pressed. Important detail —
-// dnd-kit passes different `draggingNodeRect` values to DndContext vs
-// DragOverlay modifiers:
+// no matter where on the card the user initially pressed.
 //
-//   • DndContext (affects collision detection / over target):
-//       draggingNodeRect = dragOverlay.rect ?? activeNodeRect
-//   • DragOverlay (affects overlay visual position):
-//       draggingNodeRect = dragOverlay.rect
+// **Pass ONLY to <DndContext modifiers={...}>. Do NOT also pass it to
+// <DragOverlay modifiers={...}>.**
 //
-// If you only pass the modifier to <DragOverlay>, the overlay follows the
-// cursor but the collision rect is still calculated against the un-offset
-// translate — which is why the drop-target highlight appears shifted away
-// from the cursor by exactly the "click offset from card center" distance.
+// Reason: @dnd-kit stores the DndContext-modified translate in
+// `ActiveDraggableContext`, which `<DragOverlay>` reads as its starting
+// `transform` before applying its own modifiers (core.esm.js lines 2996,
+// 3359, 3923). Passing this modifier to both sites would apply the
+// center-snap offset twice — the overlay visually drifts past the cursor
+// while the drop target (which uses `modifiedTranslate` directly at line
+// 2984) stays correctly under it. That mismatch is exactly the symptom
+// "the drop area follows my cursor but the visual card doesn't."
 //
-// Fix: pass this modifier to BOTH <DndContext modifiers={...}> AND
-// <DragOverlay modifiers={...}>. Both calls then use the same
-// `draggingNodeRect` (the overlay rect, once it's mounted), so the ghost
-// and the collision rect stay in lockstep under the cursor.
+// With the modifier on <DndContext> only, both collision detection and
+// overlay transform pick up a single, consistent offset and stay in
+// lockstep under the pointer.
 export function snapCenterToCursor({ activatorEvent, draggingNodeRect, transform }) {
   if (!draggingNodeRect || !activatorEvent) return transform;
   // activatorEvent may be PointerEvent, MouseEvent, or TouchEvent depending on
