@@ -73,7 +73,6 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
     picks,
     playerById,
     teamByPickNumber,
-    confidentSlots,
     userLabel,
     theme,
     teamLogoDataUrls = {},
@@ -82,9 +81,6 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
   ref,
 ) {
   const C = EXPORT_THEMES[theme] || EXPORT_THEMES.dark;
-  const confCount = (picks || []).filter(
-    (p) => confidentSlots?.has?.(p.pick_number),
-  ).length;
   const dateStr = new Date().toLocaleDateString(undefined, {
     month: 'long',
     day: 'numeric',
@@ -103,7 +99,6 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
     const teamAbbr = teamByPickNumber?.get?.(pick.pick_number);
     const logoDataUrl = teamAbbr ? teamLogoDataUrls[teamAbbr] : null;
     const headshotDataUrl = headshotDataUrls[pick.player_id];
-    const confident = confidentSlots?.has?.(pick.pick_number);
     return (
       <div
         key={pick.pick_number}
@@ -173,24 +168,19 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
           <InitialCircle name={player.name} color={color} size={36} />
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 800,
-                color: C.text,
-                lineHeight: 1.15,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                minWidth: 0,
-              }}
-            >
-              {player.name}
-            </div>
-            {confident && (
-              <div style={{ color: C.gold, fontSize: 13, lineHeight: 1, flexShrink: 0 }}>★</div>
-            )}
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 800,
+              color: C.text,
+              lineHeight: 1.15,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              minWidth: 0,
+            }}
+          >
+            {player.name}
           </div>
           <div
             style={{
@@ -251,74 +241,35 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
       }}
     >
       {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: 24,
-          marginBottom: 24,
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: 3,
-              color: C.accent,
-              marginBottom: 4,
-            }}
-          >
-            2026 NFL Draft · Round 1
-          </div>
-          <div
-            style={{
-              fontSize: 38,
-              fontWeight: 900,
-              textTransform: 'uppercase',
-              letterSpacing: 1.5,
-              lineHeight: 1.05,
-              color: C.text,
-            }}
-          >
-            Predictive Mock
-          </div>
-          <div style={{ fontSize: 14, color: C.muted, marginTop: 6 }}>
-            {userLabel ? `${userLabel} · ` : ''}
-            {sorted.length} pick{sorted.length === 1 ? '' : 's'} · {dateStr}
-          </div>
+      <div style={{ marginBottom: 24 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: 3,
+            color: C.accent,
+            marginBottom: 4,
+          }}
+        >
+          2026 NFL Draft · Round 1
         </div>
-        {confCount > 0 && (
-          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: 2,
-                color: C.muted,
-              }}
-            >
-              Confidence
-            </div>
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: 900,
-                color: C.gold,
-                fontFamily: 'monospace',
-                marginTop: 2,
-                lineHeight: 1,
-              }}
-            >
-              {confCount}
-              <span style={{ color: C.muted, fontSize: 14 }}>/3</span>{' '}
-              <span style={{ fontSize: 18 }}>★</span>
-            </div>
-          </div>
-        )}
+        <div
+          style={{
+            fontSize: 38,
+            fontWeight: 900,
+            textTransform: 'uppercase',
+            letterSpacing: 1.5,
+            lineHeight: 1.05,
+            color: C.text,
+          }}
+        >
+          Predictive Mock
+        </div>
+        <div style={{ fontSize: 14, color: C.muted, marginTop: 6 }}>
+          {userLabel ? `${userLabel} · ` : ''}
+          {sorted.length} pick{sorted.length === 1 ? '' : 's'} · {dateStr}
+        </div>
       </div>
 
       {/* Accent divider */}

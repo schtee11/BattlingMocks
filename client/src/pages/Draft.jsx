@@ -566,7 +566,6 @@ export default function Draft() {
           picks={exportPicks}
           playerById={playerById}
           teamByPickNumber={exportTeamByPickNumber}
-          confidentSlots={confidentSlots}
           userLabel={user ? prettyName(user.display_name) : ''}
           theme={exportTheme}
           teamLogoDataUrls={teamLogoDataUrls}
