@@ -15,8 +15,9 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS, getEventCoordinates } from '@dnd-kit/utilities';
+import { CSS } from '@dnd-kit/utilities';
 import { api, proxyImageUrl, fetchImageAsDataUrl } from '../lib/api.js';
+import { snapCenterToCursor } from '../lib/dndModifiers.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -27,23 +28,6 @@ import { usePageMeta } from '../hooks/usePageMeta.js';
 
 // Lazy-load html-to-image to keep initial bundle small
 const loadToPng = () => import('html-to-image').then((m) => m.toPng);
-
-// Modifier: snaps the drag overlay so its center tracks the pointer.
-// This guarantees the ghost appears "under" the cursor regardless of which
-// part of the row was grabbed. Applied only to DragOverlay (not DndContext),
-// so collision-detection / sort order calculation is unaffected.
-function snapCenterToCursor({ activatorEvent, draggingNodeRect, transform }) {
-  if (draggingNodeRect && activatorEvent) {
-    const coords = getEventCoordinates(activatorEvent);
-    if (!coords) return transform;
-    return {
-      ...transform,
-      x: transform.x + coords.x - (draggingNodeRect.left + draggingNodeRect.width / 2),
-      y: transform.y + coords.y - (draggingNodeRect.top + draggingNodeRect.height / 2),
-    };
-  }
-  return transform;
-}
 
 // ─── Theme helpers (mirrors TeamMock.jsx) ────────────────────────────────────
 const EXPORT_THEMES = {
@@ -697,6 +681,7 @@ function BoardEditor({ board, allPlayers, user, onSaved, onBack }) {
           </div>
           <DndContext
             sensors={sensors}
+            modifiers={[snapCenterToCursor]}
             collisionDetection={closestCenter}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}

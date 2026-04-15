@@ -2,30 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
-
-// Keep the drag overlay centered under the cursor.
-// Uses draggingNodeRect (the live rect of the dragged element), NOT the
-// activator target's rect — the target can be a nested child like a badge
-// and would give the wrong origin.
-function snapCenterToCursor({ activatorEvent, draggingNodeRect, transform }) {
-  if (!draggingNodeRect || !activatorEvent) return transform;
-  const ax =
-    activatorEvent.clientX ??
-    activatorEvent.touches?.[0]?.clientX ??
-    activatorEvent.changedTouches?.[0]?.clientX;
-  const ay =
-    activatorEvent.clientY ??
-    activatorEvent.touches?.[0]?.clientY ??
-    activatorEvent.changedTouches?.[0]?.clientY;
-  if (ax == null || ay == null) return transform;
-  const offsetX = ax - draggingNodeRect.left;
-  const offsetY = ay - draggingNodeRect.top;
-  return {
-    ...transform,
-    x: transform.x + offsetX - draggingNodeRect.width / 2,
-    y: transform.y + offsetY - draggingNodeRect.height / 2,
-  };
-}
+import { snapCenterToCursor } from '../lib/dndModifiers.js';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -697,6 +674,7 @@ export default function Draft() {
 
       <DndContext
         sensors={sensors}
+        modifiers={[snapCenterToCursor]}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
