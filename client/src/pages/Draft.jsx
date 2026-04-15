@@ -43,6 +43,8 @@ import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TradeModal } from '../components/TradeModal.jsx';
 import { CountdownTimer, DRAFT_START_2026 } from '../components/ui/CountdownTimer.jsx';
+import { Round1ExportCard, useRound1ShareExport } from '../components/Round1Export.jsx';
+import { prettyName } from '../lib/displayName.js';
 import { usePageMeta } from '../hooks/usePageMeta.js';
 
 // Max number of picks a user can flag as "confidence" picks. Each confident
@@ -529,6 +531,37 @@ export default function Draft() {
     finally { setBusy(false); }
   }
 
+  // Shape the current picks for the export card. Unlike the submit payload,
+  // partial mocks are allowed here — someone "just doing the exercise" may
+  // want to export whatever they have so far without a full 32-pick board.
+  const exportPicks = useMemo(
+    () =>
+      Object.entries(picks).map(([pn, pid]) => ({
+        pick_number: Number(pn),
+        player_id: pid,
+      })),
+    [picks]
+  );
+  const exportTeamByPickNumber = useMemo(() => {
+    const m = new Map();
+    draftOrder.forEach((o) => m.set(o.pick_number, o.team));
+    return m;
+  }, [draftOrder]);
+  const {
+    exportRef,
+    exporting,
+    theme: exportTheme,
+    teamLogoDataUrls,
+    headshotDataUrls,
+    handleShare: handleExportShare,
+    handleDownload: handleExportDownload,
+    isMobile: exportIsMobile,
+  } = useRound1ShareExport({
+    picks: exportPicks,
+    playerById,
+    teamByPickNumber: exportTeamByPickNumber,
+  });
+
   if (!user) return null;
 
   const activePlayer = activeDragId?.startsWith('player-')
@@ -537,6 +570,32 @@ export default function Draft() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 route-fade">
+      {/* Hidden export card — kept in-viewport with opacity:0 so mobile
+          browsers still decode images; html-to-image captures it on demand. */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          opacity: 0,
+          zIndex: -1,
+          pointerEvents: 'none',
+        }}
+        aria-hidden
+      >
+        <Round1ExportCard
+          ref={exportRef}
+          picks={exportPicks}
+          playerById={playerById}
+          teamByPickNumber={exportTeamByPickNumber}
+          confidentSlots={confidentSlots}
+          userLabel={user ? prettyName(user.display_name) : ''}
+          theme={exportTheme}
+          teamLogoDataUrls={teamLogoDataUrls}
+          headshotDataUrls={headshotDataUrls}
+        />
+      </div>
+
       {/* Header — desktop only; mobile uses the locked viewport layout below */}
       <div className="mb-5 hidden md:block">
         <div className="flex items-end justify-between flex-wrap gap-3">
@@ -959,14 +1018,45 @@ export default function Draft() {
           </kbd>{' '}
           to draft to the clock.
         </div>
-        <Button
-          size="xl"
-          onClick={() => setShowConfirm(true)}
-          disabled={!complete || locked || busy}
-          className={`${complete && !submitted ? 'animate-pulse-glow' : ''}`}
-        >
-          {submitted ? 'Mock Submitted ✓' : complete ? 'Submit Mock →' : `${32 - filledCount} picks to go`}
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Export is available to anyone who completed their 32 picks —
+              including users who just want the exercise and don't care
+              about the competition leaderboard. */}
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={handleExportShare}
+            disabled={!complete || exporting}
+            title={
+              !complete
+                ? 'Fill all 32 picks to export'
+                : exportIsMobile
+                ? 'Share a PNG of your Round 1 mock'
+                : 'Copy a PNG of your Round 1 mock to clipboard'
+            }
+          >
+            {exporting ? 'Rendering…' : exportIsMobile ? 'Share Mock' : 'Export Mock'}
+          </Button>
+          {!exportIsMobile && (
+            <Button
+              size="lg"
+              variant="ghost"
+              onClick={handleExportDownload}
+              disabled={!complete || exporting}
+              title="Download PNG"
+            >
+              Download
+            </Button>
+          )}
+          <Button
+            size="xl"
+            onClick={() => setShowConfirm(true)}
+            disabled={!complete || locked || busy}
+            className={`${complete && !submitted ? 'animate-pulse-glow' : ''}`}
+          >
+            {submitted ? 'Mock Submitted ✓' : complete ? 'Submit Mock →' : `${32 - filledCount} picks to go`}
+          </Button>
+        </div>
       </div>
 
       {/* Mobile — fixed bottom action bar */}
@@ -977,6 +1067,18 @@ export default function Draft() {
           </Button>
           <Button size="xs" variant="outline" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0} className="shrink-0">
             Clear
+          </Button>
+          {/* Export — lets users sharing the exercise save a PNG without
+              submitting to the competition. */}
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={handleExportShare}
+            disabled={!complete || exporting}
+            className="shrink-0"
+            title="Export your mock as a PNG"
+          >
+            {exporting ? '…' : 'Export'}
           </Button>
           <Button
             size="lg"
