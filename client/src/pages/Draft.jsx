@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { snapCenterToCursor } from '../lib/dndModifiers.js';
+import { DndScrollSync } from '../lib/DndScrollSync.jsx';
 import toast from 'react-hot-toast';
 import { api } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -646,6 +647,7 @@ export default function Draft() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
+        <DndScrollSync />
         {/* ============= MOBILE LAYOUT — viewport-locked two-panel ============= */}
         {/* Fixed between navbar (top-14 = 56px) and bottom action bar
             (bottom-20 = 80px). No page scroll possible — only the two

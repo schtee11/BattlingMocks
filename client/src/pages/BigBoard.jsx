@@ -18,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { api, proxyImageUrl, fetchImageAsDataUrl } from '../lib/api.js';
 import { snapCenterToCursor } from '../lib/dndModifiers.js';
+import { DndScrollSync } from '../lib/DndScrollSync.jsx';
 import { useAuth } from '../hooks/useAuth.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
@@ -686,6 +687,7 @@ function BoardEditor({ board, allPlayers, user, onSaved, onBack }) {
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
+            <DndScrollSync />
             <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
               <ul className="overflow-y-auto flex-1 space-y-1 px-3 pb-3" style={{ overscrollBehavior: 'contain' }}>
                 {boardPlayers.length === 0 ? (
