@@ -674,9 +674,7 @@ function BoardEditor({ board, allPlayers, user, onSaved, onBack }) {
                   player={p}
                   onAdd={(player) => {
                     handleAddPlayer(player);
-                    // On mobile, switch to board tab after adding so the user
-                    // can see the player was added.
-                    setMobileTab('board');
+                    toast.success(`${player.name} added to board`);
                   }}
                 />
               ))
