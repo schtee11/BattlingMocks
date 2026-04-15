@@ -768,7 +768,9 @@ export default function Admin() {
       return out;
     };
 
-    const headerCells = splitRow(head).map((h) => h.toLowerCase().replace(/^"|"$/g, ''));
+    const headerCells = splitRow(head).map((h) =>
+      h.toLowerCase().replace(/^"|"$/g, '').trim().replace(/[\s-]+/g, '_')
+    );
     const findIdx = (aliases) => headerCells.findIndex((h) => aliases.includes(h));
     const idxRank = findIdx(['rank', 'consensus_rank', 'overall_rank', 'overall', 'ovr']);
     const idxName = findIdx(['name', 'player', 'player_name', 'full_name']);
