@@ -127,7 +127,6 @@ export default function Draft() {
   }, []);
 
   useEffect(() => {
-    if (!user) { nav('/join'); return; }
     (async () => {
       try {
         // Fetch all 7 rounds of the draft order even though we only render
@@ -142,23 +141,28 @@ export default function Draft() {
         setPlayers(p);
         setDraftOrder(o);
         setSettings(s);
-        try {
-          const m = await api.getMock(user.id);
-          const map = {};
-          const conf = new Set();
-          m.picks.forEach((pk) => {
-            map[pk.pick_number] = pk.player_id;
-            if (pk.is_confident) conf.add(pk.pick_number);
-          });
-          setPicks(map);
-          setConfidentSlots(conf);
-          setSubmitted(true);
-        } catch { /* no existing mock */ }
+        // Only logged-in users have a saved mock to resume — anonymous
+        // visitors start with an empty board and only need to auth when
+        // they actually submit.
+        if (user) {
+          try {
+            const m = await api.getMock(user.id);
+            const map = {};
+            const conf = new Set();
+            m.picks.forEach((pk) => {
+              map[pk.pick_number] = pk.player_id;
+              if (pk.is_confident) conf.add(pk.pick_number);
+            });
+            setPicks(map);
+            setConfidentSlots(conf);
+            setSubmitted(true);
+          } catch { /* no existing mock */ }
+        }
       } catch (e) {
         toast.error('Failed to load: ' + e.message);
       }
     })();
-  }, [user, nav]);
+  }, [user]);
 
   // Load the user's boards so they can optionally reorder the prospect sidebar.
   useEffect(() => {
@@ -483,6 +487,18 @@ export default function Draft() {
     toast.success(`Filled ${Math.min(emptySlots.length, pool.length)} picks`);
   }
 
+  // Submit button entry point — anonymous users can build a mock freely,
+  // but submitting to the competition leaderboard requires auth. Redirect
+  // them to /join instead of popping the confirm modal.
+  function handleSubmitClick() {
+    if (!user) {
+      toast('Log in to submit your mock to the leaderboard');
+      nav('/join');
+      return;
+    }
+    setShowConfirm(true);
+  }
+
   async function submit() {
     setBusy(true);
     try {
@@ -539,8 +555,6 @@ export default function Draft() {
     playerById,
     teamByPickNumber: exportTeamByPickNumber,
   });
-
-  if (!user) return null;
 
   const activePlayer = activeDragId?.startsWith('player-')
     ? playerById.get(Number(activeDragId.replace('player-', '')))
@@ -1022,11 +1036,11 @@ export default function Draft() {
             )}
             <Button
               size="md"
-              onClick={() => setShowConfirm(true)}
+              onClick={handleSubmitClick}
               disabled={!complete || locked || busy}
               className={`${complete && !submitted ? 'animate-pulse-glow' : ''}`}
             >
-              {submitted ? 'Submitted ✓' : complete ? 'Submit Mock →' : `${32 - filledCount} to go`}
+              {submitted ? 'Submitted ✓' : complete ? (user ? 'Submit Mock →' : 'Log in & Submit →') : `${32 - filledCount} to go`}
             </Button>
           </div>
         </div>
@@ -1056,10 +1070,10 @@ export default function Draft() {
           <Button
             size="lg"
             className="flex-1"
-            onClick={() => setShowConfirm(true)}
+            onClick={handleSubmitClick}
             disabled={!complete || locked || busy}
           >
-            {submitted ? 'Submitted ✓' : complete ? 'Submit Mock' : `${filledCount}/32`}
+            {submitted ? 'Submitted ✓' : complete ? (user ? 'Submit Mock' : 'Log in & Submit') : `${filledCount}/32`}
           </Button>
         </div>
       </div>
