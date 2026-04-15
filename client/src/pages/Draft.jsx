@@ -921,7 +921,10 @@ export default function Draft() {
                 </Button>
               </div>
             </div>
-            <ul className="stagger space-y-1.5 max-h-[68vh] overflow-y-auto pr-1">
+            <ul
+              className="stagger space-y-1.5 max-h-[68vh] overflow-y-auto pr-1"
+              style={{ overscrollBehavior: 'contain' }}
+            >
               {!players ? (
                 Array.from({ length: 10 }, (_, i) => <Skeleton key={i} className="h-[58px] w-full rounded-lg" />)
               ) : (
