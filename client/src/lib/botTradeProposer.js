@@ -84,19 +84,25 @@ function sumValue(ids, chartGet, futureOwnership) {
 // its own remaining current-year picks (other than the one it's trading up
 // FROM) plus its 2027 capital.
 //
-// Biased toward the canonical real-world R1 trade-up shape observed in the
-// 2025 dataset: median 3 pieces (bot's lead pick + 1 current-year sweetener
-// + 1 future pick), with 75% of R1 trade-ups including a future pick. We
-// therefore try, in order:
-//   Pass 1 — current-year + future-year pair that lands in 93-112% band.
-//   Pass 2 — single current-year pick in band (covers small moves).
-//   Pass 3 — greedy fill as a last resort.
+// Shape preference is ROUND-AWARE — the 2023-2025 dataset (see
+// scratch/analyze-trades.mjs) shows the canonical trade-up shape varies
+// dramatically by the round of the pick the bot is moving up INTO:
+//
+//   Round 1: median 3-piece package, 44% include a future pick
+//   Round 2: median 2-piece package, only  7% include a future pick
+//   Round 3: median 2-piece package, 24% include a future pick
+//   Round 4+: median 2-piece package, 11% include a future pick
+//
+// So we prefer the (current + future) pair ONLY when the bot is trading
+// up for an R1 slot. R2+ gets single-piece-first, because padding those
+// with a future pick creates shapes that essentially never happen IRL.
 //
 // Returns { picks, total } or null if no realistic package fits.
 function buildOfferPackage({
   botTeam,
   botPick,           // the bot's "real" upcoming pick (the lowest-numbered
                      //   future slot they own — that's their best leverage)
+  botRound,          // round of botPick (1..7). Gates the pair-vs-single bias.
   targetValue,       // value the bot needs to send to the user
   liveOrder,
   picksMadeCount,
@@ -125,10 +131,8 @@ function buildOfferPackage({
   const HIGH = targetValue * 1.12;
   const closer = (a, b) => Math.abs(a - targetValue) < Math.abs(b - targetValue);
 
-  // Pass 1 — canonical shape: current-year sweetener + future pick. Matches
-  // the 75% future-pick rate in the 2025 R1 trade-up dataset. We search for
-  // the pair whose combined value sits closest to targetValue within the
-  // fair band.
+  // Canonical R1 shape: current-year sweetener + future pick. Search the
+  // pair whose combined value sits closest to targetValue within the band.
   let bestPair = null;
   for (const c of currentCandidates) {
     for (const f of futureCandidates) {
@@ -139,11 +143,8 @@ function buildOfferPackage({
       }
     }
   }
-  if (bestPair) return bestPair;
 
-  // Pass 2 — single current-year pick in band. Used for small moves where
-  // the sweetener is naturally one mid-round pick (e.g. bot's R3 covers a
-  // 3-spot R1 jump without needing a future).
+  // Canonical R2+ shape: single current-year or future pick in-band.
   let bestSingle = null;
   for (const c of [...currentCandidates, ...futureCandidates]) {
     if (c.value < LOW || c.value > HIGH) continue;
@@ -151,9 +152,19 @@ function buildOfferPackage({
       bestSingle = c;
     }
   }
-  if (bestSingle) return { picks: [bestSingle.id], total: bestSingle.value };
 
-  // Pass 3 — greedy fill with a HARD overshoot guard. Never push total
+  // Shape selection — R1 prefers pair, everything else prefers single.
+  // Fall through to the other shape if the preferred one doesn't fit.
+  const preferPair = botRound === 1;
+  if (preferPair) {
+    if (bestPair) return bestPair;
+    if (bestSingle) return { picks: [bestSingle.id], total: bestSingle.value };
+  } else {
+    if (bestSingle) return { picks: [bestSingle.id], total: bestSingle.value };
+    if (bestPair) return bestPair;
+  }
+
+  // Fallback — greedy fill with a HARD overshoot guard. Never push total
   // above 1.12× target, ever. The previous version allowed an initial
   // oversized dump whenever total was below 85% of target, which let bots
   // throw R1s into 3-spot-move trades (40-50% surplus, way outside the
@@ -395,6 +406,7 @@ export function generateBotTradeOffers({
     const pkg = buildOfferPackage({
       botTeam: botSlot.team,
       botPick: botSlot.pick_number,
+      botRound: botSlot.round,
       targetValue,
       liveOrder,
       picksMadeCount,

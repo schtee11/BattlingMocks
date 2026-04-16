@@ -1,25 +1,32 @@
-// Parses 2025 NFL draft trade data and produces distribution analysis used
-// to calibrate the bot trade proposer.
+// Parses 2023, 2024, 2025 NFL draft trade data and produces distribution
+// analysis used to calibrate the bot trade proposer.
 //
 // Usage: node scratch/analyze-trades.mjs
+//
+// Each trade is tagged with its source draft year so we can slice both
+// cross-year and per-year. The chart is the same Rich Hill trade values
+// table we use in-app — pick #1 is always worth chartValue(1), independent
+// of which year the draft happened.
 
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const csv = readFileSync(join(__dirname, '..', 'trade_data_2025.csv'), 'utf8');
+const ROOT = join(__dirname, '..');
+
 const chart = JSON.parse(
-  readFileSync(join(__dirname, '..', 'client', 'src', 'lib', 'tradeValues2026.json'), 'utf8')
+  readFileSync(join(ROOT, 'client', 'src', 'lib', 'tradeValues2026.json'), 'utf8')
 );
 const chartMap = new Map(chart.map((r) => [r.pick, r.value]));
 const chartGet = (n) => chartMap.get(n) ?? 0;
 
-// Future pick fallback values (one-round discount).
+// Future pick fallback values (one-round discount). Used when a trade
+// references a pick in a year beyond the current draft — exact pick number
+// is unknown so we value by round only.
 const FUTURE_VAL = { 1: 128, 2: 65, 3: 32, 4: 16, 5: 8, 6: 4, 7: 2 };
 
-// Extract every "Traded X to Y for Z on DATE" line.
-const tradeLines = csv.split(/\r?\n/).filter((l) => l.includes('Traded '));
+const YEARS = [2023, 2024, 2025];
 
 // Parse one trade line: returns { sent, received, toTeam, date } or null.
 function parseTrade(line) {
@@ -54,87 +61,85 @@ function parsePicks(str) {
   return out;
 }
 
-// Pick chart value. Future picks use FUTURE_VAL.
-function valueOf(p) {
-  if (p.year === 2025 && p.pick) return chartGet(p.pick);
-  if (p.year > 2025) return FUTURE_VAL[p.round] ?? 0;
+// Pick chart value. Current-year picks with known number use chart; future
+// picks use the round-based fallback.
+function valueOf(p, currentYear) {
+  if (p.year === currentYear && p.pick) return chartGet(p.pick);
+  if (p.year > currentYear) return FUTURE_VAL[p.round] ?? 0;
   return 0;
 }
 
-function sumValue(picks) {
-  return picks.reduce((s, p) => s + valueOf(p), 0);
+function sumValue(picks, currentYear) {
+  return picks.reduce((s, p) => s + valueOf(p, currentYear), 0);
 }
 
-// Parse + dedupe. Each real trade appears twice (perspective from each team).
-// We canonicalize by sorting pick tuples and keep only unique entries.
-const parsed = [];
-for (const line of tradeLines) {
-  const t = parseTrade(line);
-  if (t) parsed.push(t);
+// Canonicalize + dedupe trades for a single year. Each real trade appears
+// twice in the source (once per team perspective); we collapse by sorted
+// pick tuples + date.
+function parseYear(year) {
+  const csv = readFileSync(join(ROOT, `trade_data_${year}.csv`), 'utf8');
+  const tradeLines = csv.split(/\r?\n/).filter((l) => l.includes('Traded '));
+
+  const parsed = [];
+  for (const line of tradeLines) {
+    const t = parseTrade(line);
+    if (t) parsed.push({ ...t, sourceYear: year });
+  }
+
+  const seen = new Set();
+  const trades = [];
+  for (const t of parsed) {
+    const key = [
+      ...t.sent.map((p) => `${p.year}-${p.round}-${p.pick ?? 0}`).sort(),
+      '::',
+      ...t.received.map((p) => `${p.year}-${p.round}-${p.pick ?? 0}`).sort(),
+      '::',
+      t.date,
+    ].join('|');
+    const mirrorKey = [
+      ...t.received.map((p) => `${p.year}-${p.round}-${p.pick ?? 0}`).sort(),
+      '::',
+      ...t.sent.map((p) => `${p.year}-${p.round}-${p.pick ?? 0}`).sort(),
+      '::',
+      t.date,
+    ].join('|');
+    if (seen.has(key) || seen.has(mirrorKey)) continue;
+    seen.add(key);
+    trades.push(t);
+  }
+  return { raw: parsed.length, unique: trades };
 }
 
-const seen = new Set();
-const trades = [];
-for (const t of parsed) {
-  // Canonical key: sorted picks from both sides + date.
-  const key = [
-    ...t.sent.map((p) => `${p.year}-${p.round}-${p.pick ?? 0}`).sort(),
-    '::',
-    ...t.received.map((p) => `${p.year}-${p.round}-${p.pick ?? 0}`).sort(),
-    '::',
-    t.date,
-  ].join('|');
-  const mirrorKey = [
-    ...t.received.map((p) => `${p.year}-${p.round}-${p.pick ?? 0}`).sort(),
-    '::',
-    ...t.sent.map((p) => `${p.year}-${p.round}-${p.pick ?? 0}`).sort(),
-    '::',
-    t.date,
-  ].join('|');
-  if (seen.has(key) || seen.has(mirrorKey)) continue;
-  seen.add(key);
-  trades.push(t);
-}
+// Decide who moved up in a trade, compute package/distance/surplus metrics.
+function analyzeTrade(t) {
+  const { sourceYear } = t;
+  const sentCurrent = t.sent.filter((p) => p.year === sourceYear && p.pick);
+  const recvCurrent = t.received.filter((p) => p.year === sourceYear && p.pick);
+  if (sentCurrent.length === 0 || recvCurrent.length === 0) return null;
 
-console.log(`Parsed ${parsed.length} trade lines → ${trades.length} unique trades\n`);
-
-// For each trade, figure out who moved up. The mover-up is whoever
-// RECEIVED the lower pick number (higher value). "Distance" = how many
-// spots they jumped to get there.
-const analyzed = [];
-for (const t of trades) {
-  const sent2025 = t.sent.filter((p) => p.year === 2025 && p.pick);
-  const recv2025 = t.received.filter((p) => p.year === 2025 && p.pick);
-  if (sent2025.length === 0 || recv2025.length === 0) continue;
-
-  const topSent = Math.min(...sent2025.map((p) => p.pick));
-  const topRecv = Math.min(...recv2025.map((p) => p.pick));
-  // `t.toTeam` is the OTHER team (the receiver of `sent`).
-  // If topRecv < topSent, the SENDING team moved UP (they got a higher pick).
+  const topSent = Math.min(...sentCurrent.map((p) => p.pick));
+  const topRecv = Math.min(...recvCurrent.map((p) => p.pick));
   const sendingTeamMovedUp = topRecv < topSent;
   const distance = Math.abs(topRecv - topSent);
 
   const moverPicksSent = sendingTeamMovedUp ? t.sent : t.received;
   const moverPicksRecv = sendingTeamMovedUp ? t.received : t.sent;
-  const moverOwnPick = sendingTeamMovedUp ? topSent : topRecv;      // what they gave up
-  const moverGotPick = sendingTeamMovedUp ? topRecv : topSent;       // what they got
+  const moverOwnPick = sendingTeamMovedUp ? topSent : topRecv;
+  const moverGotPick = sendingTeamMovedUp ? topRecv : topSent;
 
-  // Round bucket — only analyze trades where the MAIN pick being moved
-  // into is a round-1 or round-2 pick (where most calibration matters).
-  const moverGotRound = recv2025.find((p) => p.pick === moverGotPick)?.round ?? 99;
+  const moverGotRound = recvCurrent.find((p) => p.pick === moverGotPick)?.round
+    ?? sentCurrent.find((p) => p.pick === moverGotPick)?.round
+    ?? 99;
 
-  const sweetenerValue = sumValue(moverPicksSent) - valueOf({ year: 2025, pick: moverOwnPick });
-  const recvValue = sumValue(moverPicksRecv);
-  const theirSide = recvValue;
-  const yourSide = sumValue(moverPicksSent);
-  // Surplus to the MOVER-DOWN team (the one receiving the package).
+  const yourSide = sumValue(moverPicksSent, sourceYear);
+  const theirSide = sumValue(moverPicksRecv, sourceYear);
   const moverDownSurplus = yourSide - theirSide;
   const moverDownSurplusPct = theirSide > 0 ? (moverDownSurplus / theirSide) * 100 : 0;
 
-  // Number of future picks included in the mover-up's package.
-  const futuresInPackage = moverPicksSent.filter((p) => p.year > 2025);
+  const futuresInPackage = moverPicksSent.filter((p) => p.year > sourceYear);
 
-  analyzed.push({
+  return {
+    year: sourceYear,
     date: t.date,
     moverGotPick,
     moverOwnPick,
@@ -147,8 +152,24 @@ for (const t of trades) {
     theirSide,
     moverDownSurplus,
     moverDownSurplusPct,
-  });
+  };
 }
+
+// Run the pipeline.
+const perYearCounts = [];
+const analyzed = [];
+for (const year of YEARS) {
+  const { raw, unique } = parseYear(year);
+  const yearAnalyzed = unique.map(analyzeTrade).filter(Boolean);
+  perYearCounts.push({ year, raw, unique: unique.length, analyzed: yearAnalyzed.length });
+  analyzed.push(...yearAnalyzed);
+}
+
+console.log('── Source sizes ──');
+for (const r of perYearCounts) {
+  console.log(`  ${r.year}: ${r.raw} trade lines → ${r.unique} unique trades → ${r.analyzed} analyzable`);
+}
+console.log(`  TOTAL: ${analyzed.length} analyzable trades across ${YEARS.length} drafts\n`);
 
 // Helper — percentile of a numeric array.
 const pct = (arr, p) => {
@@ -176,17 +197,26 @@ function summarize(label, filter) {
   console.log('');
 }
 
-summarize('All analyzed 2025 trades', () => true);
+summarize('All analyzed trades (2023-2025)', () => true);
+for (const y of YEARS) summarize(`${y} only`, (t) => t.year === y);
 summarize('R1 → R1 (mover got R1 pick)', (t) => t.moverGotRound === 1);
 summarize('R2 → R2 (mover got R2 pick)', (t) => t.moverGotRound === 2);
-summarize('Round 3+', (t) => t.moverGotRound >= 3);
+summarize('R3 (mover got R3 pick)', (t) => t.moverGotRound === 3);
+summarize('Round 4+', (t) => t.moverGotRound >= 4);
 summarize('Small moves (distance ≤ 5)', (t) => t.distance <= 5);
 summarize('Medium moves (distance 6-15)', (t) => t.distance > 5 && t.distance <= 15);
 summarize('Big moves (distance > 15)', (t) => t.distance > 15);
 
 console.log('── Sample of R1 trades (chronological) ──');
-for (const t of analyzed.filter((x) => x.moverGotRound === 1).slice(0, 12)) {
+for (const t of analyzed.filter((x) => x.moverGotRound === 1).slice(0, 20)) {
   console.log(
-    `  #${t.moverOwnPick} → #${t.moverGotPick} (+${t.distance} spots)  pkg=${t.packageSize}  futures=${t.futuresDetail || 'none'}  surplus=${t.moverDownSurplusPct.toFixed(1)}%`
+    `  [${t.year}] #${t.moverOwnPick} → #${t.moverGotPick} (+${t.distance} spots)  pkg=${t.packageSize}  futures=${t.futuresDetail || 'none'}  surplus=${t.moverDownSurplusPct.toFixed(1)}%`
+  );
+}
+
+console.log('\n── Sample of R2 trades (chronological) ──');
+for (const t of analyzed.filter((x) => x.moverGotRound === 2).slice(0, 15)) {
+  console.log(
+    `  [${t.year}] #${t.moverOwnPick} → #${t.moverGotPick} (+${t.distance} spots)  pkg=${t.packageSize}  futures=${t.futuresDetail || 'none'}  surplus=${t.moverDownSurplusPct.toFixed(1)}%`
   );
 }
