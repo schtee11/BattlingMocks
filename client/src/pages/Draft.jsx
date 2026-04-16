@@ -940,7 +940,7 @@ export default function Draft() {
                         )}
                       </div>
                     )}
-                    {player && (
+                    {player && isCompetition && (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); toggleConfidence(slot); }}
@@ -1086,8 +1086,8 @@ export default function Draft() {
                       onClear={clearSlot}
                       onClick={handleSlotClick}
                       isActive={selectedPlayer != null}
-                      isConfident={confidentSlots.has(slot)}
-                      onToggleConfident={toggleConfidence}
+                      isConfident={isCompetition && confidentSlots.has(slot)}
+                      onToggleConfident={isCompetition ? toggleConfidence : undefined}
                       boardRef={boardRowRefs}
                     />
                   ))
