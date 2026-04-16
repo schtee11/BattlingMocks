@@ -1664,6 +1664,11 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // Tracks pick_numbers where we've already rolled a bot-vs-bot trade check
   // so the engine effect doesn't re-roll on every render. Reset on restart.
   const botBotTriedRef = useRef(new Set());
+  // Per-round hard cap on bot-vs-bot trades. Even with a high urgency floor
+  // the auto-run can fire a flurry early in a round; this keeps the toast
+  // stream legible and matches the realistic 2–3 trades per round cadence.
+  // Shape: { round, count }. Reset on restart.
+  const botBotRoundRef = useRef({ round: null, count: 0 });
   // Confirmation state for destructive actions. We gate Restart and Change
   // Team behind an explicit confirm as soon as the user has made any real
   // progress — losing a half-finished mock would be a terrible surprise.
@@ -1748,10 +1753,19 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       // already self-throttles to genuinely motivated trade-ups (need +
       // scarcity or a cliff). `botBotTriedRef` prevents re-rolling for the
       // same slot across re-renders, critically across the post-swap
-      // render when the buyer becomes the new on-clock team.
+      // render when the buyer becomes the new on-clock team. A per-round
+      // cap enforces realistic volume: real drafts see 2–3 trade-ups per
+      // round, not one on every pick.
+      const MAX_BOT_BOT_TRADES_PER_ROUND = 3;
+      const roundState = botBotRoundRef.current;
+      if (roundState.round !== currentSlot.round) {
+        roundState.round = currentSlot.round;
+        roundState.count = 0;
+      }
       if (
         botBotEnabled &&
-        !botBotTriedRef.current.has(currentSlot.pick_number)
+        !botBotTriedRef.current.has(currentSlot.pick_number) &&
+        roundState.count < MAX_BOT_BOT_TRADES_PER_ROUND
       ) {
         botBotTriedRef.current.add(currentSlot.pick_number);
         try {
@@ -1774,6 +1788,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             const p = acceptanceProbability(sellerSurplus);
             const roll = tradeHash(offer.sellerTeam, offer.buyerTeam, offer.yourPicks, offer.theirPicks);
             if (roll < p) {
+              roundState.count += 1;
               applyTradeLocal({
                 teamA: offer.sellerTeam,
                 teamB: offer.buyerTeam,
@@ -2165,6 +2180,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setPhase(PHASE_READY);
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
     botBotTriedRef.current = new Set();
+    botBotRoundRef.current = { round: null, count: 0 };
   }
 
   // Wrap restart with a confirm dialog whenever the user has actually made

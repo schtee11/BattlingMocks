@@ -82,11 +82,11 @@ const TIER_DROP_THRESHOLD = 2;
 const URGENCY_FLOOR = 0.25;
 
 // Higher bar for bot-vs-bot trades: the user isn't in the loop, so only
-// genuinely strong motivation (scarcity + top-need match, or a star
-// falling off the cliff) should produce a swap. Combined with the fair-
-// zone acceptance curve (~94% for in-zone offers), this yields roughly
-// 1–3 CPU trades per round — in line with real-world NFL draft volume.
-const BOT_BOT_URGENCY_FLOOR = 0.55;
+// genuinely strong motivation — scarcity at a top need, or a clear BPA
+// cliff — should produce a swap. Tuned against the observed auto-run
+// volume; 0.55 fired on most picks, 0.70 keeps it to a handful per
+// round before the per-round cap even kicks in.
+const BOT_BOT_URGENCY_FLOOR = 0.70;
 
 // Diagnostic logging — flip on in the browser console with
 //   window.__btDebug = true
