@@ -1744,17 +1744,14 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     const delay = SPEED_STEPS[speedIdx] ?? 150;
     const timer = setTimeout(() => {
       // ── Bot-vs-bot trade attempt ────────────────────────────────────
-      // Before this bot picks, see if a team behind them wants to move up.
-      // `BOT_TRADE_BASE_RATE` gate keeps attempts sparse (~3–4 per round
-      // pre-filter; fewer survive the urgency + acceptance rolls).
-      // `botBotTriedRef` prevents re-rolling for the same slot across
-      // re-renders, and critically across the post-swap render when the
-      // buyer becomes the new on-clock team.
-      const BOT_TRADE_BASE_RATE = 0.12;
+      // No Math.random gate — the candidate search's BOT_BOT_URGENCY_FLOOR
+      // already self-throttles to genuinely motivated trade-ups (need +
+      // scarcity or a cliff). `botBotTriedRef` prevents re-rolling for the
+      // same slot across re-renders, critically across the post-swap
+      // render when the buyer becomes the new on-clock team.
       if (
         botBotEnabled &&
-        !botBotTriedRef.current.has(currentSlot.pick_number) &&
-        Math.random() < BOT_TRADE_BASE_RATE
+        !botBotTriedRef.current.has(currentSlot.pick_number)
       ) {
         botBotTriedRef.current.add(currentSlot.pick_number);
         try {
@@ -1784,7 +1781,17 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 theirPicks: offer.theirPicks,   // buyer → seller
                 initiator: 'cpu',
               });
-              toast(`${offer.buyerTeam} traded up with ${offer.sellerTeam}`, { icon: '🔀' });
+              const forWho = offer.wantedPlayer?.name
+                ? ` for ${offer.wantedPlayer.name}`
+                : '';
+              toast.success(
+                `${offer.buyerTeam} traded up with ${offer.sellerTeam}${forWho}`,
+                { icon: '🔀', duration: 3500, id: `bot-trade-${offer.id}` }
+              );
+              // eslint-disable-next-line no-console
+              console.info(
+                `[bot-vs-bot] pick #${offer.sellerPick}: ${offer.sellerTeam} → ${offer.buyerTeam}${forWho} (urgency ${offer.summary.urgency})`
+              );
               // Don't pick this tick — the swap will re-render and the new
               // owner picks on the next engine iteration.
               return;
@@ -1927,7 +1934,17 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     });
     setIncomingOffers([]);
     offersForPickRef.current = null;
+    // Pin the just-traded slot so the new owner (bot) doesn't immediately
+    // try to flip it again via the bot-vs-bot path — realistic teams hold
+    // the pick they just acquired.
+    if (currentSlot?.pick_number != null) {
+      botBotTriedRef.current.add(currentSlot.pick_number);
+    }
     toast.success(`Trade accepted with ${offer.botTeam}`);
+    // Resume auto-run — the on-clock slot now belongs to the partner bot,
+    // and without this the draft would stall on PHASE_ON_CLOCK waiting for
+    // the user to pick a player for someone else's team.
+    setPhase(PHASE_RUNNING);
   }
 
   function handleDismissOffer(offerId) {

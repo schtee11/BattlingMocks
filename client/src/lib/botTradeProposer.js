@@ -75,11 +75,18 @@ export function sampledMaxOffers(pickNumber) {
 const TIER_LOOKAHEAD_K = 5;
 const TIER_DROP_THRESHOLD = 2;
 
-// Minimum urgency to make an offer. Lowered slightly so middle-of-round
-// teams can still propose when they have a clear positional target —
-// previously the 0.35 floor required either tier-drop OR top-need match
-// to fire, which made offers very rare in practice.
+// Minimum urgency to make an offer (user-facing offers). Lowered slightly
+// so middle-of-round teams can still propose when they have a clear
+// positional target — the user gets to accept/reject anyway, so showing
+// more options is fine.
 const URGENCY_FLOOR = 0.25;
+
+// Higher bar for bot-vs-bot trades: the user isn't in the loop, so only
+// genuinely strong motivation (scarcity + top-need match, or a star
+// falling off the cliff) should produce a swap. Combined with the fair-
+// zone acceptance curve (~94% for in-zone offers), this yields roughly
+// 1–3 CPU trades per round — in line with real-world NFL draft volume.
+const BOT_BOT_URGENCY_FLOOR = 0.55;
 
 // Diagnostic logging — flip on in the browser console with
 //   window.__btDebug = true
@@ -221,10 +228,11 @@ function buildOfferPackage({
 
 // ── Tier-drop / scarcity assessment for a bot at a future slot ──────────────
 //
-// Returns a numeric "urgency" score 0..1 representing how badly the bot
-// wants to move up — used both to gate offer generation (>0 → offer) and
-// to decide HOW MUCH the bot is willing to pay (higher urgency = closer
-// to the user's side of the 5–7% fair band).
+// Returns { urgency, wantedPlayer }:
+//   urgency       — 0..1 score of how badly the bot wants to move up.
+//   wantedPlayer  — the specific player the bot is worried about losing;
+//                   surfaced in toasts ("X traded up for Y") so the user can
+//                   see the realistic motive, not just an abstract score.
 function assessUrgency({
   botSlot,
   userSlot,            // user's on-clock pick (what we're assessing vs)
@@ -233,10 +241,11 @@ function assessUrgency({
   draftContext,
   randomness,
 }) {
+  const EMPTY = { urgency: 0, wantedPlayer: null };
   const needs = (botSlot.team_needs || []).slice(0, 3);
   if (needs.length === 0) {
     dbg('urgency=0 reason: no team_needs for', botSlot.team, 'raw=', botSlot.team_needs);
-    return 0;
+    return EMPTY;
   }
 
   // Simulate what the bot would pick AT its real slot if nothing changed.
@@ -251,7 +260,7 @@ function assessUrgency({
   });
   if (!wantedNow) {
     dbg('urgency=0 reason: pickForTeam null for', botSlot.team, 'available=', available.length);
-    return 0;
+    return EMPTY;
   }
 
   // What's the bot's wanted POSITION? Use the picked player's position as
@@ -259,7 +268,7 @@ function assessUrgency({
   const wantedPos = normalizePos(wantedNow.position || '');
   if (!wantedPos) {
     dbg('urgency=0 reason: empty wantedPos for', botSlot.team, 'player=', wantedNow?.name, 'pos=', wantedNow?.position);
-    return 0;
+    return EMPTY;
   }
 
   // Tier-drop check: among the top-K available players at the wanted
@@ -271,7 +280,7 @@ function assessUrgency({
     .slice(0, TIER_LOOKAHEAD_K);
   if (topAtPos.length === 0) {
     dbg('urgency=0 reason: topAtPos empty for', botSlot.team, 'wantedPos=', wantedPos);
-    return 0;
+    return EMPTY;
   }
 
   let competingPicks = 0;
@@ -309,7 +318,10 @@ function assessUrgency({
     else if (rankDelta >= 8) bpaCliff = 0.1;
   }
 
-  return Math.min(1, scarcity + competition + wantedness + bpaCliff);
+  return {
+    urgency: Math.min(1, scarcity + competition + wantedness + bpaCliff),
+    wantedPlayer: wantedNow,
+  };
 }
 
 // ── Main entry point ────────────────────────────────────────────────────────
@@ -426,7 +438,7 @@ export function generateBotTradeOffers({
         .map((pk) => ({ position: normalizePos(byId.get(pk.player_id)?.position || '') })),
     };
 
-    const urgency = assessUrgency({
+    const { urgency, wantedPlayer } = assessUrgency({
       botSlot,
       userSlot,
       available,
@@ -472,6 +484,11 @@ export function generateBotTradeOffers({
       userPick: userSlot.pick_number,
       theirPicks,
       yourPicks,
+      wantedPlayer: wantedPlayer ? {
+        id: wantedPlayer.id,
+        name: wantedPlayer.name,
+        position: wantedPlayer.position,
+      } : null,
       summary: {
         yourValue: Math.round(yourValue),
         theirValue: Math.round(theirValue),
@@ -604,7 +621,7 @@ export function generateBotToBotOffer({
         .map((pk) => ({ position: normalizePos(byId.get(pk.player_id)?.position || '') })),
     };
 
-    const urgency = assessUrgency({
+    const { urgency, wantedPlayer } = assessUrgency({
       botSlot: buyerSlot,
       userSlot: sellerSlot,
       available,
@@ -612,7 +629,11 @@ export function generateBotToBotOffer({
       draftContext: buyerContext,
       randomness,
     });
-    if (urgency < URGENCY_FLOOR) continue;
+    // Bot-vs-bot trades skip the Math.random gate and instead require a
+    // higher urgency bar. This produces a realistic, needs-driven volume
+    // (1–3 trades per round) without the randomness making weak-motive
+    // trades fire ~12% of the time regardless of fit.
+    if (urgency < BOT_BOT_URGENCY_FLOOR) continue;
 
     const targetValue = sweetenerValue * (1 + 0.02 + urgency * 0.04);
     const pkg = buildOfferPackage({
@@ -640,6 +661,11 @@ export function generateBotToBotOffer({
       sellerPick: sellerSlot.pick_number,
       theirPicks,                   // buyer → seller (includes buyerPick)
       yourPicks,                    // seller → buyer (just the on-clock slot)
+      wantedPlayer: wantedPlayer ? {
+        id: wantedPlayer.id,
+        name: wantedPlayer.name,
+        position: wantedPlayer.position,
+      } : null,
       summary: {
         yourValue: Math.round(sellerPickValue),
         theirValue: Math.round(theirValue),
