@@ -97,8 +97,8 @@ function buildOfferPackage({
 }) {
   // Bot's tradeable assets = its remaining current-year picks (excluding
   // the one being traded up from — that's reserved for "you give") + all
-  // its 2027 picks. We sort descending by value so we take the biggest
-  // chunk first and don't end up with a 50-pick package of 7th-rounders.
+  // its 2027 picks. We sort DESCENDING so we try to cover the target with
+  // the smallest number of picks; small 2027 picks backfill precision.
   const candidates = [];
   for (const row of liveOrder) {
     if (row.pick_number <= picksMadeCount) continue;
@@ -113,26 +113,36 @@ function buildOfferPackage({
   }
   candidates.sort((a, b) => b.value - a.value);
 
-  // The bot's primary ammo is its OWN upcoming pick (botPick), which is
-  // already on the table. We start the package empty and fill until we
-  // reach targetValue. The user already gives up their on-clock pick and
-  // gets botPick back, so the "package" we're building is the SWEETENER.
+  // Pass 1 — single best-fit pick. A lot of real-world trade-up moves
+  // are "my pick + ONE sweetener" (bot's 3rd-rounder, a 2027 R2, etc.),
+  // so prefer that shape when anything in the candidate pool lands in the
+  // 93%-112% target band.
+  let bestSingle = null;
+  for (const c of candidates) {
+    if (c.value < targetValue * 0.93) continue;
+    if (c.value > targetValue * 1.12) continue;
+    if (!bestSingle || Math.abs(c.value - targetValue) < Math.abs(bestSingle.value - targetValue)) {
+      bestSingle = c;
+    }
+  }
+  if (bestSingle) return { picks: [bestSingle.id], total: bestSingle.value };
+
+  // Pass 2 — greedy fill with a HARD overshoot guard. Never push total
+  // above 1.12× target, ever. The previous version allowed an initial
+  // oversized dump whenever total was below 85% of target, which let bots
+  // throw R1s into 3-spot-move trades (40-50% surplus, way outside the
+  // 5-7% fair band).
   const picks = [];
   let total = 0;
   for (const c of candidates) {
-    if (total >= targetValue * 0.97) break;          // close enough to fair
-    // Don't overshoot wildly — picking up a single chunk that puts us 30%+
-    // above target means the bot is overpaying needlessly. Skip it and
-    // try a smaller piece.
-    if (total + c.value > targetValue * 1.12 && total >= targetValue * 0.85) {
-      continue;
-    }
+    if (total >= targetValue * 0.97) break;
+    if (total + c.value > targetValue * 1.12) continue;
     picks.push(c.id);
     total += c.value;
   }
 
-  // Reject offers that fall too far short — better to send no offer than
-  // a known lopsided lowball. The user said within 5–7% of fair.
+  // Reject offers that fall too short — better to send no offer than a
+  // known lopsided lowball. Keeps surplus in the advertised 5-7% band.
   if (total < targetValue * 0.93) return null;
   return { picks, total };
 }
