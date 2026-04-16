@@ -88,22 +88,21 @@ router.get('/future', async (req, res) => {
     return res.status(400).json({ error: 'invalid year' });
   }
 
-  // Two-source strategy:
+  // Single-source strategy with fill-in:
   //
-  //   1. Primary — real rows from draft_order for that year (populated via
-  //      POST /api/admin/sync/draft-order-all?year=2027 which pulls ESPN's
-  //      scoreboard/header feed, same code path used for 2026). Returns one
-  //      logical pick per (team, round), collapsing comp picks onto the
-  //      team's lowest-numbered pick in that round so the client's
-  //      `${year}-${team}-R${round}` id format continues to work.
+  //   1. Pull every (team, round) row for the requested year from draft_order
+  //      — real data from the ESPN sync. Collapses comp picks via DISTINCT ON
+  //      so each (team, round) yields exactly one pick.
   //
-  //   2. Fallback — synthetic 32-teams × 7-rounds grid sourced from the
-  //      current draft_order's canonical team list. Used when the sync has
-  //      not been run yet (or ESPN has no data for that year). This is the
-  //      legacy behaviour and keeps the UI functional on fresh installs.
+  //   2. Pull the canonical 32-team list from the current draft (2026).
   //
-  // Values in both paths come from future-pick-values.json — real GMs
-  // discount future picks by one round regardless of known slot.
+  //   3. For every (team, round) in the canonical grid that doesn't have a
+  //      real row, generate a synthetic stand-in. This way partial sync state
+  //      (e.g. only R1 synced so far, or only a handful of teams) never hides
+  //      the other 31 teams' 2027 picks from the trade UI.
+  //
+  // Values come from future-pick-values.json — real GMs discount future picks
+  // by one round regardless of known slot.
   const values = loadFutureValues().year_offset_1 || {};
   const pickValue = (round) => values[String(round)] ?? 1;
 
@@ -115,23 +114,6 @@ router.get('/future', async (req, res) => {
     [year]
   );
 
-  if (real.length > 0) {
-    const out = real.map((r) => ({
-      id: `${year}-${r.team}-R${r.round}`,
-      year,
-      round: r.round,
-      team: r.team,
-      team_name: r.team_name,
-      value: pickValue(r.round),
-      // Expose pick_number so the UI can show a real slot when available.
-      // The synthetic fallback below omits it.
-      pick_number: r.pick_number,
-    }));
-    res.set('Cache-Control', 'public, max-age=3600');
-    return res.json(out);
-  }
-
-  // Fallback — synthetic grid from the current-year team list.
   const { rows: teams } = await pool.query(
     `SELECT DISTINCT ON (team) team, team_name
        FROM draft_order
@@ -139,17 +121,34 @@ router.get('/future', async (req, res) => {
       ORDER BY team, pick_number`
   );
 
+  // Index real rows by "TEAM-R#" so the fill-in loop is O(1) per slot.
+  const realByKey = new Map();
+  for (const r of real) realByKey.set(`${r.team}-R${r.round}`, r);
+
   const out = [];
   for (const t of teams) {
     for (let round = 1; round <= 7; round++) {
-      out.push({
-        id: `${year}-${t.team}-R${round}`,
-        year,
-        round,
-        team: t.team,
-        team_name: t.team_name,
-        value: pickValue(round),
-      });
+      const hit = realByKey.get(`${t.team}-R${round}`);
+      if (hit) {
+        out.push({
+          id: `${year}-${hit.team}-R${hit.round}`,
+          year,
+          round: hit.round,
+          team: hit.team,
+          team_name: hit.team_name,
+          value: pickValue(hit.round),
+          pick_number: hit.pick_number,
+        });
+      } else {
+        out.push({
+          id: `${year}-${t.team}-R${round}`,
+          year,
+          round,
+          team: t.team,
+          team_name: t.team_name,
+          value: pickValue(round),
+        });
+      }
     }
   }
 
