@@ -26,6 +26,7 @@ import {
 import {
   generateBotTradeOffers,
   generateBotToBotOffer,
+  assessSellerReluctance,
 } from '../lib/botTradeProposer.js';
 import { acceptanceProbability, tradeHash } from '../lib/tradeAcceptance.js';
 
@@ -1781,11 +1782,31 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           });
           if (result && result.offer) {
             const offer = result.offer;
+            // Seller-reluctance check — teams with a top-need star at a
+            // premium slot should hold the pick regardless of value math.
+            // generateBotToBotOffer already did a buyer-side urgency check;
+            // this closes the missing seller-side half.
+            const takenForReluctance = new Set(picks.map((pk) => pk.player_id));
+            const availableForReluctance = effectivePlayers.filter(
+              (pl) => !takenForReluctance.has(pl.id)
+            );
+            const reluctance = assessSellerReluctance({
+              sellerSlot: currentSlot,
+              available: availableForReluctance,
+              picks,
+              byId,
+              effectivePlayers,
+              randomness,
+            });
+            if (reluctance >= 0.9) {
+              // Hard block — seller won't even entertain this trade.
+              // Skip the acceptance roll entirely.
+            } else {
             // Seller surplusPct is user-side-positive convention; from the
             // seller's perspective a positive surplus means they're getting
             // MORE than fair, so flip the sign for the acceptance curve.
             const sellerSurplus = -offer.summary.surplusPct / 100;
-            const p = acceptanceProbability(sellerSurplus);
+            const p = acceptanceProbability(sellerSurplus) * (1 - reluctance);
             const roll = tradeHash(offer.sellerTeam, offer.buyerTeam, offer.yourPicks, offer.theirPicks);
             if (roll < p) {
               roundState.count += 1;
@@ -1811,6 +1832,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               // owner picks on the next engine iteration.
               return;
             }
+            } // end of !reluctant else branch
           }
         } catch (err) {
           console.warn('[bot-vs-bot] generate failed:', err?.message);

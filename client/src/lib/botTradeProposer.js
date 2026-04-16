@@ -324,6 +324,108 @@ function assessUrgency({
   };
 }
 
+// ── Seller reluctance ──────────────────────────────────────────────────────
+//
+// The mirror of assessUrgency, but from the on-clock (selling) team's POV:
+// "how much do I want to STAY and pick here?" Used to gate trade-down
+// acceptance so teams with a top-need star available at a premium slot
+// don't swap their pick for a value-chart surplus.
+//
+// Returns a 0..0.95 score. 0.95 is the hard cap — even the most obvious
+// hold-the-pick scenarios leave a sliver of room for a completely lopsided
+// overpay (preserves the theoretical possibility without making it common).
+//
+// Signals, all derived from existing data:
+//   1. star-at-need   — the player the seller would pick now is top-32 and
+//                       matches one of their top-3 needs.
+//   2. top-need bonus — that wanted position is specifically need #1.
+//   3. premium slot   — top-5, top-10, or top-20 pick slots are rarely moved.
+//   4. scarcity       — only 1–2 players at the wanted position left in
+//                       top-32, so moving back risks losing them entirely.
+//
+// LV-at-#1 worked example: 0.5 (rank-1 QB as need) + 0.15 (top need) +
+// 0.25 (pick #1 ≤ 5) + 0.15 (scarcity — usually 1 elite QB) = 1.05 → 0.95.
+export function assessSellerReluctance({
+  sellerSlot,
+  available,
+  picks = [],
+  byId,
+  effectivePlayers,
+  randomness = 0.25,
+}) {
+  if (!sellerSlot || !Array.isArray(sellerSlot.team_needs)) return 0;
+  const needs = sellerSlot.team_needs.slice(0, 3).map((n) => normalizePos(n));
+  if (needs.length === 0) return 0;
+
+  const cfg = getAlgoConfig();
+  const sellerContext = {
+    allPlayers: effectivePlayers || available,
+    teamDraftedPos: picks
+      .filter((pk) => pk.team === sellerSlot.team)
+      .map((pk) => normalizePos(byId?.get(pk.player_id)?.position || '')),
+    recentPicks: picks
+      .slice(-(cfg.runWindowSize || 8))
+      .map((pk) => ({ position: normalizePos(byId?.get(pk.player_id)?.position || '') })),
+  };
+
+  const wantedNow = pickForTeam({
+    available,
+    teamNeeds: sellerSlot.team_needs,
+    randomness,
+    pickNumber: sellerSlot.pick_number,
+    draftContext: sellerContext,
+  });
+  if (!wantedNow) return 0;
+
+  const wantedPos = normalizePos(wantedNow.position || '');
+  const needIdx = wantedPos ? needs.indexOf(wantedPos) : -1;
+  const isAnyNeed = needIdx >= 0;
+  const isTopNeed = needIdx === 0;
+  const wantedRank = Number.isFinite(wantedNow.rank) ? wantedNow.rank : 999;
+
+  let reluctance = 0;
+
+  // 1. Star-at-need — the cornerstone signal. Only counts if the wanted
+  //    player also fills a need; a falling top player at a non-need slot
+  //    is a reason to trade DOWN, not up, so doesn't anchor the seller.
+  if (isAnyNeed) {
+    if (wantedRank <= 10) reluctance += 0.5;
+    else if (wantedRank <= 20) reluctance += 0.3;
+    else if (wantedRank <= 32) reluctance += 0.15;
+  }
+
+  // 2. Top-need bonus — the #1 slot in team_needs array gets extra weight
+  //    because it's the most critical hole on the roster.
+  if (isTopNeed) reluctance += 0.15;
+
+  // 3. Premium slot — top picks are cultural anchors; franchises almost
+  //    never move back from them.
+  const n = sellerSlot.pick_number;
+  if (n <= 5) reluctance += 0.25;
+  else if (n <= 10) reluctance += 0.15;
+  else if (n <= 20) reluctance += 0.05;
+
+  // 4. Scarcity at wanted position — if only 1–2 top-32 players at this
+  //    position remain, moving back likely means losing them entirely.
+  if (isAnyNeed && wantedPos) {
+    const elitePeers = available.filter((p) =>
+      normalizePos(p.position) === wantedPos &&
+      Number.isFinite(p.rank) && p.rank <= 32
+    ).length;
+    if (elitePeers <= 1) reluctance += 0.15;
+    else if (elitePeers <= 2) reluctance += 0.08;
+  }
+
+  const capped = Math.min(0.95, reluctance);
+  dbg(
+    'reluctance', sellerSlot.team, '@', sellerSlot.pick_number,
+    '=', capped.toFixed(2),
+    'wanted=', wantedNow?.name, `(${wantedPos}#${wantedRank})`,
+    'needIdx=', needIdx
+  );
+  return capped;
+}
+
 // ── Main entry point ────────────────────────────────────────────────────────
 //
 // Returns an array of trade offer objects:
@@ -374,6 +476,26 @@ export function generateBotTradeOffers({
     return [];
   }
 
+  // Seller-reluctance gate — if the user team obviously shouldn't move back
+  // (e.g. pick #1 with a franchise QB available and QB as top need), bots
+  // wouldn't even call. Threshold is slightly more eager than the bot-vs-bot
+  // hard-block (0.9) because the user doesn't benefit from seeing offers
+  // they'd dismiss on sight.
+  const taken = new Set(picks.map((p) => p.player_id));
+  const available = effectivePlayers.filter((p) => !taken.has(p.id));
+  const sellerReluctance = assessSellerReluctance({
+    sellerSlot: userSlot,
+    available,
+    picks,
+    byId,
+    effectivePlayers,
+    randomness,
+  });
+  if (sellerReluctance >= 0.8) {
+    dbg('reluctance gate: user team anchored, suppressing offers', sellerReluctance);
+    return [];
+  }
+
   dbg('on the clock', {
     userTeam,
     userPick: userSlot.pick_number,
@@ -385,9 +507,7 @@ export function generateBotTradeOffers({
 
   const cfg = getAlgoConfig();
 
-  // Available player pool, identical to what the bot would see at its slot.
-  const taken = new Set(picks.map((p) => p.player_id));
-  const available = effectivePlayers.filter((p) => !taken.has(p.id));
+  // `taken` and `available` already computed above for the reluctance gate.
   const allPlayers = effectivePlayers;
 
   // Look at the next N slots after the user's. Each non-user slot is a
