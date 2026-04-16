@@ -20,6 +20,11 @@ import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TradeModal } from '../components/TradeModal.jsx';
+import {
+  buildFutureOwnership,
+  swapFutureOwnership,
+  isFuturePickId,
+} from '../lib/futurePicks.js';
 import { CountdownTimer, DRAFT_START_2026 } from '../components/ui/CountdownTimer.jsx';
 import { Round1ExportCard, useRound1ShareExport } from '../components/Round1Export.jsx';
 import { PredictionSlotsModal } from '../components/PredictionSlotsModal.jsx';
@@ -113,6 +118,21 @@ export default function Draft() {
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
+  // 2027 future-pick ownership. Session-only in prediction mode — predictions
+  // model "what will round 1 look like?" so persisting future-pick swaps adds
+  // no value beyond the current draft order, which is already saved.
+  const [futureOwnership, setFutureOwnership] = useState(() => new Map());
+  useEffect(() => {
+    let cancelled = false;
+    api.getFuturePicks(2027)
+      .then((rows) => {
+        if (!cancelled && Array.isArray(rows)) {
+          setFutureOwnership(buildFutureOwnership(rows));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   // Custom big board (Phase 8) — re-orders the prospect sidebar
   const [userBoards, setUserBoards] = useState([]);
   const [selectedBoardId, setSelectedBoardId] = useState('');
@@ -473,12 +493,18 @@ export default function Draft() {
     setSubmitted(false);
   }, []);
 
-  // Apply an accepted trade: swap team ownership on the affected pick numbers.
-  // Only picks that haven't been assigned yet can change hands — swapping a
-  // pick that's already been made would orphan the player.
+  // Apply an accepted trade: swap team ownership on the affected pick ids.
+  // Pick ids are a union — numeric pick_numbers (current-year picks living
+  // in draftOrder) or string ids (future-year picks living in
+  // futureOwnership). Each storage layer only sees its own ids.
   const applyTradeLocal = useCallback(({ fromTeam, partnerTeam, yourPicks, theirPicks }) => {
-    const yourSet = new Set(yourPicks);
-    const theirSet = new Set(theirPicks);
+    const yourCurrent = (yourPicks || []).filter((p) => typeof p === 'number');
+    const theirCurrent = (theirPicks || []).filter((p) => typeof p === 'number');
+    const yourFuture = (yourPicks || []).filter(isFuturePickId);
+    const theirFuture = (theirPicks || []).filter(isFuturePickId);
+
+    const yourSet = new Set(yourCurrent);
+    const theirSet = new Set(theirCurrent);
     setDraftOrder((prev) =>
       prev.map((row) => {
         if (latestRef.current.picks[row.pick_number]) return row; // already drafted — locked
@@ -491,6 +517,14 @@ export default function Draft() {
         return row;
       })
     );
+
+    if (yourFuture.length > 0 || theirFuture.length > 0) {
+      setFutureOwnership((prev) => {
+        let next = swapFutureOwnership(prev, yourFuture, partnerTeam);
+        next = swapFutureOwnership(next, theirFuture, fromTeam);
+        return next;
+      });
+    }
     toast.success(`Trade accepted: ${fromTeam} ↔ ${partnerTeam}`);
   }, []);
 
@@ -1382,6 +1416,7 @@ export default function Draft() {
           liveOrder={draftOrder}
           lockedPicks={new Set(Object.keys(picks).map(Number))}
           onClockTeam={orderByPick.get(onClockSlot || 1)?.team}
+          futureOwnership={futureOwnership}
           onClose={() => setTradeOpen(false)}
           onAccepted={(swap) => {
             applyTradeLocal(swap);

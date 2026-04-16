@@ -16,6 +16,12 @@ import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TradeModal } from '../components/TradeModal.jsx';
 import { ConfirmModal } from '../components/ui/ConfirmModal.jsx';
 import { usePageMeta } from '../hooks/usePageMeta.js';
+import {
+  buildFutureOwnership,
+  swapFutureOwnership,
+  formatPickLabel,
+  isFuturePickId,
+} from '../lib/futurePicks.js';
 
 // ─── NFL Teams ────────────────────────────────────────────────────────────────
 const NFL_TEAMS = [
@@ -339,13 +345,13 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
                   <div className="text-text-secondary">
                     <span className="text-text-muted text-[10px] font-display uppercase tracking-wide">Gave</span>{' '}
                     <span className="font-mono font-semibold text-text-primary">
-                      {(t.gave || []).map((n) => `#${n}`).join(', ')}
+                      {(t.gave || []).map(formatPickLabel).join(', ')}
                     </span>
                   </div>
                   <div className="text-text-secondary mt-1">
                     <span className="text-text-muted text-[10px] font-display uppercase tracking-wide">Got</span>{' '}
                     <span className="font-mono font-semibold text-accent">
-                      {(t.got || []).map((n) => `#${n}`).join(', ')}
+                      {(t.got || []).map(formatPickLabel).join(', ')}
                     </span>
                   </div>
                 </div>
@@ -770,7 +776,7 @@ const ExportCard = forwardRef(function ExportCard(
                       Gave
                     </span>{' '}
                     <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.text }}>
-                      {(t.gave || []).map((n) => `#${n}`).join(', ')}
+                      {(t.gave || []).map(formatPickLabel).join(', ')}
                     </span>
                   </div>
                   <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
@@ -785,7 +791,7 @@ const ExportCard = forwardRef(function ExportCard(
                       Got
                     </span>{' '}
                     <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>
-                      {(t.got || []).map((n) => `#${n}`).join(', ')}
+                      {(t.got || []).map(formatPickLabel).join(', ')}
                     </span>
                   </div>
                 </div>
@@ -1418,13 +1424,13 @@ function ResultsView({
                     <div className="text-text-secondary">
                       <span className="text-text-muted">Gave:</span>{' '}
                       <span className="font-mono font-semibold text-text-primary">
-                        {t.gave.map((n) => `#${n}`).join(', ')}
+                        {t.gave.map(formatPickLabel).join(', ')}
                       </span>
                     </div>
                     <div className="text-text-secondary mt-0.5">
                       <span className="text-text-muted">Got:</span>{' '}
                       <span className="font-mono font-semibold text-accent">
-                        {t.got.map((n) => `#${n}`).join(', ')}
+                        {t.got.map(formatPickLabel).join(', ')}
                       </span>
                     </div>
                   </div>
@@ -1515,6 +1521,28 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     // Reset whenever the source draftOrder changes (e.g. team change round-trip)
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
+
+  // ── 2027 future-pick ownership ──────────────────────────────────────────
+  // Each team starts owning its own 7 future picks (R1–R7). Ownership lives
+  // in a Map<id, pickRow> keyed by the synthetic pick id (e.g. "2027-LV-R1")
+  // so trade swaps are O(1). Fetched lazily on mount; an empty Map until the
+  // request resolves means future-pick UI is simply absent — never breaks
+  // the trade flow.
+  const [futureOwnership, setFutureOwnership] = useState(() => new Map());
+  useEffect(() => {
+    let cancelled = false;
+    api.getFuturePicks(2027)
+      .then((rows) => {
+        if (!cancelled && Array.isArray(rows)) {
+          setFutureOwnership(buildFutureOwnership(rows));
+        }
+      })
+      .catch(() => {
+        // Endpoint missing or network error — leave ownership empty so the
+        // page still works. Future-pick UI is gated on size > 0.
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // ── Custom big board (Phase 8) ───────────────────────────────────────────
   // Declared here — before effectivePlayers and byId — so activePlayers is
@@ -1885,11 +1913,21 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setShowChangeTeam(true);
   }
 
-  // Apply a trade: swap team ownership on the affected pick_numbers.
-  // Only upcoming (not-yet-made) picks can change hands — past picks are locked.
+  // Apply a trade: swap team ownership on the affected pick ids.
+  //
+  // Pick ids are a union: numeric pick_numbers (current-year picks living in
+  // liveOrder) or string ids (future-year picks living in futureOwnership).
+  // We split the lists by type so each storage layer only sees its own ids.
+  // Only upcoming current-year picks can change hands — past picks are
+  // locked. Future-year picks are always "upcoming" by definition.
   function applyTradeLocal({ partnerTeam, yourPicks, theirPicks }) {
-    const yourSet = new Set(yourPicks);
-    const theirSet = new Set(theirPicks);
+    const yourCurrent = (yourPicks || []).filter((p) => typeof p === 'number');
+    const theirCurrent = (theirPicks || []).filter((p) => typeof p === 'number');
+    const yourFuture = (yourPicks || []).filter(isFuturePickId);
+    const theirFuture = (theirPicks || []).filter(isFuturePickId);
+
+    const yourSet = new Set(yourCurrent);
+    const theirSet = new Set(theirCurrent);
     setLiveOrder((prev) => {
       // Build a team → team_needs lookup so swapped picks carry the new owner's
       // needs rather than staying tied to the original team.
@@ -1911,10 +1949,27 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         return row;
       });
     });
-    // Record trade for the results view
+
+    // Future-year ownership swap. Two-pass via swapFutureOwnership so each
+    // call sees a consistent snapshot — never tries to read mid-mutation.
+    if (yourFuture.length > 0 || theirFuture.length > 0) {
+      setFutureOwnership((prev) => {
+        let next = swapFutureOwnership(prev, yourFuture, partnerTeam);
+        next = swapFutureOwnership(next, theirFuture, team);
+        return next;
+      });
+    }
+
+    // Record trade for the results view. Sort current-year picks numerically
+    // and future picks lexicographically so the display order is stable.
+    const sortMixed = (arr) => {
+      const nums = arr.filter((p) => typeof p === 'number').sort((a, b) => a - b);
+      const strs = arr.filter((p) => typeof p === 'string').sort();
+      return [...nums, ...strs];
+    };
     setTrades((prev) => [
       ...prev,
-      { partnerTeam, gave: [...yourPicks].sort((a, b) => a - b), got: [...theirPicks].sort((a, b) => a - b) },
+      { partnerTeam, gave: sortMixed(yourPicks), got: sortMixed(theirPicks) },
     ]);
   }
 
@@ -2844,6 +2899,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           liveOrder={liveOrder}
           picksMadeCount={picks.length}
           onClockTeam={currentSlot?.team}
+          futureOwnership={futureOwnership}
           onClose={() => setTradeOpen(false)}
           onAccepted={(swap) => {
             applyTradeLocal(swap);

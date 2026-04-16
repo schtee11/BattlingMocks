@@ -1,0 +1,12 @@
+{
+  "_comment": "Values for future draft picks (1 year out). Derived from the Rich Hill 2026 chart by applying the standard 'one round of discount' convention: a future 1st is worth roughly an average current 2nd, a future 2nd is worth an average current 3rd, etc. Round 7 futures collapse to a token residual since there is no R8 to map to.",
+  "year_offset_1": {
+    "1": 128,
+    "2": 65,
+    "3": 32,
+    "4": 16,
+    "5": 8,
+    "6": 4,
+    "7": 2
+  }
+}

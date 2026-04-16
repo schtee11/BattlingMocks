@@ -175,6 +175,10 @@ export const api = {
       () => request(fresh ? `/api/draft-order?round=all&_=${Date.now()}` : '/api/draft-order?round=all')
     );
   },
+  // Future-year picks (e.g. 2027). Cached for an hour because they only
+  // change when the admin edits the value chart — and never within a session.
+  getFuturePicks: (year = 2027) =>
+    cached(`future-picks-${year}`, 60 * 60_000, () => request(`/api/draft-order/future?year=${year}`)),
   getSettings: () => cached('settings', 30_000, () => request('/api/settings')),
   getAlgoConfig: () => cached('algo-config', 60_000, () => request('/api/algo-config')),
   getStats: () => cached('stats', 30_000, () => request('/api/stats')),

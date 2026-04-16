@@ -3,6 +3,12 @@ import toast from 'react-hot-toast';
 import { TeamLogo } from './ui/TeamLogo.jsx';
 import tradeValuesChart from '../lib/tradeValues2026.json';
 import { getAlgoConfig } from '../lib/algoConfig.js';
+import {
+  futurePicksForTeam,
+  formatPickLabel,
+  isFuturePickId,
+  fallbackFutureValue,
+} from '../lib/futurePicks.js';
 
 // ── Probability helpers ─────────────────────────────────────────────────────
 // Trades have a % chance of acceptance based on how far the mover-up's value
@@ -68,9 +74,16 @@ function tradeHash(from, partner, aPicks, bPicks) {
 //   lockedPicks        - Set<number> of specific pick_numbers to exclude
 //                        (R1 Draft mode where picks aren't sequential)
 //   onClockTeam        - team currently on the clock (pre-selects as partner)
+//   futureOwnership    - Map<id, {id,year,round,team,value}> of future-year
+//                        picks. When provided, each side renders its 2027
+//                        picks below the current-year picks and they become
+//                        tradable assets like any other.
 //   onClose            - called to dismiss the modal
 //   onAccepted         - called with { fromTeam, partnerTeam, yourPicks,
-//                        theirPicks } when the trade is accepted
+//                        theirPicks } when the trade is accepted. yourPicks
+//                        and theirPicks are arrays whose elements are EITHER
+//                        numbers (current-year pick_number) or strings
+//                        (future-year pick id from futurePicks.js).
 export function TradeModal({
   userTeam,
   fromTeamEditable = false,
@@ -78,16 +91,28 @@ export function TradeModal({
   picksMadeCount = 0,
   lockedPicks,
   onClockTeam,
+  futureOwnership,
   onClose,
   onAccepted,
 }) {
   const [fromTeam, setFromTeam] = useState(userTeam);
   const effectiveFromTeam = fromTeamEditable ? fromTeam : userTeam;
-  const valueMap = useMemo(() => {
-    const m = new Map();
-    for (const r of tradeValuesChart) m.set(r.pick, r.value);
-    return m;
-  }, []);
+
+  // Unified value lookup — current-year picks come from the Rich Hill chart
+  // (numeric ids), future-year picks carry their value on the ownership row
+  // (string ids). Falls back to the per-round constant if a saved mock
+  // references a future pick that isn't in the current ownership map.
+  const valueOf = useMemo(() => {
+    const chartByPick = new Map();
+    for (const r of tradeValuesChart) chartByPick.set(r.pick, r.value);
+    return (id) => {
+      if (typeof id === 'number') return chartByPick.get(id) ?? 0;
+      if (futureOwnership && futureOwnership.has(id)) {
+        return futureOwnership.get(id).value ?? fallbackFutureValue(id);
+      }
+      return fallbackFutureValue(id);
+    };
+  }, [futureOwnership]);
 
   const futurePicks = useMemo(
     () => liveOrder.filter((s) => {
@@ -152,8 +177,20 @@ export function TradeModal({
     [futurePicks, partnerTeam]
   );
 
-  const yourTotal = [...yourSelected].reduce((n, p) => n + (valueMap.get(p) ?? 0), 0);
-  const theirTotal = [...theirSelected].reduce((n, p) => n + (valueMap.get(p) ?? 0), 0);
+  // Future-year picks (e.g. 2027). Each team owns one per round; ownership
+  // can change mid-session via prior trades, which is why we read from the
+  // futureOwnership Map on every render rather than caching by team.
+  const myFutureYearPicks = useMemo(
+    () => (futureOwnership ? futurePicksForTeam(futureOwnership, effectiveFromTeam) : []),
+    [futureOwnership, effectiveFromTeam]
+  );
+  const partnerFutureYearPicks = useMemo(
+    () => (futureOwnership ? futurePicksForTeam(futureOwnership, partnerTeam) : []),
+    [futureOwnership, partnerTeam]
+  );
+
+  const yourTotal = [...yourSelected].reduce((n, p) => n + valueOf(p), 0);
+  const theirTotal = [...theirSelected].reduce((n, p) => n + valueOf(p), 0);
   const yourCount = yourSelected.size;
   const theirCount = theirSelected.size;
 
@@ -227,8 +264,21 @@ export function TradeModal({
     // with the single best pick in the deal) and require THAT team to pay a
     // premium. This handles both directions naturally — whether the FROM side
     // is moving up or down, the mover-up is always the one who must overpay.
-    const fromBest = Math.min(...yourSelected);
-    const partnerBest = Math.min(...theirSelected);
+    //
+    // Future-year picks (string ids) are deliberately ignored here — they
+    // never define the "top pick" of a deal because they're discounted
+    // assets, not current-year capital. A side that only sends future picks
+    // is treated as having no current-year "best", which makes the OTHER
+    // side the mover-up by virtue of having any current pick at all.
+    const numericMin = (set) => {
+      let best = Infinity;
+      for (const id of set) {
+        if (typeof id === 'number' && id < best) best = id;
+      }
+      return best;
+    };
+    const fromBest = numericMin(yourSelected);
+    const partnerBest = numericMin(theirSelected);
     const topPickInDeal = Math.min(fromBest, partnerBest);
 
     // Who receives that top pick? The OPPOSITE side of whoever gives it.
@@ -380,7 +430,7 @@ export function TradeModal({
   }
 
   function pickButton(slot, selected, onClick) {
-    const value = valueMap.get(slot.pick_number) ?? 0;
+    const value = valueOf(slot.pick_number) ?? 0;
     return (
       <button
         key={slot.pick_number}
@@ -395,6 +445,30 @@ export function TradeModal({
           #{slot.pick_number} <span className="text-text-muted">· R{slot.round}</span>
         </div>
         <div className="text-[9.5px] text-text-muted">val {value}</div>
+      </button>
+    );
+  }
+
+  // Future-pick chip — visually distinct from current-year pick chips so the
+  // user can see at a glance which assets in the deal are 2027 capital. We
+  // use the gold accent (matches "Force Trade") to signal "different asset
+  // class" without inventing a brand-new color.
+  function futurePickButton(fp, selected, onClick) {
+    return (
+      <button
+        key={fp.id}
+        onClick={onClick}
+        title={`${fp.year} Round ${fp.round} pick`}
+        className={`text-left px-2 py-1.5 rounded-md border text-[11px] transition ${
+          selected
+            ? 'border-gold bg-gold/[0.12] text-text-primary'
+            : 'border-gold/30 bg-bg-surface/40 text-text-secondary hover:border-gold/60'
+        }`}
+      >
+        <div className="font-mono font-semibold">
+          {fp.year} <span className="text-text-muted">· R{fp.round}</span>
+        </div>
+        <div className="text-[9.5px] text-text-muted">val {fp.value}</div>
       </button>
     );
   }
@@ -585,12 +659,20 @@ export function TradeModal({
                     togglePick(yourSelected, setYourSelected, s.pick_number)
                   )
                 )}
-                {myFuturePicks.length === 0 && (
+                {myFuturePicks.length === 0 && myFutureYearPicks.length === 0 && (
                   <div className="col-span-3 text-[11px] text-text-muted py-2">
                     No remaining picks.
                   </div>
                 )}
               </div>
+              {myFutureYearPicks.length > 0 && (
+                <FuturePickRow
+                  picks={myFutureYearPicks}
+                  selected={yourSelected}
+                  onToggle={(id) => togglePick(yourSelected, setYourSelected, id)}
+                  renderButton={futurePickButton}
+                />
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -612,12 +694,20 @@ export function TradeModal({
                     togglePick(theirSelected, setTheirSelected, s.pick_number)
                   )
                 )}
-                {partnerFuturePicks.length === 0 && (
+                {partnerFuturePicks.length === 0 && partnerFutureYearPicks.length === 0 && (
                   <div className="col-span-3 text-[11px] text-text-muted py-2">
                     No picks remaining.
                   </div>
                 )}
               </div>
+              {partnerFutureYearPicks.length > 0 && (
+                <FuturePickRow
+                  picks={partnerFutureYearPicks}
+                  selected={theirSelected}
+                  onToggle={(id) => togglePick(theirSelected, setTheirSelected, id)}
+                  renderButton={futurePickButton}
+                />
+              )}
             </div>
           </div>
 
@@ -676,6 +766,25 @@ export function TradeModal({
                 : 'Trade Not Allowed'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Standalone row of future-year pick chips. Rendered below each side's
+// current-year grid so the user sees clearly that 2027 capital is a separate
+// pool from this year's picks. Empty rounds aren't possible (every team
+// always owns 7 future picks pre-trade), but post-trade a side may end up
+// with zero — in that case the parent omits this row entirely.
+function FuturePickRow({ picks, selected, onToggle, renderButton }) {
+  const year = picks[0]?.year;
+  return (
+    <div className="mt-2">
+      <div className="font-display text-[9px] font-semibold uppercase tracking-[0.14em] text-gold/80 mb-1">
+        {year} Future Picks
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {picks.map((fp) => renderButton(fp, selected.has(fp.id), () => onToggle(fp.id)))}
       </div>
     </div>
   );
