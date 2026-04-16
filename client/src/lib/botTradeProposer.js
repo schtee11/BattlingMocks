@@ -439,12 +439,51 @@ export function generateBotTradeOffers({
         urgency: Math.round(urgency * 100) / 100,
       },
     });
-
-    if (offers.length >= MAX_OFFERS) break;
+    // NOTE: do NOT break when offers.length >= MAX_OFFERS here. We want to
+    // evaluate every bot in the lookahead window so the geographic-spread
+    // selection below has real choice. Breaking early meant the three
+    // closest teams always got the three slots.
   }
 
-  // Sort by urgency descending so the most "real" offer is always on top.
+  // Geographic spread selection. Without this step, all three offers
+  // would typically come from the teams picking immediately after the
+  // user (they're evaluated first). Real-world trade-up offers come from
+  // teams across the near/mid/far range, so we bucket by distance and
+  // take the most urgent offer per bucket before filling any remaining
+  // slots with the next most urgent offers regardless of distance.
   offers.sort((a, b) => b.summary.urgency - a.summary.urgency);
-  dbg('result', offers.length, 'offers', offers.map((o) => `${o.botTeam}@${o.botPick}`));
-  return offers.slice(0, MAX_OFFERS);
+  dbg(
+    'candidates (pre-spread)',
+    offers.map((o) => `${o.botTeam}@${o.botPick}(u=${o.summary.urgency})`)
+  );
+
+  const bucketOf = (offer) => {
+    const d = offer.botPick - offer.userPick;
+    if (d <= 5) return 'near';
+    if (d <= 12) return 'mid';
+    return 'far';
+  };
+
+  // Pick the most urgent offer per bucket first.
+  const chosen = [];
+  const usedBuckets = new Set();
+  for (const offer of offers) {
+    if (chosen.length >= MAX_OFFERS) break;
+    const bucket = bucketOf(offer);
+    if (usedBuckets.has(bucket)) continue;
+    usedBuckets.add(bucket);
+    chosen.push(offer);
+  }
+  // Fill remaining slots with next most urgent, ignoring bucket.
+  for (const offer of offers) {
+    if (chosen.length >= MAX_OFFERS) break;
+    if (chosen.includes(offer)) continue;
+    chosen.push(offer);
+  }
+
+  // Within the final set, sort by urgency again so the top UI slot is
+  // always the most "real" offer.
+  chosen.sort((a, b) => b.summary.urgency - a.summary.urgency);
+  dbg('result', chosen.length, 'offers', chosen.map((o) => `${o.botTeam}@${o.botPick}`));
+  return chosen;
 }
