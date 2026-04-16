@@ -46,7 +46,10 @@ export default function Draft() {
   // Prediction:  sandbox, trades + exports, up to 10 saved slots in local
   //              storage, resets on page leave unless explicitly saved.
   const [draftMode, setDraftMode] = useState(() => {
-    if (typeof window === 'undefined') return 'competition';
+    if (typeof window === 'undefined') return 'prediction';
+    // Anonymous users default to prediction — they can't submit to the
+    // leaderboard anyway. Logged-in users respect their stored preference.
+    if (!user) return 'prediction';
     return localStorage.getItem('mds_draft_mode') === 'prediction' ? 'prediction' : 'competition';
   });
   useEffect(() => {
