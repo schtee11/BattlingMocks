@@ -9,7 +9,7 @@ import { Avatar } from './ui/Avatar.jsx';
 // here — the nav renders from this single source so desktop and mobile
 // stay in sync and ordering only has to be tweaked in one place.
 const NAV_LINKS = [
-  { to: '/draft', label: 'Draft', description: 'Predictive mock' },
+  { to: '/draft', label: 'Round 1 Mock', description: 'Predictive mock' },
   { to: '/team-mock', label: 'Team Mock', description: 'GM all 7 rounds' },
   { to: '/leaderboard', label: 'Leaderboard', description: 'Live standings' },
   { to: '/live', label: 'Live', description: 'Draft night' },
