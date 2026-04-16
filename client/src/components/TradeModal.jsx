@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { TeamLogo } from './ui/TeamLogo.jsx';
 import tradeValuesChart from '../lib/tradeValues2026.json';
@@ -84,6 +84,11 @@ function tradeHash(from, partner, aPicks, bPicks) {
 //                        and theirPicks are arrays whose elements are EITHER
 //                        numbers (current-year pick_number) or strings
 //                        (future-year pick id from futurePicks.js).
+//   initialPartnerTeam - when set, seeds the partner picker (overrides
+//                        onClockTeam). Used by the "Counter" flow so the
+//                        modal opens with the bot that called the user.
+//   initialYourPicks   - pre-select these ids on the FROM side (counter seed)
+//   initialTheirPicks  - pre-select these ids on the partner side (counter seed)
 export function TradeModal({
   userTeam,
   fromTeamEditable = false,
@@ -94,6 +99,9 @@ export function TradeModal({
   futureOwnership,
   onClose,
   onAccepted,
+  initialPartnerTeam,
+  initialYourPicks,
+  initialTheirPicks,
 }) {
   const [fromTeam, setFromTeam] = useState(userTeam);
   const effectiveFromTeam = fromTeamEditable ? fromTeam : userTeam;
@@ -155,17 +163,27 @@ export function TradeModal({
     return otherTeams[0] || null;
   }, [onClockTeam, effectiveFromTeam, otherTeams]);
 
-  const [partnerTeam, setPartnerTeam] = useState(initialPartner);
-  const [yourSelected, setYourSelected] = useState(new Set());
-  const [theirSelected, setTheirSelected] = useState(new Set());
+  const [partnerTeam, setPartnerTeam] = useState(initialPartnerTeam ?? initialPartner);
+  const [yourSelected, setYourSelected] = useState(() => new Set(initialYourPicks || []));
+  const [theirSelected, setTheirSelected] = useState(() => new Set(initialTheirPicks || []));
   // Tracks hashes of trades the AI has already declined so the user can't
   // re-propose identical terms — they must change the deal first.
   const [rejectedHashes, setRejectedHashes] = useState(new Set());
 
-  useEffect(() => { setTheirSelected(new Set()); }, [partnerTeam]);
+  // Skip the first run of the reset effects so counter-offer seeds aren't
+  // wiped immediately on mount. Subsequent user-driven partner/from changes
+  // still clear the selection as before.
+  const resetGuardRef = useRef(false);
+  useEffect(() => { resetGuardRef.current = true; }, []);
+
+  useEffect(() => {
+    if (!resetGuardRef.current) return;
+    setTheirSelected(new Set());
+  }, [partnerTeam]);
   // When the user switches "From" team (R1 dual-mode), reset both sides and
   // re-seed the partner to a still-valid team.
   useEffect(() => {
+    if (!resetGuardRef.current) return;
     setYourSelected(new Set());
     setTheirSelected(new Set());
     setPartnerTeam((cur) => (cur && cur !== effectiveFromTeam ? cur : otherTeams[0] || null));

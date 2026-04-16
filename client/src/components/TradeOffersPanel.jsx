@@ -13,7 +13,7 @@ import { formatPickLabelCompact } from '../lib/futurePicks.js';
 // Each offer carries an `id` (botTeam-userPick-botPick) so the parent can
 // track per-card dismissal without losing the overall offer set when it
 // recomputes (e.g. the user picks something else and on-clock advances).
-export function TradeOffersPanel({ offers, onAccept, onDismiss, onDismissAll }) {
+export function TradeOffersPanel({ offers, onAccept, onDismiss, onDismissAll, onCounter }) {
   if (!offers || offers.length === 0) return null;
 
   return (
@@ -50,14 +50,20 @@ export function TradeOffersPanel({ offers, onAccept, onDismiss, onDismissAll }) 
       </div>
       <div className="space-y-2">
         {offers.map((o) => (
-          <OfferCard key={o.id} offer={o} onAccept={onAccept} onDismiss={onDismiss} />
+          <OfferCard
+            key={o.id}
+            offer={o}
+            onAccept={onAccept}
+            onDismiss={onDismiss}
+            onCounter={onCounter}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function OfferCard({ offer, onAccept, onDismiss }) {
+function OfferCard({ offer, onAccept, onDismiss, onCounter }) {
   const { botTeam, theirPicks, yourPicks, summary } = offer;
   // Surplus shading — within ±2% feels "even", positive = good for user.
   const surplusColor =
@@ -116,6 +122,15 @@ function OfferCard({ offer, onAccept, onDismiss }) {
         >
           Reject
         </button>
+        {onCounter && (
+          <button
+            onClick={() => onCounter(offer)}
+            title="Adjust the terms and send back a counter-offer"
+            className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-gold rounded-md px-3 py-1.5 border border-gold/40 hover:border-gold hover:bg-gold/[0.06] transition"
+          >
+            Counter
+          </button>
+        )}
         <button
           onClick={() => onAccept(offer)}
           className="flex-1 font-display font-bold text-[10px] uppercase tracking-[0.14em] text-bg-deep rounded-md px-3 py-1.5 transition hover:brightness-110"

@@ -1798,6 +1798,25 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setDismissedOfferIds(new Set(incomingOffers.map((o) => o.id)));
   }
 
+  // Counter/rebuttal — open the standard TradeModal pre-filled with the
+  // offer's picks so the user can tweak the terms and propose back. The
+  // original offer is dismissed (treated as a reject); the counter runs
+  // through the same acceptance-probability path as any manual proposal.
+  const [counterSeed, setCounterSeed] = useState(null);
+  function handleCounterOffer(offer) {
+    setCounterSeed({
+      partnerTeam: offer.botTeam,
+      yourPicks: offer.yourPicks,
+      theirPicks: offer.theirPicks,
+    });
+    setDismissedOfferIds((prev) => {
+      const next = new Set(prev);
+      next.add(offer.id);
+      return next;
+    });
+    setTradeOpen(true);
+  }
+
   // The visible-offer set is whatever we generated minus what the user
   // explicitly dismissed for this on-clock pick.
   const visibleOffers = useMemo(
@@ -2556,6 +2575,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 onAccept={handleAcceptOffer}
                 onDismiss={handleDismissOffer}
                 onDismissAll={handleDismissAllOffers}
+                onCounter={handleCounterOffer}
               />
             </div>
           )}
@@ -2736,6 +2756,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                         onAccept={handleAcceptOffer}
                         onDismiss={handleDismissOffer}
                         onDismissAll={handleDismissAllOffers}
+                        onCounter={handleCounterOffer}
                       />
                     </div>
                   )}
@@ -3012,10 +3033,14 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           picksMadeCount={picks.length}
           onClockTeam={currentSlot?.team}
           futureOwnership={futureOwnership}
-          onClose={() => setTradeOpen(false)}
+          initialPartnerTeam={counterSeed?.partnerTeam}
+          initialYourPicks={counterSeed?.yourPicks}
+          initialTheirPicks={counterSeed?.theirPicks}
+          onClose={() => { setTradeOpen(false); setCounterSeed(null); }}
           onAccepted={(swap) => {
             applyTradeLocal(swap);
             setTradeOpen(false);
+            setCounterSeed(null);
             toast.success('Trade accepted!');
             // Always resume after a trade. The engine effect will detect
             // whether the current slot still belongs to the user (stays on
