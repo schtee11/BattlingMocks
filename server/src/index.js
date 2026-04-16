@@ -7,7 +7,7 @@ import players from './routes/players.js';
 import users from './routes/users.js';
 import mocks from './routes/mocks.js';
 import leaderboard from './routes/leaderboard.js';
-import admin from './routes/admin.js';
+import admin from './routes/admin/index.js';
 import draftOrder from './routes/draftOrder.js';
 import stats from './routes/stats.js';
 import actuals from './routes/actuals.js';

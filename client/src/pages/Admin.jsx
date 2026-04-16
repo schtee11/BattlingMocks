@@ -26,6 +26,7 @@ import { posHex } from '../lib/positions.js';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 
 const TABS = [
+  ['volume', 'Volume Stats'],
   ['results', 'Enter Results'],
   ['order', 'Draft Order'],
   ['players', 'Prospects'],
@@ -34,7 +35,6 @@ const TABS = [
   ['scoring', 'Scoring & Lock'],
   ['algo', 'Algo Tuning'],
   ['consensus', 'Consensus'],
-  ['volume', 'Volume Stats'],
   ['boards', 'Boards'],
 ];
 
@@ -44,7 +44,7 @@ export default function Admin() {
   const [key, setKey] = useState(localStorage.getItem('mds_admin') || '');
   const [unlocked, setUnlocked] = useState(false);
   const [unlockBusy, setUnlockBusy] = useState(false);
-  const [tab, setTab] = useState('results');
+  const [tab, setTab] = useState('volume');
   const playerSearchRef = useRef(null);
 
   const [players, setPlayers] = useState([]);
