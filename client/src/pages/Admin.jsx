@@ -85,6 +85,9 @@ export default function Admin() {
   const [syncProspectsBusy, setSyncProspectsBusy] = useState(false);
   const [syncYear, setSyncYear] = useState(2026);
   const [syncing, setSyncing] = useState(false);
+  // Draft Order tab: scope selector that drives which sync handler runs.
+  // 'r1' → Round 1 overwrite (hand-curated teams). 'r2r7' → rounds 2-7 only.
+  const [orderSyncScope, setOrderSyncScope] = useState('r1');
   const [pollStatus, setPollStatus] = useState(null);
   const [pollInterval, setPollInterval] = useState(20);
   // Trade calculator state
@@ -623,6 +626,13 @@ export default function Admin() {
     } finally {
       setSyncing(false);
     }
+  }
+
+  // Dispatcher used by the unified Draft Order tab form. Delegates to the
+  // existing R1 / R2-R7 handlers based on the selected scope.
+  function runOrderSync(dry) {
+    if (orderSyncScope === 'r2r7') return syncAllRoundsFromEspn(dry);
+    return syncDraftOrderFromEspn(dry);
   }
 
   async function syncPicksFromEspn(dry) {
@@ -1246,14 +1256,15 @@ export default function Admin() {
       {tab === 'order' && (
         <div className="space-y-4">
         <Card className="p-4">
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
-            <div>
-              <h3 className="font-semibold text-text-primary">Sync draft order from ESPN</h3>
-              <p className="text-text-muted text-xs mt-0.5">
-                Round 1 only · overwrites team abbr + name. Team needs are left untouched.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="mb-3">
+            <h3 className="font-semibold text-text-primary">Sync draft order from ESPN</h3>
+            <p className="text-text-muted text-xs mt-0.5">
+              R1 overwrites team abbr + name (team needs preserved). R2–R7 pulls
+              rounds 2-7 and leaves R1 untouched. Preview fetches without writing.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
               <label className="text-[11px] text-text-muted font-display uppercase tracking-wide">Year</label>
               <input
                 type="number"
@@ -1261,27 +1272,36 @@ export default function Admin() {
                 onChange={(e) => setSyncYear(parseInt(e.target.value, 10) || 2026)}
                 className="w-20 bg-bg-deep border border-border-focus rounded px-2 py-1.5 text-text-primary text-sm font-mono"
               />
-              <Button size="sm" variant="secondary" onClick={() => syncDraftOrderFromEspn(true)} disabled={syncing}>
-                {syncing ? '…' : 'Preview R1'}
-              </Button>
-              <Button size="sm" onClick={() => syncDraftOrderFromEspn(false)} disabled={syncing}>
-                {syncing ? 'Syncing…' : 'Sync R1'}
-              </Button>
             </div>
-          </div>
-          <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t border-border-subtle">
-            <div>
-              <h4 className="text-text-primary text-[13px] font-semibold">All 7 rounds (team-mock prep)</h4>
-              <p className="text-text-muted text-xs mt-0.5">
-                Pulls rounds 2-7 from ESPN and seeds the DB. R1 is preserved (hand-curated + team needs intact).
-              </p>
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] text-text-muted font-display uppercase tracking-wide">Scope</label>
+              <div className="flex rounded-md border border-border-focus overflow-hidden">
+                {[
+                  { id: 'r1', label: 'R1 only' },
+                  { id: 'r2r7', label: 'R2–R7' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setOrderSyncScope(opt.id)}
+                    disabled={syncing}
+                    className={`px-3 py-1.5 text-xs font-display transition ${
+                      orderSyncScope === opt.id
+                        ? 'bg-accent/[0.1] text-accent'
+                        : 'text-text-secondary hover:text-text-primary'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button size="sm" variant="secondary" onClick={() => syncAllRoundsFromEspn(true)} disabled={syncing}>
-                {syncing ? '…' : 'Preview R2-R7'}
+            <div className="flex items-center gap-2 ml-auto">
+              <Button size="sm" variant="secondary" onClick={() => runOrderSync(true)} disabled={syncing}>
+                {syncing ? '…' : 'Preview'}
               </Button>
-              <Button size="sm" onClick={() => syncAllRoundsFromEspn(false)} disabled={syncing}>
-                {syncing ? 'Syncing…' : 'Sync R2-R7'}
+              <Button size="sm" onClick={() => runOrderSync(false)} disabled={syncing}>
+                {syncing ? 'Syncing…' : 'Sync'}
               </Button>
             </div>
           </div>
