@@ -2441,13 +2441,6 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               </select>
             </div>
           )}
-          <button
-            onClick={start}
-            className="shrink-0 font-display font-bold uppercase tracking-[0.14em] text-[11px] text-bg-deep rounded-lg px-4 py-2 transition hover:brightness-110 active:scale-[0.98]"
-            style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
-          >
-            Start Mock Draft
-          </button>
         </div>
       );
     }
@@ -2807,34 +2800,44 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 />
               </label>
             </div>
-            {/* Pause / Resume / Trade */}
-            <div className="grid grid-cols-2 gap-2">
-              {phase === PHASE_RUNNING && (
-                <button
-                  onClick={pause}
-                  className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition"
-                >
-                  Pause
-                </button>
-              )}
-              {phase === PHASE_PAUSED && (
-                <button
-                  onClick={resume}
-                  className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-bg-deep rounded-lg px-3 py-1.5 transition hover:brightness-110"
-                  style={{ background: 'var(--gradient-accent)' }}
-                >
-                  Resume
-                </button>
-              )}
-              {(phase === PHASE_RUNNING || phase === PHASE_PAUSED || phase === PHASE_ON_CLOCK) && (
-                <button
-                  onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
-                  className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-primary rounded-lg px-3 py-1.5 border border-accent/40 hover:bg-accent/[0.08] transition"
-                >
-                  Propose Trade
-                </button>
-              )}
-            </div>
+            {/* Start / Pause / Resume / Trade */}
+            {phase === PHASE_READY ? (
+              <button
+                onClick={start}
+                className="w-full font-display font-bold uppercase tracking-[0.14em] text-[12px] text-bg-deep rounded-lg px-4 py-2.5 transition hover:brightness-110 active:scale-[0.99]"
+                style={{ background: 'var(--gradient-accent)', boxShadow: '0 0 18px -6px rgba(0,229,255,0.55)' }}
+              >
+                Start Mock Draft
+              </button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {phase === PHASE_RUNNING && (
+                  <button
+                    onClick={pause}
+                    className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition"
+                  >
+                    Pause
+                  </button>
+                )}
+                {phase === PHASE_PAUSED && (
+                  <button
+                    onClick={resume}
+                    className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-bg-deep rounded-lg px-3 py-1.5 transition hover:brightness-110"
+                    style={{ background: 'var(--gradient-accent)' }}
+                  >
+                    Resume
+                  </button>
+                )}
+                {(phase === PHASE_RUNNING || phase === PHASE_PAUSED || phase === PHASE_ON_CLOCK) && (
+                  <button
+                    onClick={() => { if (phase === PHASE_RUNNING) setPhase(PHASE_PAUSED); setTradeOpen(true); }}
+                    className="font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-primary rounded-lg px-3 py-1.5 border border-accent/40 hover:bg-accent/[0.08] transition"
+                  >
+                    Propose Trade
+                  </button>
+                )}
+              </div>
+            )}
             {phase !== PHASE_READY && (
               <button
                 onClick={requestRestart}

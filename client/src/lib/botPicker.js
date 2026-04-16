@@ -145,6 +145,16 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
           boost *= decayFactor;
         }
       }
+
+      // Premium-pick anchor — top picks are consensus events. Without this,
+      // the default boost (~0.20 for top need) lets a top BPA at any
+      // position occasionally beat the obvious franchise pick (e.g. a #2
+      // ranked WR sneaking past the consensus #1 QB for a QB-needy team
+      // at #1 overall). Real GMs at premium slots play it safe — amplify
+      // the needs boost so top-ranked need-fillers decisively dominate.
+      if (pickNumber <= 3) boost *= 4;
+      else if (pickNumber <= 10) boost *= 2;
+
       needsMultiplier = 1 + boost;
     }
 
@@ -208,10 +218,13 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
 
   // Weighted random selection from a top-N candidate pool.
   scored.sort((a, b) => b.score - a.score);
-  const poolSize = Math.min(
-    Math.max(3, Math.round(5 + randomness * 10)),
-    scored.length
-  );
+  // Top-3 picks shrink the pool to 2 so the obvious franchise pick
+  // can't be edged out via lottery. Top-5 caps at 3. Picks 6+ keep
+  // the original size-from-randomness formula so 4th/5th-priority
+  // needs can still surface.
+  const basePoolSize = Math.max(3, Math.round(5 + randomness * 10));
+  const premiumPoolCap = pickNumber <= 3 ? 2 : pickNumber <= 5 ? 3 : basePoolSize;
+  const poolSize = Math.min(premiumPoolCap, basePoolSize, scored.length);
   const pool = scored.slice(0, poolSize);
 
   // Apply selection sharpness: weight = score^sharpness. Sharpness > 1
