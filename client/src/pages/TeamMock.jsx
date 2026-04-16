@@ -205,9 +205,11 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
               })}
               <span className="mx-2 text-text-muted">·</span>
               {myPicks.length} pick{myPicks.length === 1 ? '' : 's'}
-              {Array.isArray(savedMock.trades) && savedMock.trades.length > 0 && (
-                <span> · {savedMock.trades.length} trade{savedMock.trades.length === 1 ? '' : 's'}</span>
-              )}
+              {(() => {
+                const n = (Array.isArray(savedMock.trades) ? savedMock.trades : [])
+                  .filter((t) => t.initiator !== 'cpu').length;
+                return n > 0 ? <span> · {n} trade{n === 1 ? '' : 's'}</span> : null;
+              })()}
             </p>
           </div>
         </div>
@@ -326,8 +328,14 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
         ))}
       </div>
 
-      {/* ── Trades made during the mock ── */}
-      {Array.isArray(savedMock.trades) && savedMock.trades.length > 0 && (
+      {/* ── Trades made during the mock ── Only show trades the user
+           participated in. CPU-to-CPU trades affect the board but don't
+           clutter the wrap-up. */}
+      {(() => {
+        const userTradesList = (Array.isArray(savedMock.trades) ? savedMock.trades : [])
+          .filter((t) => t.initiator !== 'cpu');
+        if (userTradesList.length === 0) return null;
+        return (
         <div className="mt-10">
           <div className="flex items-center gap-3 mb-3">
             <div className="font-display text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.18em] text-text-muted">
@@ -335,11 +343,11 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
             </div>
             <div className="flex-1 h-px bg-border-subtle" />
             <div className="font-mono text-[10px] text-text-muted">
-              {savedMock.trades.length} trade{savedMock.trades.length === 1 ? '' : 's'}
+              {userTradesList.length} trade{userTradesList.length === 1 ? '' : 's'}
             </div>
           </div>
           <div className="space-y-3">
-            {savedMock.trades.map((t, i) => {
+            {userTradesList.map((t, i) => {
               const isCpuTrade = t.teamA && t.teamA !== userTeam;
               const leftTeam = isCpuTrade ? t.teamA : userTeam;
               const rightTeam = isCpuTrade ? t.teamB : t.partnerTeam;
@@ -375,7 +383,8 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
             })}
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -705,8 +714,11 @@ const ExportCard = forwardRef(function ExportCard(
         </div>
       ))}
 
-      {/* ── Trades Made ── */}
-      {trades.length > 0 && (
+      {/* ── Trades Made ── Only user trades appear in the share export. */}
+      {(() => {
+        const userTradesExport = trades.filter((t) => t.initiator !== 'cpu');
+        if (userTradesExport.length === 0) return null;
+        return (
         <div style={{ marginBottom: 32 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
             <div
@@ -722,11 +734,11 @@ const ExportCard = forwardRef(function ExportCard(
             </div>
             <div style={{ flex: 1, height: 1, background: C.subtle }} />
             <div style={{ fontSize: 11, color: C.muted, fontFamily: 'monospace' }}>
-              {trades.length} trade{trades.length === 1 ? '' : 's'}
+              {userTradesExport.length} trade{userTradesExport.length === 1 ? '' : 's'}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {trades.map((t, i) => {
+            {userTradesExport.map((t, i) => {
               const isCpuTrade = t.teamA && t.teamA !== userTeam;
               const leftTeam = isCpuTrade ? t.teamA : userTeam;
               const rightTeam = isCpuTrade ? t.teamB : t.partnerTeam;
@@ -808,12 +820,13 @@ const ExportCard = forwardRef(function ExportCard(
             })}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Branding footer ── */}
       <div
         style={{
-          marginTop: trades.length > 0 ? 0 : 36,
+          marginTop: trades.filter((t) => t.initiator !== 'cpu').length > 0 ? 0 : 36,
           paddingTop: 20,
           borderTop: `1px solid ${C.subtle}`,
           display: 'flex',
@@ -1414,14 +1427,18 @@ function ResultsView({
           ))}
         </div>
 
-        {/* ── Trades made during the mock ── */}
-        {trades.length > 0 && (
-          <div className="mt-8">
+        {/* ── Trades made during the mock ── Only user trades appear
+             in the live post-draft results card. */}
+        {(() => {
+          const userTradesLive = trades.filter((t) => t.initiator !== 'cpu');
+          if (userTradesLive.length === 0) return null;
+          return (
+        <div className="mt-8">
             <div className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-text-primary mb-3">
               Trades Made
             </div>
             <div className="space-y-2">
-              {trades.map((t, i) => {
+              {userTradesLive.map((t, i) => {
                 const isCpuTrade = t.teamA && t.teamA !== team;
                 const leftTeam = isCpuTrade ? t.teamA : team;
                 const rightTeam = isCpuTrade ? t.teamB : t.partnerTeam;
@@ -1457,7 +1474,8 @@ function ResultsView({
               })}
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* ── Sticky bottom bar — terminal CTA ── */}
         <div className="sticky bottom-0 left-0 right-0 py-3 px-4 bg-bg-deep/90 backdrop-blur-sm border-t border-border-subtle mt-8">
@@ -2293,6 +2311,17 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
   // Draft history — most recent first so users see the latest pick at top
   const recentPicks = useMemo(() => [...picks].reverse(), [picks]);
+  // Pick numbers that changed hands in any trade (user or CPU). Used by
+  // the draft board to badge traded picks so the user can tell at a
+  // glance which rows were swapped.
+  const tradedPickNumbers = useMemo(() => {
+    const s = new Set();
+    for (const t of trades) {
+      for (const id of t.gave || []) if (typeof id === 'number') s.add(id);
+      for (const id of t.got || []) if (typeof id === 'number') s.add(id);
+    }
+    return s;
+  }, [trades]);
   // Only the user's picks, in draft order (not reversed — small list, easier to
   // read chronologically so users can see their roster build out top to bottom)
   const myPicks = useMemo(() => picks.filter((p) => p.is_user), [picks]);
@@ -2488,6 +2517,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           #{pick.pick_number}
         </span>
         <TeamLogo abbr={pick.team} size="xs" />
+        {tradedPickNumbers.has(pick.pick_number) && (
+          <span className="font-mono text-[9px] text-gold shrink-0" title="Pick changed hands in a trade" aria-label="traded pick">⇄</span>
+        )}
         <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="xs" />
         <div className="flex-1 min-w-0">
           <div className={`text-[12px] font-semibold truncate ${pick.is_user ? 'text-text-primary' : 'text-text-secondary'}`}>
@@ -2515,6 +2547,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         <span className="font-mono text-[9px] text-text-muted w-8 text-right shrink-0">
           {ROUND_LABELS[pick.round] || `R${pick.round}`} · {pick.pick_number}
         </span>
+        {tradedPickNumbers.has(pick.pick_number) && (
+          <span className="font-mono text-[9px] text-gold shrink-0" title="Pick acquired via trade" aria-label="traded pick">⇄</span>
+        )}
         <PlayerHeadshot url={player.headshot_url} name={player.name} position={player.position} size="xs" />
         <div className="flex-1 min-w-0">
           <div className="text-[11px] font-semibold truncate text-text-primary leading-tight">
@@ -2668,26 +2703,29 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 className="w-full h-1 accent-accent cursor-pointer"
               />
             </div>
-            {/* Trade feature toggles */}
-            <div className="space-y-1.5">
-              <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+            {/* Trade feature toggles — locked after the draft starts so
+                a mid-run flip doesn't leave a half-applied state. */}
+            <div className={`space-y-1.5 ${phase !== PHASE_READY ? 'opacity-60' : ''}`}>
+              <label className={`flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted select-none ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                 <span>Trade Offers</span>
                 <input
                   type="checkbox"
                   checked={offersEnabled}
+                  disabled={phase !== PHASE_READY}
                   onChange={(e) => setOffersEnabled(e.target.checked)}
-                  className="w-3.5 h-3.5 accent-accent cursor-pointer"
-                  title="Incoming trade offers from bot teams when you're on the clock"
+                  className={`w-3.5 h-3.5 accent-accent ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  title={phase !== PHASE_READY ? 'Locked during an active draft — restart to change' : "Incoming trade offers from bot teams when you're on the clock"}
                 />
               </label>
-              <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+              <label className={`flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted select-none ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                 <span>Bot-vs-Bot Trades</span>
                 <input
                   type="checkbox"
                   checked={botBotEnabled}
+                  disabled={phase !== PHASE_READY}
                   onChange={(e) => setBotBotEnabled(e.target.checked)}
-                  className="w-3.5 h-3.5 accent-accent cursor-pointer"
-                  title="CPU teams trade amongst themselves during auto-run"
+                  className={`w-3.5 h-3.5 accent-accent ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  title={phase !== PHASE_READY ? 'Locked during an active draft — restart to change' : 'CPU teams trade amongst themselves during auto-run'}
                 />
               </label>
             </div>
@@ -2999,17 +3037,21 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                       className="flex-1 h-1 accent-accent cursor-pointer" />
                     <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
                   </div>
-                  <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                  <label className={`flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted select-none ${phase !== PHASE_READY ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                     <span>Trade Offers</span>
                     <input type="checkbox" checked={offersEnabled}
+                      disabled={phase !== PHASE_READY}
                       onChange={(e) => setOffersEnabled(e.target.checked)}
-                      className="w-3.5 h-3.5 accent-accent cursor-pointer" />
+                      title={phase !== PHASE_READY ? 'Locked during an active draft — restart to change' : undefined}
+                      className={`w-3.5 h-3.5 accent-accent ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`} />
                   </label>
-                  <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                  <label className={`flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted select-none ${phase !== PHASE_READY ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
                     <span>Bot-vs-Bot Trades</span>
                     <input type="checkbox" checked={botBotEnabled}
+                      disabled={phase !== PHASE_READY}
                       onChange={(e) => setBotBotEnabled(e.target.checked)}
-                      className="w-3.5 h-3.5 accent-accent cursor-pointer" />
+                      title={phase !== PHASE_READY ? 'Locked during an active draft — restart to change' : undefined}
+                      className={`w-3.5 h-3.5 accent-accent ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`} />
                   </label>
                   <button onClick={requestRestart}
                     className="w-full font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-muted hover:text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition">
@@ -3039,6 +3081,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                     }`} style={pick.is_user ? { borderLeft: `3px solid ${posHex(player?.position)}` } : undefined}>
                       <span className="font-mono text-[9px] text-text-muted w-6 text-right shrink-0">#{pick.pick_number}</span>
                       <TeamLogo abbr={pick.team} size="xs" />
+                      {tradedPickNumbers.has(pick.pick_number) && (
+                        <span className="font-mono text-[9px] text-gold shrink-0" title="Pick changed hands in a trade" aria-label="traded pick">⇄</span>
+                      )}
                       <PlayerHeadshot url={player?.headshot_url} name={player?.name} position={player?.position} size="xs" />
                       <div className="flex-1 min-w-0">
                         <div className={`text-[12px] font-semibold truncate leading-tight ${pick.is_user ? 'text-text-primary' : 'text-text-secondary'}`}>{player?.name}</div>
