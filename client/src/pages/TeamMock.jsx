@@ -2727,7 +2727,24 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 Click Start Mock Draft to begin
               </div>
             ) : (
-              recentPicks.map(renderHistoryPick)
+              recentPicks.map((pick, i) => {
+                const prev = i > 0 ? recentPicks[i - 1] : null;
+                const showHeader = !prev || prev.round !== pick.round;
+                return (
+                  <div key={`wrap-${pick.pick_number}`}>
+                    {showHeader && (
+                      <div className="flex items-center gap-2 py-1 px-1 opacity-55">
+                        <div className="flex-1 h-px bg-border-subtle" />
+                        <span className="font-display text-[9px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                          {ROUND_LABELS[pick.round] || `Round ${pick.round}`}
+                        </span>
+                        <div className="flex-1 h-px bg-border-subtle" />
+                      </div>
+                    )}
+                    {renderHistoryPick(pick)}
+                  </div>
+                );
+              })
             )}
           </div>
           {/* Controls */}
@@ -3127,25 +3144,38 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                   {phase === PHASE_READY ? 'Tap Start Mock Draft above to begin' : 'Draft in progress…'}
                 </div>
               ) : (
-                recentPicks.map((pick) => {
+                recentPicks.map((pick, i) => {
                   const player = byId.get(pick.player_id);
                   if (!player) return null;
+                  const prev = i > 0 ? recentPicks[i - 1] : null;
+                  const showHeader = !prev || prev.round !== pick.round;
                   return (
-                    <div key={pick.pick_number} className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl border transition-all ${
-                      pick.is_user ? 'border-accent/30 bg-accent/[0.05]' : 'border-border-subtle bg-bg-surface/20'
-                    }`} style={pick.is_user ? { borderLeft: `3px solid ${posHex(player?.position)}` } : undefined}>
-                      <span className="font-mono text-[9px] text-text-muted w-6 text-right shrink-0">#{pick.pick_number}</span>
-                      <TeamLogo abbr={pick.team} size="xs" />
-                      {tradedPickNumbers.has(pick.pick_number) && (
-                        <span className="font-mono text-[9px] text-gold shrink-0" title="Pick changed hands in a trade" aria-label="traded pick">⇄</span>
+                    <div key={`wrap-${pick.pick_number}`}>
+                      {showHeader && (
+                        <div className="flex items-center gap-2 py-1.5 px-1 opacity-55">
+                          <div className="flex-1 h-px bg-border-subtle" />
+                          <span className="font-display text-[9px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                            {ROUND_LABELS[pick.round] || `Round ${pick.round}`}
+                          </span>
+                          <div className="flex-1 h-px bg-border-subtle" />
+                        </div>
                       )}
-                      <PlayerHeadshot url={player?.headshot_url} name={player?.name} position={player?.position} size="xs" />
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-[12px] font-semibold truncate leading-tight ${pick.is_user ? 'text-text-primary' : 'text-text-secondary'}`}>{player?.name}</div>
-                        <div className="text-[9.5px] text-text-muted">{player?.school}</div>
+                      <div className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl border transition-all ${
+                        pick.is_user ? 'border-accent/30 bg-accent/[0.05]' : 'border-border-subtle bg-bg-surface/20'
+                      }`} style={pick.is_user ? { borderLeft: `3px solid ${posHex(player?.position)}` } : undefined}>
+                        <span className="font-mono text-[9px] text-text-muted w-6 text-right shrink-0">#{pick.pick_number}</span>
+                        <TeamLogo abbr={pick.team} size="xs" />
+                        {tradedPickNumbers.has(pick.pick_number) && (
+                          <span className="font-mono text-[9px] text-gold shrink-0" title="Pick changed hands in a trade" aria-label="traded pick">⇄</span>
+                        )}
+                        <PlayerHeadshot url={player?.headshot_url} name={player?.name} position={player?.position} size="xs" />
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-[12px] font-semibold truncate leading-tight ${pick.is_user ? 'text-text-primary' : 'text-text-secondary'}`}>{player?.name}</div>
+                          <div className="text-[9.5px] text-text-muted">{player?.school}</div>
+                        </div>
+                        {pick.is_user && <span className="shrink-0 font-display text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,229,255,0.12)', color: 'var(--accent)' }}>Your Pick</span>}
+                        {!pick.is_user && <PositionBadge position={player?.position} muted />}
                       </div>
-                      {pick.is_user && <span className="shrink-0 font-display text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,229,255,0.12)', color: 'var(--accent)' }}>Your Pick</span>}
-                      {!pick.is_user && <PositionBadge position={player?.position} muted />}
                     </div>
                   );
                 })
