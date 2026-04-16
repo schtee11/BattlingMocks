@@ -114,7 +114,9 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
           padding: '10px 12px',
           borderRadius: 10,
           background: C.surface,
-          border: `1px solid ${isTraded ? `${C.gold}55` : C.subtle}`,
+          borderTop: `1px solid ${isTraded ? `${C.gold}55` : C.subtle}`,
+          borderRight: `1px solid ${isTraded ? `${C.gold}55` : C.subtle}`,
+          borderBottom: `1px solid ${isTraded ? `${C.gold}55` : C.subtle}`,
           borderLeft: `4px solid ${color}`,
           // Subtle gold glow so traded rows pop at a glance without
           // overwhelming the position-color left border.
