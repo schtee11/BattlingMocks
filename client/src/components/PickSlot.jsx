@@ -59,6 +59,7 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfi
   return (
     <li
       ref={mergedRef}
+      data-pick-slot={slot}
       onClick={handleClick}
       tabIndex={0}
       aria-label={`Pick ${slot}${team ? ` - ${team.team_name}` : ''}${player ? ` - ${player.name}` : ' - empty'}`}
