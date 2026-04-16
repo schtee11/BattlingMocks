@@ -170,28 +170,29 @@ export function TradeModal({
   // re-propose identical terms — they must change the deal first.
   const [rejectedHashes, setRejectedHashes] = useState(new Set());
 
-  // Skip the first run of the reset effects so counter-offer seeds aren't
-  // wiped on mount. The guard-flip effect is declared LAST on purpose —
-  // effects run in declaration order, so on mount the reset effects see
-  // `false` and bail, and only then does the flip run. Subsequent renders
-  // (user picks a different partner, etc.) see `true` and reset as before.
-  const mountedRef = useRef(false);
-
+  // Reset the picked picks ONLY when the value actually changes from a
+  // previously-recorded value. Using a "prev-value" ref instead of a mount
+  // guard keeps counter-offer seeds intact through React 18 StrictMode's
+  // double-mount (refs are preserved across the simulated remount, so a
+  // naive "skip first render" guard fires on the second pass and wipes
+  // the seed).
+  const prevPartnerRef = useRef(partnerTeam);
   useEffect(() => {
-    if (!mountedRef.current) return;
+    if (prevPartnerRef.current === partnerTeam) return;
+    prevPartnerRef.current = partnerTeam;
     setTheirSelected(new Set());
   }, [partnerTeam]);
   // When the user switches "From" team (R1 dual-mode), reset both sides and
   // re-seed the partner to a still-valid team.
+  const prevFromRef = useRef(effectiveFromTeam);
   useEffect(() => {
-    if (!mountedRef.current) return;
+    if (prevFromRef.current === effectiveFromTeam) return;
+    prevFromRef.current = effectiveFromTeam;
     setYourSelected(new Set());
     setTheirSelected(new Set());
     setPartnerTeam((cur) => (cur && cur !== effectiveFromTeam ? cur : otherTeams[0] || null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveFromTeam]);
-
-  useEffect(() => { mountedRef.current = true; }, []);
 
   const partnerFuturePicks = useMemo(
     () => futurePicks.filter((s) => s.team === partnerTeam),
