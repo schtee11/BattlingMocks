@@ -1739,6 +1739,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     offersForPickRef.current = currentSlot.pick_number;
     setDismissedOfferIds(new Set());
     try {
+      // Diagnostic — flip on with `window.__btDebug = true` in DevTools to
+      // see why offers do or don't fire. Always log the result count so we
+      // can confirm the effect is at least running.
       const offers = generateBotTradeOffers({
         userTeam: team,
         liveOrder,
@@ -1748,11 +1751,15 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         randomness,
         byId,
       });
+      // eslint-disable-next-line no-console
+      console.info(
+        `[trade offers] pick #${currentSlot.pick_number} (${team}) → ${offers?.length || 0} offer(s)`
+      );
       setIncomingOffers(offers || []);
     } catch (err) {
       // Never let offer generation crash the on-clock UI — fail soft so
       // the user can still draft normally.
-      console.warn('[trade offers] generate failed:', err?.message);
+      console.warn('[trade offers] generate failed:', err?.message, err);
       setIncomingOffers([]);
     }
   }, [phase, currentSlot, team, liveOrder, picks, effectivePlayers, futureOwnership, randomness, byId]);

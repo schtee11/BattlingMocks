@@ -41,6 +41,24 @@ const MAX_OFFERS = 3;
 const TIER_LOOKAHEAD_K = 5;
 const TIER_DROP_THRESHOLD = 2;
 
+// Minimum urgency to make an offer. Lowered slightly so middle-of-round
+// teams can still propose when they have a clear positional target —
+// previously the 0.35 floor required either tier-drop OR top-need match
+// to fire, which made offers very rare in practice.
+const URGENCY_FLOOR = 0.25;
+
+// Diagnostic logging — flip on in the browser console with
+//   window.__btDebug = true
+// then re-enter the on-clock state. Logs every step of the decision tree
+// for each candidate bot team so we can see exactly why offers do/don't
+// fire.
+function dbg(...args) {
+  if (typeof window !== 'undefined' && window.__btDebug) {
+    // eslint-disable-next-line no-console
+    console.log('[botTradeProposer]', ...args);
+  }
+}
+
 // Build a chart lookup once per call.
 function buildValueLookup() {
   const m = new Map();
@@ -208,14 +226,31 @@ export function generateBotTradeOffers({
   randomness = 0.25,
   byId,
 }) {
-  if (!liveOrder || liveOrder.length === 0) return [];
+  if (!liveOrder || liveOrder.length === 0) {
+    dbg('bail: no liveOrder');
+    return [];
+  }
   const picksMadeCount = picks.length;
   const userSlot = liveOrder[picksMadeCount];
-  if (!userSlot || userSlot.team !== userTeam) return [];
+  if (!userSlot || userSlot.team !== userTeam) {
+    dbg('bail: not user on the clock', { picksMadeCount, slot: userSlot, userTeam });
+    return [];
+  }
 
   const chartGet = buildValueLookup();
   const userPickValue = chartGet(userSlot.pick_number);
-  if (userPickValue <= 0) return [];                   // nothing valuable to trade
+  if (userPickValue <= 0) {
+    dbg('bail: user pick has no chart value', userSlot.pick_number);
+    return [];
+  }
+
+  dbg('on the clock', {
+    userTeam,
+    userPick: userSlot.pick_number,
+    userPickValue,
+    lookahead: MAX_LOOKAHEAD_PICKS,
+    poolSize: effectivePlayers.length,
+  });
 
   const cfg = getAlgoConfig();
 
@@ -242,7 +277,10 @@ export function generateBotTradeOffers({
     seenTeams.add(botSlot.team);
 
     const botPickValue = chartGet(botSlot.pick_number);
-    if (botPickValue <= 0) continue;
+    if (botPickValue <= 0) {
+      dbg('skip', botSlot.team, 'bot pick no chart value', botSlot.pick_number);
+      continue;
+    }
 
     // Required value the bot must send the user under chart conventions:
     //   user sends their pick → bot sends bot pick + premium-padded difference.
@@ -252,7 +290,10 @@ export function generateBotTradeOffers({
     if (userSlot.pick_number <= 5) premium += cfg.tradeTop5Bonus ?? 0.03;
     const requiredFromBot = userPickValue * (1 + premium);
     const sweetenerValue = requiredFromBot - botPickValue;
-    if (sweetenerValue <= 0) continue;                 // bot's own pick already covers it
+    if (sweetenerValue <= 0) {
+      dbg('skip', botSlot.team, 'bot pick already covers (no sweetener needed)');
+      continue;
+    }
 
     const picksBetween = liveOrder.slice(picksMadeCount + 1, i);
 
@@ -273,7 +314,8 @@ export function generateBotTradeOffers({
       draftContext: botContext,
       randomness,
     });
-    if (urgency < 0.35) continue;                      // not worth the asset cost
+    dbg('urgency', botSlot.team, '@', botSlot.pick_number, '=', urgency.toFixed(2));
+    if (urgency < URGENCY_FLOOR) continue;             // not worth the asset cost
 
     // Target sweetener value — slide between 1.0× and 1.05× of the strict
     // requirement based on urgency. High urgency = bot pays the full top
@@ -290,7 +332,10 @@ export function generateBotTradeOffers({
       futureOwnership,
       chartGet,
     });
-    if (!pkg) continue;
+    if (!pkg) {
+      dbg('skip', botSlot.team, 'no package fits', { targetValue: Math.round(targetValue) });
+      continue;
+    }
 
     const theirPicks = [botSlot.pick_number, ...pkg.picks];
     const yourPicks = [userSlot.pick_number];
@@ -319,5 +364,6 @@ export function generateBotTradeOffers({
 
   // Sort by urgency descending so the most "real" offer is always on top.
   offers.sort((a, b) => b.summary.urgency - a.summary.urgency);
+  dbg('result', offers.length, 'offers', offers.map((o) => `${o.botTeam}@${o.botPick}`));
   return offers.slice(0, MAX_OFFERS);
 }
