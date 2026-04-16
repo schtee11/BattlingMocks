@@ -171,24 +171,27 @@ export function TradeModal({
   const [rejectedHashes, setRejectedHashes] = useState(new Set());
 
   // Skip the first run of the reset effects so counter-offer seeds aren't
-  // wiped immediately on mount. Subsequent user-driven partner/from changes
-  // still clear the selection as before.
-  const resetGuardRef = useRef(false);
-  useEffect(() => { resetGuardRef.current = true; }, []);
+  // wiped on mount. The guard-flip effect is declared LAST on purpose —
+  // effects run in declaration order, so on mount the reset effects see
+  // `false` and bail, and only then does the flip run. Subsequent renders
+  // (user picks a different partner, etc.) see `true` and reset as before.
+  const mountedRef = useRef(false);
 
   useEffect(() => {
-    if (!resetGuardRef.current) return;
+    if (!mountedRef.current) return;
     setTheirSelected(new Set());
   }, [partnerTeam]);
   // When the user switches "From" team (R1 dual-mode), reset both sides and
   // re-seed the partner to a still-valid team.
   useEffect(() => {
-    if (!resetGuardRef.current) return;
+    if (!mountedRef.current) return;
     setYourSelected(new Set());
     setTheirSelected(new Set());
     setPartnerTeam((cur) => (cur && cur !== effectiveFromTeam ? cur : otherTeams[0] || null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveFromTeam]);
+
+  useEffect(() => { mountedRef.current = true; }, []);
 
   const partnerFuturePicks = useMemo(
     () => futurePicks.filter((s) => s.team === partnerTeam),

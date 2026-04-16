@@ -1800,19 +1800,16 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
   // Counter/rebuttal — open the standard TradeModal pre-filled with the
   // offer's picks so the user can tweak the terms and propose back. The
-  // original offer is dismissed (treated as a reject); the counter runs
-  // through the same acceptance-probability path as any manual proposal.
+  // original offer is intentionally NOT dismissed: if the user closes the
+  // modal without proposing, the card is still there to accept/reject.
+  // A successful counter clears offers via the phase change below; a
+  // rejected counter just closes the modal with offers intact.
   const [counterSeed, setCounterSeed] = useState(null);
   function handleCounterOffer(offer) {
     setCounterSeed({
       partnerTeam: offer.botTeam,
       yourPicks: offer.yourPicks,
       theirPicks: offer.theirPicks,
-    });
-    setDismissedOfferIds((prev) => {
-      const next = new Set(prev);
-      next.add(offer.id);
-      return next;
     });
     setTradeOpen(true);
   }
