@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate, useBlocker } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { snapCenterToCursor } from '../lib/dndModifiers.js';
 import { DndScrollSync } from '../lib/DndScrollSync.jsx';
@@ -249,18 +249,9 @@ export default function Draft() {
   }, [user]);
 
   // ── Prediction leave guard ───────────────────────────────────────────────
-  // If the user has made picks in Prediction mode and tries to navigate
-  // away (react-router navigation), show a confirmation modal first.
-  // Also gate browser refresh/close via beforeunload.
-  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      predHasProgress && currentLocation.pathname !== nextLocation.pathname,
-  );
-  useEffect(() => {
-    if (blocker.state === 'blocked') setShowLeaveConfirm(true);
-  }, [blocker.state]);
-  // Browser refresh / tab close guard
+  // Browser refresh / tab close: native confirm dialog via beforeunload.
+  // In-app navigation: the app uses BrowserRouter (not a data router) so
+  // useBlocker isn't available — the beforeunload handler is the safety net.
   useEffect(() => {
     if (!predHasProgress) return;
     function onBeforeUnload(e) {
@@ -1324,23 +1315,6 @@ export default function Draft() {
           onClose={() => setShowSlots(false)}
         />
       )}
-
-      {/* Leave-guard modal for unsaved prediction progress */}
-      <ConfirmModal
-        open={showLeaveConfirm}
-        onClose={() => {
-          setShowLeaveConfirm(false);
-          blocker.reset?.();
-        }}
-        onConfirm={() => {
-          setShowLeaveConfirm(false);
-          blocker.proceed?.();
-        }}
-        title="Leave prediction mock?"
-        description="Your prediction progress hasn't been saved. Save it from the footer first, or leave and lose your current picks."
-        confirmLabel="Leave"
-        confirmVariant="danger"
-      />
 
       {/* No mobile bottom spacer needed — the mobile two-panel layout is
           fixed-positioned and the body scroll is locked via useEffect. */}
