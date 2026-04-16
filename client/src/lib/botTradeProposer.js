@@ -151,7 +151,10 @@ function assessUrgency({
   randomness,
 }) {
   const needs = (botSlot.team_needs || []).slice(0, 3);
-  if (needs.length === 0) return 0;
+  if (needs.length === 0) {
+    dbg('urgency=0 reason: no team_needs for', botSlot.team, 'raw=', botSlot.team_needs);
+    return 0;
+  }
 
   // Simulate what the bot would pick AT its real slot if nothing changed.
   // This is the player it most wants to lock in — and the one it's afraid
@@ -163,12 +166,18 @@ function assessUrgency({
     pickNumber: botSlot.pick_number,
     draftContext,
   });
-  if (!wantedNow) return 0;
+  if (!wantedNow) {
+    dbg('urgency=0 reason: pickForTeam null for', botSlot.team, 'available=', available.length);
+    return 0;
+  }
 
   // What's the bot's wanted POSITION? Use the picked player's position as
   // the canonical signal — needs-priority alone is too noisy.
   const wantedPos = normalizePos(wantedNow.position || '');
-  if (!wantedPos) return 0;
+  if (!wantedPos) {
+    dbg('urgency=0 reason: empty wantedPos for', botSlot.team, 'player=', wantedNow?.name, 'pos=', wantedNow?.position);
+    return 0;
+  }
 
   // Tier-drop check: among the top-K available players at the wanted
   // position, how many are likely to be gone by the bot's real pick?
@@ -177,7 +186,10 @@ function assessUrgency({
   const topAtPos = available
     .filter((p) => normalizePos(p.position) === wantedPos)
     .slice(0, TIER_LOOKAHEAD_K);
-  if (topAtPos.length === 0) return 0;
+  if (topAtPos.length === 0) {
+    dbg('urgency=0 reason: topAtPos empty for', botSlot.team, 'wantedPos=', wantedPos);
+    return 0;
+  }
 
   let competingPicks = 0;
   for (const slot of picksBetween) {
