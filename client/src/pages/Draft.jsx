@@ -1216,13 +1216,21 @@ export default function Draft() {
               >
                 {submitted ? 'Submitted ✓' : complete ? (user ? 'Submit Mock →' : 'Log in & Submit →') : `${32 - filledCount} to go`}
               </Button>
-            ) : (
+            ) : user ? (
               <Button
                 size="md"
                 variant="outline"
                 onClick={() => setShowSlots(true)}
               >
                 Save / Load
+              </Button>
+            ) : (
+              <Button
+                size="md"
+                variant="outline"
+                onClick={() => nav('/join')}
+              >
+                Sign in to Save
               </Button>
             )}
           </div>
@@ -1277,7 +1285,7 @@ export default function Draft() {
             >
               {submitted ? 'Submitted ✓' : complete ? (user ? 'Submit Mock' : 'Log in & Submit') : `${filledCount}/32`}
             </Button>
-          ) : (
+          ) : user ? (
             <Button
               size="lg"
               variant="outline"
@@ -1285,6 +1293,15 @@ export default function Draft() {
               onClick={() => setShowSlots(true)}
             >
               Save / Load
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              variant="outline"
+              className="flex-1"
+              onClick={() => nav('/join')}
+            >
+              Sign in to Save
             </Button>
           )}
         </div>
