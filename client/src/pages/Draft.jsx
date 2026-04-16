@@ -41,6 +41,11 @@ export default function Draft() {
   const nav = useNavigate();
   const [players, setPlayers] = useState(null);
   const [draftOrder, setDraftOrder] = useState([]);
+  // Snapshot of the original owner of each pick_number as delivered by the API.
+  // Frozen on first successful load so we can detect traded picks even after
+  // `draftOrder` has been mutated by `applyTradeLocal` — the PNG export uses
+  // this to visually mark both teams on each side of every trade.
+  const [originalTeamByPick, setOriginalTeamByPick] = useState(() => new Map());
   const [settings, setSettings] = useState(null);
   const [picks, setPicks] = useState({});
   // Confidence picks — a Set of pick_number. Max 3 per mock. Toggling is
@@ -140,6 +145,14 @@ export default function Draft() {
         ]);
         setPlayers(p);
         setDraftOrder(o);
+        // Capture the original owner of every pick exactly once — subsequent
+        // trade applies only mutate `draftOrder`, not this snapshot.
+        setOriginalTeamByPick((prev) => {
+          if (prev.size > 0) return prev;
+          const m = new Map();
+          o.forEach((row) => m.set(row.pick_number, row.team));
+          return m;
+        });
         setSettings(s);
         // Only logged-in users have a saved mock to resume — anonymous
         // visitors start with an empty board and only need to auth when
@@ -389,7 +402,9 @@ export default function Draft() {
     const justFilled = s.draftingForSlot;
     assignPlayerToSlot(player.id, justFilled);
     const team = s.orderByPick.get(justFilled);
-    toast.success(`Pick ${justFilled}${team ? ` · ${team.team}` : ''}: ${player.name}`);
+    // Shared toast id — fast drafts replace the previous pick banner instead
+    // of stacking them up and covering the Draft button.
+    toast.success(`Pick ${justFilled}${team ? ` · ${team.team}` : ''}: ${player.name}`, { id: 'draft-pick' });
     const isEmpty = (i) => i !== justFilled && !s.picks[i];
     let next = null;
     for (let i = justFilled + 1; i <= 32; i++) {
@@ -416,7 +431,7 @@ export default function Draft() {
     if (s.locked || !s.onClockSlot) return;
     assignPlayerToSlot(player.id, s.onClockSlot);
     const team = s.orderByPick.get(s.onClockSlot);
-    toast.success(`Pick ${s.onClockSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`);
+    toast.success(`Pick ${s.onClockSlot}${team ? ` · ${team.team}` : ''}: ${player.name}`, { id: 'draft-pick' });
   }, [assignPlayerToSlot]);
 
   // Mobile wrapper: draft + close the drawer
@@ -465,7 +480,7 @@ export default function Draft() {
             assignPlayerToSlot(selectedPlayer, onClockSlot);
             setSelectedPlayer(null);
             const team = orderByPick.get(onClockSlot);
-            toast.success(`Pick ${onClockSlot}${team ? ` · ${team.team}` : ''}: ${p.name}`);
+            toast.success(`Pick ${onClockSlot}${team ? ` · ${team.team}` : ''}: ${p.name}`, { id: 'draft-pick' });
             e.preventDefault();
           }
         }
@@ -541,6 +556,17 @@ export default function Draft() {
     draftOrder.forEach((o) => m.set(o.pick_number, o.team));
     return m;
   }, [draftOrder]);
+  // Picks whose current owner differs from the original owner — i.e. picks
+  // involved in a trade. Passed to the export card so each row on either
+  // side of a trade gets a visual "traded" marker.
+  const exportTradedPicks = useMemo(() => {
+    const s = new Set();
+    exportTeamByPickNumber.forEach((team, pn) => {
+      const orig = originalTeamByPick.get(pn);
+      if (orig && orig !== team) s.add(pn);
+    });
+    return s;
+  }, [exportTeamByPickNumber, originalTeamByPick]);
   const {
     exportRef,
     exporting,
@@ -554,6 +580,8 @@ export default function Draft() {
     picks: exportPicks,
     playerById,
     teamByPickNumber: exportTeamByPickNumber,
+    originalTeamByPickNumber: originalTeamByPick,
+    tradedPicks: exportTradedPicks,
   });
 
   const activePlayer = activeDragId?.startsWith('player-')
@@ -580,6 +608,8 @@ export default function Draft() {
           picks={exportPicks}
           playerById={playerById}
           teamByPickNumber={exportTeamByPickNumber}
+          originalTeamByPickNumber={originalTeamByPick}
+          tradedPicks={exportTradedPicks}
           userLabel={user ? prettyName(user.display_name) : ''}
           theme={exportTheme}
           teamLogoDataUrls={teamLogoDataUrls}

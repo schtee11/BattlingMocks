@@ -62,7 +62,10 @@ export default function App() {
       </div>
       <Toaster
         position="top-right"
+        // Short default so rapid-fire events (e.g. fast drafting) don't leave
+        // a tower of banners covering the Draft/Submit buttons.
         toastOptions={{
+          duration: 2000,
           style: {
             background: 'var(--bg-surface)',
             color: 'var(--text-primary)',

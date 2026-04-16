@@ -73,6 +73,8 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
     picks,
     playerById,
     teamByPickNumber,
+    originalTeamByPickNumber,
+    tradedPicks,
     userLabel,
     theme,
     teamLogoDataUrls = {},
@@ -97,7 +99,10 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
     if (!player) return null;
     const color = posHex(player.position);
     const teamAbbr = teamByPickNumber?.get?.(pick.pick_number);
+    const originalTeamAbbr = originalTeamByPickNumber?.get?.(pick.pick_number);
+    const isTraded = !!(tradedPicks?.has?.(pick.pick_number));
     const logoDataUrl = teamAbbr ? teamLogoDataUrls[teamAbbr] : null;
+    const originalLogoDataUrl = originalTeamAbbr ? teamLogoDataUrls[originalTeamAbbr] : null;
     const headshotDataUrl = headshotDataUrls[pick.player_id];
     return (
       <div
@@ -109,8 +114,11 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
           padding: '10px 12px',
           borderRadius: 10,
           background: C.surface,
-          border: `1px solid ${C.subtle}`,
+          border: `1px solid ${isTraded ? `${C.gold}55` : C.subtle}`,
           borderLeft: `4px solid ${color}`,
+          // Subtle gold glow so traded rows pop at a glance without
+          // overwhelming the position-color left border.
+          boxShadow: isTraded ? `inset 0 0 0 1px ${C.gold}33` : undefined,
         }}
       >
         <div
@@ -126,7 +134,58 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
         >
           {pick.pick_number}
         </div>
-        {logoDataUrl ? (
+        {isTraded && originalLogoDataUrl ? (
+          // Traded pick — show both logos (original → current) with a small
+          // arrow between them so the trade is visually unambiguous.
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3,
+              flexShrink: 0,
+            }}
+          >
+            <img
+              src={originalLogoDataUrl}
+              alt=""
+              title={originalTeamAbbr || ''}
+              style={{
+                width: 20,
+                height: 20,
+                objectFit: 'contain',
+                opacity: 0.55,
+                filter: 'grayscale(0.6)',
+              }}
+            />
+            <div style={{ fontSize: 11, fontWeight: 900, color: C.gold, lineHeight: 1 }}>
+              →
+            </div>
+            {logoDataUrl ? (
+              <img
+                src={logoDataUrl}
+                alt=""
+                title={teamAbbr || ''}
+                style={{ width: 26, height: 26, objectFit: 'contain' }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 26,
+                  height: 26,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  color: C.muted,
+                  letterSpacing: 0.5,
+                }}
+              >
+                {teamAbbr || '—'}
+              </div>
+            )}
+          </div>
+        ) : logoDataUrl ? (
           <img
             src={logoDataUrl}
             alt=""
@@ -208,6 +267,25 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
             >
               {player.position}
             </span>
+            {isTraded && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  padding: '1px 6px',
+                  borderRadius: 999,
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: 1.1,
+                  textTransform: 'uppercase',
+                  background: `${C.gold}22`,
+                  color: C.gold,
+                  border: `1px solid ${C.gold}66`,
+                  flexShrink: 0,
+                }}
+              >
+                Trade
+              </span>
+            )}
             {player.school && (
               <span
                 style={{
@@ -335,6 +413,7 @@ export function useRound1ShareExport({
   picks,
   playerById,
   teamByPickNumber,
+  originalTeamByPickNumber,
 }) {
   const exportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
@@ -359,16 +438,19 @@ export function useRound1ShareExport({
   }, []);
   const themeBg = theme === 'light' ? '#f0f2f7' : '#04080f';
 
-  // Deduped list of team abbreviations we need logos for (after any trades,
-  // one team may appear on multiple picks — only fetch each logo once).
+  // Deduped list of team abbreviations we need logos for. Includes both the
+  // current owner of each picked slot AND the original owner, because traded
+  // rows render both logos (original greyed-out → current).
   const uniqueTeams = useMemo(() => {
     const s = new Set();
     (picks || []).forEach((p) => {
       const t = teamByPickNumber?.get?.(p.pick_number);
       if (t) s.add(t);
+      const orig = originalTeamByPickNumber?.get?.(p.pick_number);
+      if (orig) s.add(orig);
     });
     return Array.from(s);
-  }, [picks, teamByPickNumber]);
+  }, [picks, teamByPickNumber, originalTeamByPickNumber]);
 
   const [teamLogoDataUrls, setTeamLogoDataUrls] = useState({});
   useEffect(() => {

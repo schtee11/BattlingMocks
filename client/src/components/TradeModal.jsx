@@ -205,7 +205,7 @@ export function TradeModal({
         ok: false,
         reason: 'one_for_one',
         text: fromTeamEditable
-          ? 'No 1-for-1 swaps — add more picks to the deal'
+          ? 'Not realistic — 1-for-1 swaps rarely happen. Add more picks to the deal'
           : `${partnerTeam} won't do a 1-for-1 swap — add more picks`,
       };
     }
@@ -218,7 +218,7 @@ export function TradeModal({
         ok: false,
         reason: 'rejected',
         text: fromTeamEditable
-          ? `${partnerTeam} already declined these exact terms — change the deal`
+          ? 'These exact terms were already rejected — change the deal to re-check'
           : `${partnerTeam} already said no — change the terms to try again`,
       };
     }
@@ -264,7 +264,7 @@ export function TradeModal({
         ok: false,
         reason: 'hard_underpay',
         text: fromTeamEditable
-          ? `${moverUpTeam} needs ~${shortBy} more value — too far off`
+          ? `Outside fair-trade zone — ${moverUpTeam} underpaying by ~${shortBy}`
           : fromIsMovingUp
             ? `Too far off — add ~${shortBy} more value`
             : `Too far off — not enough value back (~${shortBy} more needed from ${partnerTeam})`,
@@ -288,19 +288,19 @@ export function TradeModal({
     let previewText;
     if (probPct >= 80) {
       previewText = fromTeamEditable
-        ? `${partnerTeam} very likely accepts (${probPct}%)`
+        ? `Fair-trade zone — both sides likely agree (${probPct}%)`
         : `${partnerTeam} very likely accepts (${probPct}%)`;
     } else if (probPct >= 50) {
       previewText = fromTeamEditable
-        ? `${partnerTeam} might accept (${probPct}%)`
+        ? `Near fair-trade zone — coin flip (${probPct}%)`
         : `${partnerTeam} might accept (${probPct}%)`;
     } else if (probPct >= 25) {
       previewText = fromTeamEditable
-        ? `${partnerTeam} probably declines (${probPct}%)`
+        ? `Below fair zone — ${moverUpTeam} needs ~${shortBy} more value (${probPct}%)`
         : `${partnerTeam} probably declines (${probPct}%) — add ~${shortBy} more value`;
     } else {
       previewText = fromTeamEditable
-        ? `${moverUpTeam} needs ~${shortBy} more value (${probPct}%)`
+        ? `Well below fair zone — ${moverUpTeam} needs ~${shortBy} more value (${probPct}%)`
         : `Add ~${shortBy} more value (${probPct}%)`;
     }
     return {
@@ -341,7 +341,7 @@ export function TradeModal({
       setRejectedHashes((prev) => new Set([...prev, roll]));
       toast.error(
         fromTeamEditable
-          ? `${partnerTeam} declined (${evalResult.probability}% odds)`
+          ? `Trade rejected — outside fair-trade zone this time (${evalResult.probability}% odds)`
           : `${partnerTeam} declined — change the terms to try again (${evalResult.probability}%)`
       );
       return;
@@ -416,14 +416,15 @@ export function TradeModal({
   const verdictSubtext = (() => {
     if (yourCount === 0 && theirCount === 0) return '';
     if (fromTeamEditable) {
-      // Neutral team-based phrasing for R1 simulation mode.
-      if (yourCount > theirCount) {
-        return `${effectiveFromTeam} trading UP (${yourCount} → ${theirCount} picks)`;
+      // Neutral arbiter framing — identify the team moving up (receiving the
+      // best pick in the deal) so readers see the direction without the app
+      // appearing to side with either franchise.
+      const moverUp = evalResult.moverUpTeam;
+      const moverDown = moverUp === effectiveFromTeam ? partnerTeam : effectiveFromTeam;
+      if (moverUp && moverDown && yourCount !== theirCount) {
+        return `${moverUp} moves up · ${moverDown} moves down (${yourCount}-for-${theirCount})`;
       }
-      if (yourCount < theirCount) {
-        return `${effectiveFromTeam} trading DOWN (${yourCount} → ${theirCount} picks)`;
-      }
-      return `Even pick count (${yourCount}-for-${theirCount})`;
+      return `${yourCount}-for-${theirCount} swap`;
     }
     // Team Mock mode: user IS the team, "you" phrasing is fine.
     if (yourCount > theirCount) return `You're trading UP (${yourCount} → ${theirCount} picks)`;
@@ -439,7 +440,12 @@ export function TradeModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl max-h-[90vh] rounded-2xl border border-border-subtle bg-bg-deep flex flex-col overflow-hidden"
+        // `max-h-[calc(100dvh-2rem)]` handles short viewports (MacBook Pro at
+        // full-screen with dock, 13" laptops, browser devtools open) where
+        // `90vh` would still clip the footer. `dvh` tracks the *dynamic*
+        // viewport so mobile URL bars don't cut us off either.
+        className="w-full max-w-2xl rounded-2xl border border-border-subtle bg-bg-deep flex flex-col overflow-hidden"
+        style={{ maxHeight: 'min(90vh, calc(100dvh - 2rem))' }}
       >
         {/* Header */}
         <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
@@ -447,7 +453,11 @@ export function TradeModal({
             <h2 className="font-display text-[16px] font-bold uppercase tracking-[0.1em] text-text-primary">
               {fromTeamEditable ? 'Simulate Trade' : 'Propose Trade'}
             </h2>
-            <p className="text-[10.5px] text-text-muted">Rich Hill value chart</p>
+            <p className="text-[10.5px] text-text-muted">
+              {fromTeamEditable
+                ? 'Neutral arbiter · fair-trade zone (Rich Hill chart)'
+                : 'Rich Hill value chart'}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -464,7 +474,7 @@ export function TradeModal({
           {fromTeamEditable && (
             <div>
               <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted mb-2">
-                Trade From
+                Team A
               </div>
               <div className="flex gap-1.5 flex-wrap">
                 {allTeams.map((abbr) => (
@@ -487,7 +497,7 @@ export function TradeModal({
           {/* Partner team selector */}
           <div>
             <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted mb-2">
-              Trade With
+              {fromTeamEditable ? 'Team B' : 'Trade With'}
             </div>
             <div className="flex gap-1.5 flex-wrap">
               {otherTeams.map((abbr) => (
@@ -513,11 +523,17 @@ export function TradeModal({
               <div className="flex items-center gap-2 mb-2">
                 <TeamLogo abbr={effectiveFromTeam} size="xs" />
                 <span className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                  {fromTeamEditable ? `${effectiveFromTeam} Gives` : 'You Give'}
+                  {fromTeamEditable ? `${effectiveFromTeam} Sends` : 'You Give'}
                 </span>
                 <span className="ml-auto font-mono text-[11px] text-text-primary">{yourTotal}</span>
               </div>
-              <div className="grid grid-cols-3 gap-1.5 max-h-60 overflow-y-auto pr-1">
+              <div
+                className="grid grid-cols-3 gap-1.5 overflow-y-auto pr-1"
+                // Scale with the viewport so short-screen laptops (13" MBP
+                // with browser chrome) still see the verdict + footer without
+                // having to scroll the modal body.
+                style={{ maxHeight: 'min(15rem, 28dvh)' }}
+              >
                 {myFuturePicks.map((s) =>
                   pickButton(s, yourSelected.has(s.pick_number), () =>
                     togglePick(yourSelected, setYourSelected, s.pick_number)
@@ -534,11 +550,17 @@ export function TradeModal({
               <div className="flex items-center gap-2 mb-2">
                 <TeamLogo abbr={partnerTeam} size="xs" />
                 <span className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                  {fromTeamEditable ? `${partnerTeam || '—'} Gives` : 'You Get'}
+                  {fromTeamEditable ? `${partnerTeam || '—'} Sends` : 'You Get'}
                 </span>
                 <span className="ml-auto font-mono text-[11px] text-text-primary">{theirTotal}</span>
               </div>
-              <div className="grid grid-cols-3 gap-1.5 max-h-60 overflow-y-auto pr-1">
+              <div
+                className="grid grid-cols-3 gap-1.5 overflow-y-auto pr-1"
+                // Scale with the viewport so short-screen laptops (13" MBP
+                // with browser chrome) still see the verdict + footer without
+                // having to scroll the modal body.
+                style={{ maxHeight: 'min(15rem, 28dvh)' }}
+              >
                 {partnerFuturePicks.map((s) =>
                   pickButton(s, theirSelected.has(s.pick_number), () =>
                     togglePick(theirSelected, setTheirSelected, s.pick_number)
@@ -601,9 +623,11 @@ export function TradeModal({
           >
             {canPropose
               ? fromTeamEditable
-                ? 'Execute Trade'
+                ? 'Propose Trade'
                 : `Propose to ${partnerTeam || '—'}`
-              : 'Trade Not Allowed'}
+              : fromTeamEditable
+                ? 'Not in Fair Zone'
+                : 'Trade Not Allowed'}
           </button>
         </div>
       </div>
