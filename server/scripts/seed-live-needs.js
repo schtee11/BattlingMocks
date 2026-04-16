@@ -57,8 +57,10 @@ async function main() {
   try {
     await client.query('BEGIN');
     for (const [team, needs] of Object.entries(TEAM_NEEDS)) {
+      // Current-year (2026) rows only — 2027 rows from ESPN sync share team
+      // identity so they read the same needs implicitly via the bot picker.
       const { rowCount } = await client.query(
-        'UPDATE draft_order SET team_needs = $1, updated_at = NOW() WHERE team = $2',
+        'UPDATE draft_order SET team_needs = $1, updated_at = NOW() WHERE team = $2 AND draft_year = 2026',
         [needs, team]
       );
       if (rowCount > 0) {

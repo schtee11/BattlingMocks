@@ -65,11 +65,16 @@ router.post('/sync/draft-order', async (req, res) => {
     let updated = 0;
     for (const p of r1) {
       try {
+        // Upsert so new-year syncs (e.g. 2027) insert rows rather than no-op.
+        // Existing-year rows update team/team_name only and keep team_needs.
         await pool.query(
-          `UPDATE draft_order
-             SET team = $1, team_name = $2, updated_at = NOW()
-           WHERE pick_number = $3`,
-          [p.team_abbr, p.team_name || p.team_abbr, p.pick]
+          `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round, draft_year)
+           VALUES ($1, $2, $3, ARRAY[]::TEXT[], 1, $4)
+           ON CONFLICT (pick_number, draft_year) DO UPDATE
+             SET team = EXCLUDED.team,
+                 team_name = EXCLUDED.team_name,
+                 updated_at = NOW()`,
+          [p.pick, p.team_abbr, p.team_name || p.team_abbr, year]
         );
         updated++;
       } catch (e) {
@@ -131,15 +136,15 @@ router.post('/sync/draft-order-all', async (req, res) => {
         // Use RETURNING + xmax to distinguish inserts from updates without an
         // extra SELECT. xmax = 0 means the row was freshly inserted.
         const { rows } = await pool.query(
-          `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round)
-           VALUES ($1, $2, $3, ARRAY[]::TEXT[], $4)
-           ON CONFLICT (pick_number) DO UPDATE
+          `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round, draft_year)
+           VALUES ($1, $2, $3, ARRAY[]::TEXT[], $4, $5)
+           ON CONFLICT (pick_number, draft_year) DO UPDATE
              SET team = EXCLUDED.team,
                  team_name = EXCLUDED.team_name,
                  round = EXCLUDED.round,
                  updated_at = NOW()
            RETURNING (xmax = 0) AS is_insert`,
-          [p.pick, p.team_abbr, p.team_name || p.team_abbr, p.round]
+          [p.pick, p.team_abbr, p.team_name || p.team_abbr, p.round, year]
         );
         if (rows[0]?.is_insert) inserted++;
         else updated++;
@@ -689,18 +694,22 @@ router.post('/fetch-headshots', async (req, res) => {
 router.get('/draft-order', async (req, res) => {
   try {
     // Same round filter as the public endpoint — admin UI stays R1 unless
-    // explicitly asking for more via ?round=all.
+    // explicitly asking for more via ?round=all. Year defaults to 2026 so
+    // the current-draft admin panel keeps working unchanged; pass ?year=2027
+    // to view future-year rows after a sync.
     const roundParam = (req.query.round || '1').toString().toLowerCase();
+    const year = parseInt(req.query.year, 10) || 2026;
     let rows;
     if (roundParam === 'all') {
       ({ rows } = await pool.query(
-        'SELECT pick_number, team, team_name, team_needs, round FROM draft_order ORDER BY pick_number'
+        'SELECT pick_number, team, team_name, team_needs, round FROM draft_order WHERE draft_year = $1 ORDER BY pick_number',
+        [year]
       ));
     } else {
       const round = parseInt(roundParam, 10) || 1;
       ({ rows } = await pool.query(
-        'SELECT pick_number, team, team_name, team_needs, round FROM draft_order WHERE round = $1 ORDER BY pick_number',
-        [round]
+        'SELECT pick_number, team, team_name, team_needs, round FROM draft_order WHERE round = $1 AND draft_year = $2 ORDER BY pick_number',
+        [round, year]
       ));
     }
     res.json(rows);
@@ -754,8 +763,11 @@ router.post('/team-needs', async (req, res) => {
       if (!team || !Array.isArray(arr)) continue;
       // Normalize: uppercase, trim, dedupe, filter blanks, clamp to 10 entries.
       const cleaned = [...new Set(arr.map((s) => String(s).trim().toUpperCase()).filter(Boolean))].slice(0, 10);
+      // Needs only live on current-year (2026) rows. 2027 rows — pulled from
+      // ESPN — reuse the same team's needs implicitly at read time, so we
+      // don't duplicate-write them.
       const { rowCount } = await client.query(
-        'UPDATE draft_order SET team_needs = $1, updated_at = NOW() WHERE team = $2',
+        'UPDATE draft_order SET team_needs = $1, updated_at = NOW() WHERE team = $2 AND draft_year = 2026',
         [cleaned, team]
       );
       updated += rowCount;

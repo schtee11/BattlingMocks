@@ -150,7 +150,7 @@ router.get('/:id', async (req, res) => {
             p.name, p.position, p.school, p.headshot_url
      FROM mock_picks mp
      JOIN players p ON p.id = mp.player_id
-     LEFT JOIN draft_order do2 ON do2.pick_number = mp.pick_number
+     LEFT JOIN draft_order do2 ON do2.pick_number = mp.pick_number AND do2.draft_year = 2026
      WHERE mp.mock_id = $1
      ORDER BY mp.pick_number`,
     [mock.id]

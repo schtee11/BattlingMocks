@@ -244,6 +244,34 @@ CREATE INDEX IF NOT EXISTS idx_players_draft_year_rank
   ON players(draft_year, consensus_rank) WHERE consensus_rank IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_draft_order_year_pick ON draft_order(draft_year, pick_number);
 
+-- Phase 8: multi-year draft_order. The original PK was just pick_number, so
+-- only one year could live in the table at a time. Now that 2027 picks are
+-- pulled from ESPN alongside 2026 (same mechanism, admin /sync/draft-order-all
+-- with ?year=2027), the PK is composite (pick_number, draft_year) so both
+-- years coexist. Existing rows got draft_year=2026 from the DEFAULT when that
+-- column was added, so no data migration is needed — just the PK flip.
+UPDATE draft_order SET draft_year = 2026 WHERE draft_year IS NULL;
+ALTER TABLE draft_order ALTER COLUMN draft_year SET NOT NULL;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM information_schema.key_column_usage
+     WHERE constraint_name = 'draft_order_pkey'
+       AND table_name = 'draft_order'
+       AND column_name = 'pick_number'
+  ) AND NOT EXISTS (
+    SELECT 1
+      FROM information_schema.key_column_usage
+     WHERE constraint_name = 'draft_order_pkey'
+       AND table_name = 'draft_order'
+       AND column_name = 'draft_year'
+  ) THEN
+    ALTER TABLE draft_order DROP CONSTRAINT draft_order_pkey;
+    ALTER TABLE draft_order ADD CONSTRAINT draft_order_pkey PRIMARY KEY (pick_number, draft_year);
+  END IF;
+END$$;
+
 -- ---------------------------------------------------------------------------
 -- INTENTIONALLY SKIPPED (would duplicate existing functionality):
 --   * team_mocks / team_mock_picks tables — the existing 'mocks' table

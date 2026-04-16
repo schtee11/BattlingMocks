@@ -70,9 +70,9 @@ export async function seedDraftOrder(order) {
     const needs = Array.isArray(row.team_needs) ? row.team_needs : [];
     const round = row.round || 1;
     await pool.query(
-      `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (pick_number) DO UPDATE
+      `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round, draft_year)
+       VALUES ($1, $2, $3, $4, $5, 2026)
+       ON CONFLICT (pick_number, draft_year) DO UPDATE
          SET team = EXCLUDED.team,
              team_name = EXCLUDED.team_name,
              team_needs = EXCLUDED.team_needs,

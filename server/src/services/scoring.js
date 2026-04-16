@@ -35,7 +35,7 @@ export async function runScoringOnClient(client) {
         ap_player.team        AS actual_team_for_player
       FROM mock_picks mp
       JOIN mocks m ON m.id = mp.mock_id AND m.mock_type = 'round1'
-      LEFT JOIN draft_order do_pred ON do_pred.pick_number = mp.pick_number
+      LEFT JOIN draft_order do_pred ON do_pred.pick_number = mp.pick_number AND do_pred.draft_year = 2026
       LEFT JOIN actual_picks ap_player ON ap_player.player_id = mp.player_id
     ),
     scored AS (

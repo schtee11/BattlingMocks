@@ -88,9 +88,11 @@ export async function applyTrade({ side_a_team, side_a_picks, side_b_team, side_
   try {
     await client.query('BEGIN');
     for (const entry of all) {
-      // Only update picks that exist in draft_order (R1 only for now)
+      // Admin trade tool operates on the current draft only (2026). Future
+      // picks for 2027+ aren't tradable through this path — they flow
+      // through the team-mock UI and don't touch draft_order.
       const { rows } = await client.query(
-        'SELECT pick_number, team, team_name FROM draft_order WHERE pick_number = $1',
+        'SELECT pick_number, team, team_name FROM draft_order WHERE pick_number = $1 AND draft_year = 2026',
         [entry.pick]
       );
       if (!rows.length) {
@@ -104,7 +106,7 @@ export async function applyTrade({ side_a_team, side_a_picks, side_b_team, side_
       await client.query(
         `UPDATE draft_order
            SET team = $1, team_name = $2, updated_at = NOW()
-         WHERE pick_number = $3`,
+         WHERE pick_number = $3 AND draft_year = 2026`,
         [entry.newTeam, newTeamName, entry.pick]
       );
       applied.push({ pick: entry.pick, from: rows[0].team, to: entry.newTeam });

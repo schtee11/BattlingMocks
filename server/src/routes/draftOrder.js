@@ -24,6 +24,15 @@ router.get('/', async (req, res) => {
   // so the fallback kicks in. Both sides must be TEXT[] — draft_order
   // stores needs as a text array, and array_agg() returns TEXT[] too.
   const roundParam = (req.query.round || '1').toString().toLowerCase();
+  // This endpoint always serves the CURRENT draft (2026). Future-year picks
+  // live in the same table now (post-Phase-8 composite PK) and are served
+  // separately via /api/draft-order/future.
+  const whereClauses = ['d.draft_year = 2026'];
+  const params = [];
+  if (roundParam !== 'all') {
+    params.push(parseInt(roundParam, 10) || 1);
+    whereClauses.push(`d.round = $${params.length}`);
+  }
   const sql = `
     SELECT
       d.pick_number,
@@ -37,10 +46,9 @@ router.get('/', async (req, res) => {
           WHERE tn.team_id = d.team AND tn.draft_year = 2026)
       ) AS team_needs
     FROM draft_order d
-    ${roundParam === 'all' ? '' : 'WHERE d.round = $1'}
+    WHERE ${whereClauses.join(' AND ')}
     ORDER BY d.pick_number
   `;
-  const params = roundParam === 'all' ? [] : [parseInt(roundParam, 10) || 1];
   const { rows } = await pool.query(sql, params);
 
   if (roundParam === 'all') {
@@ -80,18 +88,59 @@ router.get('/future', async (req, res) => {
     return res.status(400).json({ error: 'invalid year' });
   }
 
-  // Pull the canonical team list from the current draft_order. Using R1 only
-  // gives us exactly 32 rows (one per franchise) without compensatory dupes.
-  const { rows } = await pool.query(
+  // Two-source strategy:
+  //
+  //   1. Primary — real rows from draft_order for that year (populated via
+  //      POST /api/admin/sync/draft-order-all?year=2027 which pulls ESPN's
+  //      scoreboard/header feed, same code path used for 2026). Returns one
+  //      logical pick per (team, round), collapsing comp picks onto the
+  //      team's lowest-numbered pick in that round so the client's
+  //      `${year}-${team}-R${round}` id format continues to work.
+  //
+  //   2. Fallback — synthetic 32-teams × 7-rounds grid sourced from the
+  //      current draft_order's canonical team list. Used when the sync has
+  //      not been run yet (or ESPN has no data for that year). This is the
+  //      legacy behaviour and keeps the UI functional on fresh installs.
+  //
+  // Values in both paths come from future-pick-values.json — real GMs
+  // discount future picks by one round regardless of known slot.
+  const values = loadFutureValues().year_offset_1 || {};
+  const pickValue = (round) => values[String(round)] ?? 1;
+
+  const { rows: real } = await pool.query(
+    `SELECT DISTINCT ON (team, round) team, team_name, round, pick_number
+       FROM draft_order
+      WHERE draft_year = $1
+      ORDER BY team, round, pick_number`,
+    [year]
+  );
+
+  if (real.length > 0) {
+    const out = real.map((r) => ({
+      id: `${year}-${r.team}-R${r.round}`,
+      year,
+      round: r.round,
+      team: r.team,
+      team_name: r.team_name,
+      value: pickValue(r.round),
+      // Expose pick_number so the UI can show a real slot when available.
+      // The synthetic fallback below omits it.
+      pick_number: r.pick_number,
+    }));
+    res.set('Cache-Control', 'public, max-age=3600');
+    return res.json(out);
+  }
+
+  // Fallback — synthetic grid from the current-year team list.
+  const { rows: teams } = await pool.query(
     `SELECT DISTINCT ON (team) team, team_name
        FROM draft_order
-      WHERE round = 1
+      WHERE round = 1 AND draft_year = 2026
       ORDER BY team, pick_number`
   );
 
-  const values = loadFutureValues().year_offset_1 || {};
   const out = [];
-  for (const t of rows) {
+  for (const t of teams) {
     for (let round = 1; round <= 7; round++) {
       out.push({
         id: `${year}-${t.team}-R${round}`,
@@ -99,7 +148,7 @@ router.get('/future', async (req, res) => {
         round,
         team: t.team,
         team_name: t.team_name,
-        value: values[String(round)] ?? 1,
+        value: pickValue(round),
       });
     }
   }
