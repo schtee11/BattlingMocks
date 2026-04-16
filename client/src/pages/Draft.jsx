@@ -496,10 +496,8 @@ export default function Draft() {
     if (s.selectedPlayer != null) {
       assignPlayerToSlot(s.selectedPlayer, slot);
       setSelectedPlayer(null);
-    } else if (s.picks[slot]) {
-      clearSlot(slot);
     }
-  }, [assignPlayerToSlot, clearSlot]);
+  }, [assignPlayerToSlot]);
 
   // Mobile prospect tap: assign to the current pick, then auto-advance.
   const pickForDrawerSlot = useCallback((player) => {
@@ -692,6 +690,9 @@ export default function Draft() {
 
   const activePlayer = activeDragId?.startsWith('player-')
     ? playerById.get(Number(activeDragId.replace('player-', '')))
+    : null;
+  const activeSlotPlayer = activeDragId?.startsWith('slot-')
+    ? playerById.get(picks[Number(activeDragId.replace('slot-', ''))])
     : null;
 
   return (
@@ -1119,20 +1120,20 @@ export default function Draft() {
 
         {createPortal(
           <DragOverlay dropAnimation={null}>
-            {activePlayer ? (
+            {(activePlayer || activeSlotPlayer) ? (
               <div
                 className="px-3 py-2 rounded-lg text-sm text-text-primary font-semibold shadow-glow pointer-events-none select-none"
                 style={{
                   background: 'var(--bg-elevated)',
-                  borderLeft: `3px solid ${posHex(activePlayer.position)}`,
-                  border: `1px solid ${posHex(activePlayer.position)}55`,
+                  borderLeft: `3px solid ${posHex((activePlayer || activeSlotPlayer).position)}`,
+                  border: `1px solid ${posHex((activePlayer || activeSlotPlayer).position)}55`,
                   maxWidth: 260,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                 }}
               >
-                {activePlayer.name}
+                {(activePlayer || activeSlotPlayer).name}
               </div>
             ) : null}
           </DragOverlay>,

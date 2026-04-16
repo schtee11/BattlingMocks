@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useState } from 'react';
-import { useDroppable } from '@dnd-kit/core';
+import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { posHex } from '../lib/positions.js';
 import { PositionBadge } from './ui/Badge.jsx';
 import { TeamLogo } from './ui/TeamLogo.jsx';
@@ -10,11 +10,18 @@ import { PlayerHeadshot } from './ui/PlayerHeadshot.jsx';
 // useCallback with empty deps + latestRef pattern) so the memo comparator
 // stays effective — inline arrow functions would defeat it.
 function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfident, onToggleConfident, boardRef }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `slot-${slot}` });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `slot-${slot}` });
+  const {
+    setNodeRef: setDragRef,
+    attributes: dragAttrs,
+    listeners: dragListeners,
+    isDragging,
+  } = useDraggable({ id: `slot-${slot}`, disabled: !player });
   const mergedRef = useCallback((el) => {
-    setNodeRef(el);
+    setDropRef(el);
+    setDragRef(el);
     if (boardRef && el) boardRef.current[slot] = el;
-  }, [setNodeRef, boardRef, slot]);
+  }, [setDropRef, setDragRef, boardRef, slot]);
   const [flash, setFlash] = useState(false);
   const [prevPid, setPrevPid] = useState(player?.id ?? null);
 
@@ -55,6 +62,7 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfi
     : '';
   const activeCls = isActive && !player ? 'border-accent/40 bg-accent/[0.04]' : '';
   const flashCls = flash ? 'animate-flash' : '';
+  const dragCls = isDragging ? 'opacity-40 scale-95' : '';
 
   return (
     <li
@@ -63,8 +71,9 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfi
       onClick={handleClick}
       tabIndex={0}
       aria-label={`Pick ${slot}${team ? ` - ${team.team_name}` : ''}${player ? ` - ${player.name}` : ' - empty'}`}
-      className={`${baseCls} ${filledCls} ${overCls} ${activeCls} ${flashCls}`}
+      className={`${baseCls} ${filledCls} ${overCls} ${activeCls} ${flashCls} ${dragCls}`}
       style={player ? { borderLeft: `3px solid ${posColor}` } : undefined}
+      {...(player ? { ...dragAttrs, ...dragListeners } : {})}
     >
       {/* Pick number badge — 40px */}
       <div
