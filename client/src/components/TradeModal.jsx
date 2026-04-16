@@ -469,20 +469,86 @@ export function TradeModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* "From" team selector — only shown in dual-team mode (R1 draft
-              page). In team-mock mode the user's team is fixed. */}
-          {fromTeamEditable && (
+          {/* Team selectors. In arbiter (R1) mode both sides live in a single
+              two-column grid of logo-only buttons so the modal stays short
+              even with all 32 teams visible. Abbreviations appear in the
+              section header once a team is picked, and as a hover title on
+              each chip. Team-mock mode shows just the partner picker. */}
+          {fromTeamEditable ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="flex items-baseline justify-between mb-2">
+                  <span className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                    Team A
+                  </span>
+                  <span className="font-display text-[10px] font-bold uppercase tracking-wider text-accent">
+                    {effectiveFromTeam || '—'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {allTeams.map((abbr) => {
+                    const selected = effectiveFromTeam === abbr;
+                    return (
+                      <button
+                        key={abbr}
+                        onClick={() => setFromTeam(abbr)}
+                        title={abbr}
+                        aria-label={abbr}
+                        className={`w-7 h-7 flex items-center justify-center rounded-md border transition ${
+                          selected
+                            ? 'border-accent bg-accent/[0.12]'
+                            : 'border-border-subtle hover:border-border-focus opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <TeamLogo abbr={abbr} size="xs" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-baseline justify-between mb-2">
+                  <span className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                    Team B
+                  </span>
+                  <span className="font-display text-[10px] font-bold uppercase tracking-wider text-accent">
+                    {partnerTeam || '—'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {otherTeams.map((abbr) => {
+                    const selected = partnerTeam === abbr;
+                    return (
+                      <button
+                        key={abbr}
+                        onClick={() => setPartnerTeam(abbr)}
+                        title={abbr}
+                        aria-label={abbr}
+                        className={`w-7 h-7 flex items-center justify-center rounded-md border transition ${
+                          selected
+                            ? 'border-accent bg-accent/[0.12]'
+                            : 'border-border-subtle hover:border-border-focus opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <TeamLogo abbr={abbr} size="xs" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
             <div>
               <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted mb-2">
-                Team A
+                Trade With
               </div>
               <div className="flex gap-1.5 flex-wrap">
-                {allTeams.map((abbr) => (
+                {otherTeams.map((abbr) => (
                   <button
                     key={abbr}
-                    onClick={() => setFromTeam(abbr)}
+                    onClick={() => setPartnerTeam(abbr)}
                     className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-display font-semibold uppercase tracking-wider transition ${
-                      effectiveFromTeam === abbr
+                      partnerTeam === abbr
                         ? 'border-accent bg-accent/[0.1] text-text-primary'
                         : 'border-border-subtle text-text-secondary hover:border-border-focus'
                     }`}
@@ -494,28 +560,6 @@ export function TradeModal({
               </div>
             </div>
           )}
-          {/* Partner team selector */}
-          <div>
-            <div className="font-display text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted mb-2">
-              {fromTeamEditable ? 'Team B' : 'Trade With'}
-            </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {otherTeams.map((abbr) => (
-                <button
-                  key={abbr}
-                  onClick={() => setPartnerTeam(abbr)}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-display font-semibold uppercase tracking-wider transition ${
-                    partnerTeam === abbr
-                      ? 'border-accent bg-accent/[0.1] text-text-primary'
-                      : 'border-border-subtle text-text-secondary hover:border-border-focus'
-                  }`}
-                >
-                  <TeamLogo abbr={abbr} size="xs" />
-                  {abbr}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* Two sides */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
