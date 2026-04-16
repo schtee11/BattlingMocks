@@ -9,21 +9,39 @@ const router = Router();
 router.get('/', async (req, res) => {
   // Default to Round 1 only so the live Draft page stays 32 slots. Pass
   // ?round=all to get every row (used by the team mock page).
+  //
+  // Team needs resolution strategy:
+  //   1. Prefer the live team_needs table (single source of truth, updated
+  //      via admin UI).
+  //   2. Fall back to the draft_order.team_needs JSONB column (legacy
+  //      denormalized cache — can be stale or empty on dev DBs).
+  // This keeps the bot picker + trade proposer functional even when the
+  // admin-panel sync that refreshes the JSONB mirror hasn't been run.
   const roundParam = (req.query.round || '1').toString().toLowerCase();
-  let rows;
+  const sql = `
+    SELECT
+      d.pick_number,
+      d.team,
+      d.team_name,
+      d.round,
+      COALESCE(
+        (SELECT jsonb_agg(tn.position ORDER BY tn.priority ASC)
+           FROM team_needs tn
+          WHERE tn.team_id = d.team AND tn.draft_year = 2026),
+        d.team_needs
+      ) AS team_needs
+    FROM draft_order d
+    ${roundParam === 'all' ? '' : 'WHERE d.round = $1'}
+    ORDER BY d.pick_number
+  `;
+  const params = roundParam === 'all' ? [] : [parseInt(roundParam, 10) || 1];
+  const { rows } = await pool.query(sql, params);
+
   if (roundParam === 'all') {
-    ({ rows } = await pool.query(
-      'SELECT pick_number, team, team_name, team_needs, round FROM draft_order ORDER BY pick_number'
-    ));
     // Shorter TTL for the full list — admin sync of R2-R7 needs to show up
     // promptly, and this endpoint is only hit by the team-mock page.
     res.set('Cache-Control', 'public, max-age=30');
   } else {
-    const round = parseInt(roundParam, 10) || 1;
-    ({ rows } = await pool.query(
-      'SELECT pick_number, team, team_name, team_needs, round FROM draft_order WHERE round = $1 ORDER BY pick_number',
-      [round]
-    ));
     res.set('Cache-Control', 'public, max-age=3600');
   }
   res.json(rows);
