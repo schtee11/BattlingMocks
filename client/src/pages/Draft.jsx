@@ -1162,9 +1162,22 @@ export default function Draft() {
               </div>
               <ProgressBar picks={picks} playerById={playerById} max={32} />
             </div>
-            <Button size="xs" variant="outline" onClick={() => setTradeOpen(true)} disabled={locked} className="shrink-0">
-              Simulate Trade
-            </Button>
+            <button
+              onClick={() => setTradeOpen(true)}
+              disabled={locked}
+              className="shrink-0 inline-flex items-center gap-1.5 font-display font-bold uppercase tracking-[0.12em] text-[11px] rounded-lg px-4 py-2 transition hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                color: '#04080f',
+                boxShadow: '0 0 18px -6px rgba(245,158,11,0.55)',
+              }}
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="7 3 7 9 1 9" /><polyline points="17 21 17 15 23 15" />
+                <path d="M21 3l-7 7" /><path d="M3 21l7-7" />
+              </svg>
+              Trade
+            </button>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Button
