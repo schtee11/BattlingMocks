@@ -348,17 +348,37 @@ CREATE INDEX IF NOT EXISTS idx_prediction_mock_events_mock
 // time so a single failing DDL (due to legacy constraints, weird data, etc.)
 // doesn't nuke the entire schema deploy. Failures are logged loudly but the
 // rest of the migration continues.
+//
+// Handles PostgreSQL dollar-quoted blocks (`$$…$$`) so DO/function bodies
+// that contain semicolons aren't shattered into fragments.
 function splitStatements(sql) {
-  // Strip line comments. The SQL here has no string literals containing
-  // semicolons, so a naive split is safe.
   const stripped = sql
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n');
-  return stripped
-    .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+
+  const statements = [];
+  let buf = '';
+  let inDollar = false;
+  for (let i = 0; i < stripped.length; i++) {
+    const c = stripped[i];
+    if (c === '$' && stripped[i + 1] === '$') {
+      buf += '$$';
+      i++;
+      inDollar = !inDollar;
+      continue;
+    }
+    if (c === ';' && !inDollar) {
+      const s = buf.trim();
+      if (s.length > 0) statements.push(s);
+      buf = '';
+      continue;
+    }
+    buf += c;
+  }
+  const tail = buf.trim();
+  if (tail.length > 0) statements.push(tail);
+  return statements;
 }
 
 export async function migrate() {
