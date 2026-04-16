@@ -23,7 +23,11 @@ import {
   formatPickLabel,
   isFuturePickId,
 } from '../lib/futurePicks.js';
-import { generateBotTradeOffers } from '../lib/botTradeProposer.js';
+import {
+  generateBotTradeOffers,
+  generateBotToBotOffer,
+} from '../lib/botTradeProposer.js';
+import { acceptanceProbability, tradeHash } from '../lib/tradeAcceptance.js';
 
 // ─── NFL Teams ────────────────────────────────────────────────────────────────
 const NFL_TEAMS = [
@@ -335,30 +339,40 @@ function SavedView({ savedMock, players, draftOrder = [], onRestart }) {
             </div>
           </div>
           <div className="space-y-3">
-            {savedMock.trades.map((t, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-border-subtle bg-bg-surface/40"
-              >
-                <TeamLogo abbr={userTeam} size="sm" />
-                <div className="text-[12px] text-text-muted font-mono">↔</div>
-                <TeamLogo abbr={t.partnerTeam} size="sm" />
-                <div className="flex-1 min-w-0 text-[12px] sm:text-[13px]">
-                  <div className="text-text-secondary">
-                    <span className="text-text-muted text-[10px] font-display uppercase tracking-wide">Gave</span>{' '}
-                    <span className="font-mono font-semibold text-text-primary">
-                      {(t.gave || []).map(formatPickLabel).join(', ')}
-                    </span>
-                  </div>
-                  <div className="text-text-secondary mt-1">
-                    <span className="text-text-muted text-[10px] font-display uppercase tracking-wide">Got</span>{' '}
-                    <span className="font-mono font-semibold text-accent">
-                      {(t.got || []).map(formatPickLabel).join(', ')}
-                    </span>
+            {savedMock.trades.map((t, i) => {
+              const isCpuTrade = t.teamA && t.teamA !== userTeam;
+              const leftTeam = isCpuTrade ? t.teamA : userTeam;
+              const rightTeam = isCpuTrade ? t.teamB : t.partnerTeam;
+              return (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-border-subtle bg-bg-surface/40"
+                >
+                  <TeamLogo abbr={leftTeam} size="sm" />
+                  <div className="text-[12px] text-text-muted font-mono">↔</div>
+                  <TeamLogo abbr={rightTeam} size="sm" />
+                  <div className="flex-1 min-w-0 text-[12px] sm:text-[13px]">
+                    {isCpuTrade && (
+                      <div className="text-[9px] font-display uppercase tracking-wider text-text-muted mb-0.5">
+                        CPU Trade
+                      </div>
+                    )}
+                    <div className="text-text-secondary">
+                      <span className="text-text-muted text-[10px] font-display uppercase tracking-wide">{isCpuTrade ? `${leftTeam} sent` : 'Gave'}</span>{' '}
+                      <span className="font-mono font-semibold text-text-primary">
+                        {(t.gave || []).map(formatPickLabel).join(', ')}
+                      </span>
+                    </div>
+                    <div className="text-text-secondary mt-1">
+                      <span className="text-text-muted text-[10px] font-display uppercase tracking-wide">{isCpuTrade ? `${rightTeam} sent` : 'Got'}</span>{' '}
+                      <span className="font-mono font-semibold text-accent">
+                        {(t.got || []).map(formatPickLabel).join(', ')}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -712,93 +726,86 @@ const ExportCard = forwardRef(function ExportCard(
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {trades.map((t, i) => (
-              <div
-                key={i}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 16,
-                  padding: '14px 18px',
-                  borderRadius: 12,
-                  background: C.surface,
-                  border: `1px solid ${C.subtle}`,
-                }}
-              >
-                {/* User team badge */}
+            {trades.map((t, i) => {
+              const isCpuTrade = t.teamA && t.teamA !== userTeam;
+              const leftTeam = isCpuTrade ? t.teamA : userTeam;
+              const rightTeam = isCpuTrade ? t.teamB : t.partnerTeam;
+              return (
                 <div
+                  key={i}
                   style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 8,
-                    background: TEAM_BRAND[userTeam] || C.accent,
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: userTeam.length >= 4 ? 10 : 12,
-                    fontWeight: 900,
-                    color: '#ffffff',
-                    flexShrink: 0,
-                    letterSpacing: 0.5,
+                    gap: 16,
+                    padding: '14px 18px',
+                    borderRadius: 12,
+                    background: C.surface,
+                    border: `1px solid ${C.subtle}`,
                   }}
                 >
-                  {userTeam}
-                </div>
-                <div style={{ fontSize: 13, color: C.muted, fontFamily: 'monospace', flexShrink: 0 }}>↔</div>
-                {/* Partner team badge */}
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 8,
-                    background: TEAM_BRAND[t.partnerTeam] || C.accent,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: (t.partnerTeam || '').length >= 4 ? 10 : 12,
-                    fontWeight: 900,
-                    color: '#ffffff',
-                    flexShrink: 0,
-                    letterSpacing: 0.5,
-                  }}
-                >
-                  {t.partnerTeam}
-                </div>
-                {/* Pick details */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: C.muted }}>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        textTransform: 'uppercase',
-                        letterSpacing: 1.5,
-                        fontWeight: 700,
-                      }}
-                    >
-                      Gave
-                    </span>{' '}
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.text }}>
-                      {(t.gave || []).map(formatPickLabel).join(', ')}
-                    </span>
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 8,
+                      background: TEAM_BRAND[leftTeam] || C.accent,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: (leftTeam || '').length >= 4 ? 10 : 12,
+                      fontWeight: 900,
+                      color: '#ffffff',
+                      flexShrink: 0,
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    {leftTeam}
                   </div>
-                  <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        textTransform: 'uppercase',
-                        letterSpacing: 1.5,
-                        fontWeight: 700,
-                      }}
-                    >
-                      Got
-                    </span>{' '}
-                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>
-                      {(t.got || []).map(formatPickLabel).join(', ')}
-                    </span>
+                  <div style={{ fontSize: 13, color: C.muted, fontFamily: 'monospace', flexShrink: 0 }}>↔</div>
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 8,
+                      background: TEAM_BRAND[rightTeam] || C.accent,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: (rightTeam || '').length >= 4 ? 10 : 12,
+                      fontWeight: 900,
+                      color: '#ffffff',
+                      flexShrink: 0,
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    {rightTeam}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {isCpuTrade && (
+                      <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: C.muted, marginBottom: 2 }}>
+                        CPU Trade
+                      </div>
+                    )}
+                    <div style={{ fontSize: 13, color: C.muted }}>
+                      <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700 }}>
+                        {isCpuTrade ? `${leftTeam} sent` : 'Gave'}
+                      </span>{' '}
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.text }}>
+                        {(t.gave || []).map(formatPickLabel).join(', ')}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
+                      <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700 }}>
+                        {isCpuTrade ? `${rightTeam} sent` : 'Got'}
+                      </span>{' '}
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.accent }}>
+                        {(t.got || []).map(formatPickLabel).join(', ')}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -1414,30 +1421,40 @@ function ResultsView({
               Trades Made
             </div>
             <div className="space-y-2">
-              {trades.map((t, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-border-subtle bg-bg-surface/40"
-                >
-                  <TeamLogo abbr={team} size="xs" />
-                  <div className="text-[10px] text-text-muted font-mono">↔</div>
-                  <TeamLogo abbr={t.partnerTeam} size="xs" />
-                  <div className="flex-1 min-w-0 text-[11px]">
-                    <div className="text-text-secondary">
-                      <span className="text-text-muted">Gave:</span>{' '}
-                      <span className="font-mono font-semibold text-text-primary">
-                        {t.gave.map(formatPickLabel).join(', ')}
-                      </span>
-                    </div>
-                    <div className="text-text-secondary mt-0.5">
-                      <span className="text-text-muted">Got:</span>{' '}
-                      <span className="font-mono font-semibold text-accent">
-                        {t.got.map(formatPickLabel).join(', ')}
-                      </span>
+              {trades.map((t, i) => {
+                const isCpuTrade = t.teamA && t.teamA !== team;
+                const leftTeam = isCpuTrade ? t.teamA : team;
+                const rightTeam = isCpuTrade ? t.teamB : t.partnerTeam;
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-border-subtle bg-bg-surface/40"
+                  >
+                    <TeamLogo abbr={leftTeam} size="xs" />
+                    <div className="text-[10px] text-text-muted font-mono">↔</div>
+                    <TeamLogo abbr={rightTeam} size="xs" />
+                    <div className="flex-1 min-w-0 text-[11px]">
+                      {isCpuTrade && (
+                        <div className="text-[9px] font-display uppercase tracking-wider text-text-muted mb-0.5">
+                          CPU Trade
+                        </div>
+                      )}
+                      <div className="text-text-secondary">
+                        <span className="text-text-muted">{isCpuTrade ? `${leftTeam} sent:` : 'Gave:'}</span>{' '}
+                        <span className="font-mono font-semibold text-text-primary">
+                          {(t.gave || []).map(formatPickLabel).join(', ')}
+                        </span>
+                      </div>
+                      <div className="text-text-secondary mt-0.5">
+                        <span className="text-text-muted">{isCpuTrade ? `${rightTeam} sent:` : 'Got:'}</span>{' '}
+                        <span className="font-mono font-semibold text-accent">
+                          {(t.got || []).map(formatPickLabel).join(', ')}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1608,6 +1625,27 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // Tracks the pick number we last generated offers for, so we only
   // recompute when the user advances to a NEW on-clock slot.
   const offersForPickRef = useRef(null);
+  // ── User prefs for the offers feature, persisted across sessions ───────
+  // `offersEnabled`   — flip to silence incoming offers entirely.
+  // `botBotEnabled`   — flip to stop CPU-to-CPU trades during auto-run.
+  // `offersCollapsed` — panel collapsed/expanded state; auto-expands on a
+  //                     fresh on-clock slot so the user always sees the
+  //                     first ring of a new call.
+  const [offersEnabled, setOffersEnabled] = useState(
+    () => (typeof localStorage !== 'undefined' ? localStorage.getItem('mds_incoming_offers_enabled') !== 'false' : true)
+  );
+  const [botBotEnabled, setBotBotEnabled] = useState(
+    () => (typeof localStorage !== 'undefined' ? localStorage.getItem('mds_bot_bot_trades_enabled') !== 'false' : true)
+  );
+  const [offersCollapsed, setOffersCollapsed] = useState(
+    () => (typeof localStorage !== 'undefined' ? localStorage.getItem('mds_offers_panel_collapsed') === 'true' : false)
+  );
+  useEffect(() => { try { localStorage.setItem('mds_incoming_offers_enabled', String(offersEnabled)); } catch {} }, [offersEnabled]);
+  useEffect(() => { try { localStorage.setItem('mds_bot_bot_trades_enabled', String(botBotEnabled)); } catch {} }, [botBotEnabled]);
+  useEffect(() => { try { localStorage.setItem('mds_offers_panel_collapsed', String(offersCollapsed)); } catch {} }, [offersCollapsed]);
+  // Tracks pick_numbers where we've already rolled a bot-vs-bot trade check
+  // so the engine effect doesn't re-roll on every render. Reset on restart.
+  const botBotTriedRef = useRef(new Set());
   // Confirmation state for destructive actions. We gate Restart and Change
   // Team behind an explicit confirm as soon as the user has made any real
   // progress — losing a half-finished mock would be a terrible surprise.
@@ -1687,6 +1725,58 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
     const delay = SPEED_STEPS[speedIdx] ?? 150;
     const timer = setTimeout(() => {
+      // ── Bot-vs-bot trade attempt ────────────────────────────────────
+      // Before this bot picks, see if a team behind them wants to move up.
+      // `BOT_TRADE_BASE_RATE` gate keeps attempts sparse (~3–4 per round
+      // pre-filter; fewer survive the urgency + acceptance rolls).
+      // `botBotTriedRef` prevents re-rolling for the same slot across
+      // re-renders, and critically across the post-swap render when the
+      // buyer becomes the new on-clock team.
+      const BOT_TRADE_BASE_RATE = 0.12;
+      if (
+        botBotEnabled &&
+        !botBotTriedRef.current.has(currentSlot.pick_number) &&
+        Math.random() < BOT_TRADE_BASE_RATE
+      ) {
+        botBotTriedRef.current.add(currentSlot.pick_number);
+        try {
+          const result = generateBotToBotOffer({
+            onClockTeam: currentSlot.team,
+            liveOrder,
+            picks,
+            effectivePlayers,
+            futureOwnership,
+            randomness,
+            byId,
+            excludeTeams: [team],     // user team never transacts in auto-run
+          });
+          if (result && result.offer) {
+            const offer = result.offer;
+            // Seller surplusPct is user-side-positive convention; from the
+            // seller's perspective a positive surplus means they're getting
+            // MORE than fair, so flip the sign for the acceptance curve.
+            const sellerSurplus = -offer.summary.surplusPct / 100;
+            const p = acceptanceProbability(sellerSurplus);
+            const roll = tradeHash(offer.sellerTeam, offer.buyerTeam, offer.yourPicks, offer.theirPicks);
+            if (roll < p) {
+              applyTradeLocal({
+                teamA: offer.sellerTeam,
+                teamB: offer.buyerTeam,
+                yourPicks: offer.yourPicks,     // seller → buyer
+                theirPicks: offer.theirPicks,   // buyer → seller
+                initiator: 'cpu',
+              });
+              toast(`${offer.buyerTeam} traded up with ${offer.sellerTeam}`, { icon: '🔀' });
+              // Don't pick this tick — the swap will re-render and the new
+              // owner picks on the next engine iteration.
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('[bot-vs-bot] generate failed:', err?.message);
+        }
+      }
+
       // Compute the live pool right now, pick, then advance.
       // effectivePlayers reflects any custom board the user loaded before start.
       const taken = new Set(picks.map((p) => p.player_id));
@@ -1720,7 +1810,8 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       ]);
     }, delay);
     return () => clearTimeout(timer);
-  }, [phase, currentSlot, picks, effectivePlayers, team, randomness, speedIdx]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, currentSlot, picks, effectivePlayers, team, randomness, speedIdx, botBotEnabled, liveOrder, futureOwnership, byId]);
 
   // Auto-switch mobile to Prospects tab when it's the user's turn to pick
   useEffect(() => {
@@ -1738,6 +1829,15 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
 
     offersForPickRef.current = currentSlot.pick_number;
     setDismissedOfferIds(new Set());
+    // Auto-expand the panel for a fresh on-clock slot so the user sees
+    // the first ring even if they previously collapsed it.
+    setOffersCollapsed(false);
+    // Toggled off by the user — short-circuit. We still bumped the ref
+    // above so re-enabling mid-pick doesn't replay stale generation.
+    if (!offersEnabled) {
+      setIncomingOffers([]);
+      return;
+    }
     try {
       // Diagnostic — flip on with `window.__btDebug = true` in DevTools to
       // see why offers do or don't fire. Always log the result count so we
@@ -1762,7 +1862,33 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
       console.warn('[trade offers] generate failed:', err?.message, err);
       setIncomingOffers([]);
     }
-  }, [phase, currentSlot, team, liveOrder, picks, effectivePlayers, futureOwnership, randomness, byId]);
+  }, [phase, currentSlot, team, liveOrder, picks, effectivePlayers, futureOwnership, randomness, byId, offersEnabled]);
+
+  // If the user flips the toggle mid-pick, clear or regenerate immediately
+  // without waiting for the next on-clock slot.
+  useEffect(() => {
+    if (!offersEnabled) {
+      setIncomingOffers([]);
+      return;
+    }
+    if (phase !== PHASE_ON_CLOCK || !currentSlot) return;
+    if (incomingOffers.length > 0) return;
+    try {
+      const offers = generateBotTradeOffers({
+        userTeam: team,
+        liveOrder,
+        picks,
+        effectivePlayers,
+        futureOwnership,
+        randomness,
+        byId,
+      });
+      setIncomingOffers(offers || []);
+    } catch {
+      setIncomingOffers([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offersEnabled]);
 
   // Clear offers when leaving the on-clock state (pick made, restart, etc.).
   useEffect(() => {
@@ -2003,6 +2129,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setSelectedBoardId('');
     setPhase(PHASE_READY);
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
+    botBotTriedRef.current = new Set();
   }
 
   // Wrap restart with a confirm dialog whenever the user has actually made
@@ -2027,7 +2154,20 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   // We split the lists by type so each storage layer only sees its own ids.
   // Only upcoming current-year picks can change hands — past picks are
   // locked. Future-year picks are always "upcoming" by definition.
-  function applyTradeLocal({ partnerTeam, yourPicks, theirPicks }) {
+  //
+  // `teamA` / `teamB` override the default (user ↔ partnerTeam) swap so
+  // CPU-to-CPU trades can reuse this same code path. `yourPicks` always
+  // refers to picks leaving teamA and going to teamB (and vice versa).
+  function applyTradeLocal({
+    partnerTeam,
+    yourPicks,
+    theirPicks,
+    teamA,
+    teamB,
+    initiator,       // 'user' | 'cpu' — recorded on the trade entry only
+  }) {
+    const sideA = teamA ?? team;
+    const sideB = teamB ?? partnerTeam;
     const yourCurrent = (yourPicks || []).filter((p) => typeof p === 'number');
     const theirCurrent = (theirPicks || []).filter((p) => typeof p === 'number');
     const yourFuture = (yourPicks || []).filter(isFuturePickId);
@@ -2048,10 +2188,10 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
         // Don't touch picks already made
         if (row.pick_number <= picks.length) return row;
         if (yourSet.has(row.pick_number)) {
-          return { ...row, team: partnerTeam, team_needs: needsByTeam.get(partnerTeam) ?? row.team_needs };
+          return { ...row, team: sideB, team_needs: needsByTeam.get(sideB) ?? row.team_needs };
         }
         if (theirSet.has(row.pick_number)) {
-          return { ...row, team, team_needs: needsByTeam.get(team) ?? row.team_needs };
+          return { ...row, team: sideA, team_needs: needsByTeam.get(sideA) ?? row.team_needs };
         }
         return row;
       });
@@ -2061,8 +2201,8 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     // call sees a consistent snapshot — never tries to read mid-mutation.
     if (yourFuture.length > 0 || theirFuture.length > 0) {
       setFutureOwnership((prev) => {
-        let next = swapFutureOwnership(prev, yourFuture, partnerTeam);
-        next = swapFutureOwnership(next, theirFuture, team);
+        let next = swapFutureOwnership(prev, yourFuture, sideB);
+        next = swapFutureOwnership(next, theirFuture, sideA);
         return next;
       });
     }
@@ -2076,7 +2216,14 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     };
     setTrades((prev) => [
       ...prev,
-      { partnerTeam, gave: sortMixed(yourPicks), got: sortMixed(theirPicks) },
+      {
+        partnerTeam: sideB,              // legacy field — downstream uses this for "You ↔ X"
+        teamA: sideA,
+        teamB: sideB,
+        gave: sortMixed(yourPicks),
+        got: sortMixed(theirPicks),
+        initiator: initiator || (sideA === team ? 'user' : 'cpu'),
+      },
     ]);
   }
 
@@ -2521,6 +2668,29 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 className="w-full h-1 accent-accent cursor-pointer"
               />
             </div>
+            {/* Trade feature toggles */}
+            <div className="space-y-1.5">
+              <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                <span>Trade Offers</span>
+                <input
+                  type="checkbox"
+                  checked={offersEnabled}
+                  onChange={(e) => setOffersEnabled(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                  title="Incoming trade offers from bot teams when you're on the clock"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                <span>Bot-vs-Bot Trades</span>
+                <input
+                  type="checkbox"
+                  checked={botBotEnabled}
+                  onChange={(e) => setBotBotEnabled(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                  title="CPU teams trade amongst themselves during auto-run"
+                />
+              </label>
+            </div>
             {/* Pause / Resume / Trade */}
             <div className="grid grid-cols-2 gap-2">
               {phase === PHASE_RUNNING && (
@@ -2573,6 +2743,8 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 onDismiss={handleDismissOffer}
                 onDismissAll={handleDismissAllOffers}
                 onCounter={handleCounterOffer}
+                collapsed={offersCollapsed}
+                onToggleCollapsed={() => setOffersCollapsed((v) => !v)}
               />
             </div>
           )}
@@ -2754,6 +2926,8 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                         onDismiss={handleDismissOffer}
                         onDismissAll={handleDismissAllOffers}
                         onCounter={handleCounterOffer}
+                        collapsed={offersCollapsed}
+                        onToggleCollapsed={() => setOffersCollapsed((v) => !v)}
                       />
                     </div>
                   )}
@@ -2825,6 +2999,18 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                       className="flex-1 h-1 accent-accent cursor-pointer" />
                     <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
                   </div>
+                  <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                    <span>Trade Offers</span>
+                    <input type="checkbox" checked={offersEnabled}
+                      onChange={(e) => setOffersEnabled(e.target.checked)}
+                      className="w-3.5 h-3.5 accent-accent cursor-pointer" />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                    <span>Bot-vs-Bot Trades</span>
+                    <input type="checkbox" checked={botBotEnabled}
+                      onChange={(e) => setBotBotEnabled(e.target.checked)}
+                      className="w-3.5 h-3.5 accent-accent cursor-pointer" />
+                  </label>
                   <button onClick={requestRestart}
                     className="w-full font-display font-semibold text-[10px] uppercase tracking-[0.12em] text-text-muted hover:text-text-primary rounded-lg px-3 py-1.5 border border-border-subtle hover:border-border-focus transition">
                     Restart Draft

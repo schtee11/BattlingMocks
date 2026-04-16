@@ -16,10 +16,15 @@
 //     tradeBasePremium / tradeTop5Bonus already used in TradeModal.
 //   - DETERMINISTIC SHAPE: the offer's pick package is computed from the
 //     value gap and the bot's own future capital — no random chip-tossing.
+//   - VARIABLE COUNT: 0–3 offers surfaced per on-clock slot, seeded from
+//     the pick number so repeated renders produce the same count. Weights
+//     roughly 15 / 35 / 30 / 20 for 0 / 1 / 2 / 3 offers respectively.
 //
-// We deliberately do NOT roll acceptance probability here — these are
-// offers TO the user. The user accepts/rejects them through the UI; the
-// "fair-zone" framing means they're already pre-vetted to be reasonable.
+// We deliberately do NOT roll acceptance probability for user-facing
+// offers — they're already pre-vetted to be reasonable by the fair-zone
+// construction, so the user makes the call. Bot-vs-bot offers (see
+// generateBotToBotOffer) DO roll probability because there's no human in
+// the loop to decide.
 
 import tradeValuesChart from './tradeValues2026.json';
 import { getAlgoConfig } from './algoConfig.js';
@@ -33,9 +38,36 @@ import { futurePicksForTeam } from './futurePicks.js';
 // starts capturing trade shapes a bot couldn't realistically finance.
 const MAX_LOOKAHEAD_PICKS = 24;
 
-// Maximum number of distinct offers to surface at one time. Two-or-three
-// gives the user a real choice without overwhelming the on-clock UI.
-const MAX_OFFERS = 3;
+// Hard ceiling on simultaneous offers. The actual count shown for any
+// given on-clock pick is sampled via `sampledMaxOffers()` below — this
+// just caps the search effort.
+const HARD_OFFER_CAP = 3;
+
+// Weighted random in {0, 1, 2, 3} seeded deterministically by pickNumber.
+// Real drafts have silent picks — the previous fixed cap of 3 made every
+// on-clock moment feel scripted. These weights approximate the observed
+// distribution across the 2023–2025 dataset (see scratch/analyze-trades.mjs)
+// where roughly half of picks saw no trade-up contact and the rest
+// clustered at 1–2 inbound calls.
+//
+//   0 offers : 15%  (silent pick — no one bites)
+//   1 offer  : 35%  (single ring)
+//   2 offers : 30%  (two callers)
+//   3 offers : 20%  (busy phone — rare but real)
+//
+// Seeded from pickNumber so a re-render of the on-clock UI won't flip the
+// count — important because unrelated state updates (search input, etc.)
+// cause the generator effect to rerun.
+export function sampledMaxOffers(pickNumber) {
+  // Same hash pattern as tradeHash in tradeAcceptance.js — avoids pulling
+  // in a PRNG dependency.
+  const x = Math.sin((pickNumber || 1) * 12.9898 + 78.233) * 43758.5453;
+  const r = x - Math.floor(x);                    // 0..1
+  if (r < 0.15) return 0;
+  if (r < 0.50) return 1;
+  if (r < 0.80) return 2;
+  return 3;
+}
 
 // "Tier drop" detection — if among the top-K candidates at the bot's needed
 // position, M of them get picked between the user's slot and the bot's
@@ -323,11 +355,19 @@ export function generateBotTradeOffers({
     return [];
   }
 
+  // Sample today's offer count. Zero = silent pick, no work to do.
+  const offerCap = sampledMaxOffers(userSlot.pick_number);
+  if (offerCap === 0) {
+    dbg('silent pick (sampled 0 offers) for', userSlot.pick_number);
+    return [];
+  }
+
   dbg('on the clock', {
     userTeam,
     userPick: userSlot.pick_number,
     userPickValue,
     lookahead: MAX_LOOKAHEAD_PICKS,
+    offerCap,
     poolSize: effectivePlayers.length,
   });
 
@@ -464,11 +504,14 @@ export function generateBotTradeOffers({
     return 'far';
   };
 
-  // Pick the most urgent offer per bucket first.
+  // Pick the most urgent offer per bucket first — but never exceed the
+  // per-pick sampled cap (0..3). HARD_OFFER_CAP bounds the search just in
+  // case sampledMaxOffers ever returns something larger.
+  const effectiveCap = Math.min(offerCap, HARD_OFFER_CAP);
   const chosen = [];
   const usedBuckets = new Set();
   for (const offer of offers) {
-    if (chosen.length >= MAX_OFFERS) break;
+    if (chosen.length >= effectiveCap) break;
     const bucket = bucketOf(offer);
     if (usedBuckets.has(bucket)) continue;
     usedBuckets.add(bucket);
@@ -476,7 +519,7 @@ export function generateBotTradeOffers({
   }
   // Fill remaining slots with next most urgent, ignoring bucket.
   for (const offer of offers) {
-    if (chosen.length >= MAX_OFFERS) break;
+    if (chosen.length >= effectiveCap) break;
     if (chosen.includes(offer)) continue;
     chosen.push(offer);
   }
@@ -486,4 +529,128 @@ export function generateBotTradeOffers({
   chosen.sort((a, b) => b.summary.urgency - a.summary.urgency);
   dbg('result', chosen.length, 'offers', chosen.map((o) => `${o.botTeam}@${o.botPick}`));
   return chosen;
+}
+
+// ── Bot-vs-bot offer generation ──────────────────────────────────────────────
+//
+// When a bot is on the clock during auto-run, real-world GMs field calls
+// from teams behind them wanting to move up. We reuse the same candidate
+// evaluation (assessUrgency + buildOfferPackage) but:
+//
+//   1. the "seller" (on-clock team) is a bot, not the user,
+//   2. we return only ONE offer — the most urgent candidate — because
+//      this is a yes/no decision, not a presented menu,
+//   3. acceptance is rolled elsewhere (tradeAcceptance.acceptanceProbability
+//      + tradeHash) — this function's job is just to build the best
+//      available proposal.
+//
+// Returns `{ offer }` | `null` — the object wraps so we can evolve the
+// return shape without callers breaking.
+export function generateBotToBotOffer({
+  onClockTeam,
+  liveOrder,
+  picks,
+  effectivePlayers,
+  futureOwnership,
+  randomness = 0.25,
+  byId,
+  excludeTeams = [],           // buyer must not be one of these (e.g. the user)
+}) {
+  if (!liveOrder || liveOrder.length === 0) return null;
+  const picksMadeCount = picks.length;
+  const sellerSlot = liveOrder[picksMadeCount];
+  if (!sellerSlot || sellerSlot.team !== onClockTeam) return null;
+
+  const chartGet = buildValueLookup();
+  const sellerPickValue = chartGet(sellerSlot.pick_number);
+  if (sellerPickValue <= 0) return null;
+
+  const cfg = getAlgoConfig();
+  const taken = new Set(picks.map((p) => p.player_id));
+  const available = effectivePlayers.filter((p) => !taken.has(p.id));
+  const allPlayers = effectivePlayers;
+
+  // Scan the next MAX_LOOKAHEAD_PICKS for buyer candidates (other bots).
+  const seenTeams = new Set([onClockTeam, ...excludeTeams]);
+  let best = null;
+
+  for (
+    let i = picksMadeCount + 1;
+    i < Math.min(liveOrder.length, picksMadeCount + 1 + MAX_LOOKAHEAD_PICKS);
+    i++
+  ) {
+    const buyerSlot = liveOrder[i];
+    if (!buyerSlot || buyerSlot.team === onClockTeam) continue;
+    if (seenTeams.has(buyerSlot.team)) continue;
+    seenTeams.add(buyerSlot.team);
+
+    const buyerPickValue = chartGet(buyerSlot.pick_number);
+    if (buyerPickValue <= 0) continue;
+
+    let premium = cfg.tradeBasePremium ?? 0.05;
+    if (sellerSlot.pick_number <= 5) premium += cfg.tradeTop5Bonus ?? 0.03;
+    const requiredFromBuyer = sellerPickValue * (1 + premium);
+    const sweetenerValue = requiredFromBuyer - buyerPickValue;
+    if (sweetenerValue <= 0) continue;
+
+    const picksBetween = liveOrder.slice(picksMadeCount + 1, i);
+    const buyerContext = {
+      allPlayers,
+      teamDraftedPos: picks
+        .filter((pk) => pk.team === buyerSlot.team)
+        .map((pk) => normalizePos(byId.get(pk.player_id)?.position || '')),
+      recentPicks: picks
+        .slice(-(cfg.runWindowSize || 8))
+        .map((pk) => ({ position: normalizePos(byId.get(pk.player_id)?.position || '') })),
+    };
+
+    const urgency = assessUrgency({
+      botSlot: buyerSlot,
+      userSlot: sellerSlot,
+      available,
+      picksBetween,
+      draftContext: buyerContext,
+      randomness,
+    });
+    if (urgency < URGENCY_FLOOR) continue;
+
+    const targetValue = sweetenerValue * (1 + 0.02 + urgency * 0.04);
+    const pkg = buildOfferPackage({
+      botTeam: buyerSlot.team,
+      botPick: buyerSlot.pick_number,
+      botRound: buyerSlot.round,
+      targetValue,
+      liveOrder,
+      picksMadeCount,
+      futureOwnership,
+      chartGet,
+    });
+    if (!pkg) continue;
+
+    const theirPicks = [buyerSlot.pick_number, ...pkg.picks];
+    const yourPicks = [sellerSlot.pick_number];
+    const theirValue = sumValue(theirPicks, chartGet, futureOwnership);
+    const surplusPct = (theirValue - requiredFromBuyer) / Math.max(requiredFromBuyer, 1);
+
+    const candidate = {
+      id: `${buyerSlot.team}-${sellerSlot.pick_number}-${buyerSlot.pick_number}`,
+      buyerTeam: buyerSlot.team,
+      sellerTeam: onClockTeam,
+      buyerPick: buyerSlot.pick_number,
+      sellerPick: sellerSlot.pick_number,
+      theirPicks,                   // buyer → seller (includes buyerPick)
+      yourPicks,                    // seller → buyer (just the on-clock slot)
+      summary: {
+        yourValue: Math.round(sellerPickValue),
+        theirValue: Math.round(theirValue),
+        surplusPct: Math.round(surplusPct * 1000) / 10,
+        urgency: Math.round(urgency * 100) / 100,
+      },
+    };
+    if (!best || candidate.summary.urgency > best.summary.urgency) {
+      best = candidate;
+    }
+  }
+
+  return best ? { offer: best } : null;
 }

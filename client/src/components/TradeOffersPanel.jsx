@@ -13,40 +13,95 @@ import { formatPickLabelCompact } from '../lib/futurePicks.js';
 // Each offer carries an `id` (botTeam-userPick-botPick) so the parent can
 // track per-card dismissal without losing the overall offer set when it
 // recomputes (e.g. the user picks something else and on-clock advances).
-export function TradeOffersPanel({ offers, onAccept, onDismiss, onDismissAll, onCounter }) {
+//
+// `collapsed` + `onToggleCollapsed` hide the offer cards behind a slim bar
+// so the user can keep scanning the prospect list without the panel
+// dominating vertical space. When no collapse handler is passed, the
+// panel always renders expanded (back-compat with any external caller).
+export function TradeOffersPanel({
+  offers,
+  onAccept,
+  onDismiss,
+  onDismissAll,
+  onCounter,
+  collapsed = false,
+  onToggleCollapsed,
+}) {
   if (!offers || offers.length === 0) return null;
+
+  const label = `Incoming Trade ${offers.length > 1 ? 'Offers' : 'Offer'}`;
+  const countTag = (
+    <span className="font-mono text-[10px] text-text-muted">×{offers.length}</span>
+  );
+  const phoneIcon = (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      className="text-gold animate-pulse"
+      aria-hidden="true"
+    >
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+    </svg>
+  );
+
+  if (collapsed && onToggleCollapsed) {
+    return (
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        className="w-full flex items-center gap-2 rounded-xl border border-gold/40 bg-gradient-to-br from-bg-surface/90 to-bg-deep px-3 py-2 hover:border-gold/70 transition"
+        title="Expand trade offers"
+      >
+        {phoneIcon}
+        <span className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-gold">
+          {label}
+        </span>
+        {countTag}
+        <span className="flex-1" />
+        <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" className="text-text-muted" aria-hidden="true">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-gold/40 bg-gradient-to-br from-bg-surface/90 to-bg-deep p-3 sm:p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {/* Phone icon — mirrors the "ring ring" of an incoming GM call */}
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            className="text-gold animate-pulse"
-            aria-hidden="true"
-          >
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-          </svg>
+          {phoneIcon}
           <span className="font-display text-[11px] font-bold uppercase tracking-[0.14em] text-gold">
-            Incoming Trade {offers.length > 1 ? 'Offers' : 'Offer'}
+            {label}
           </span>
-          <span className="font-mono text-[10px] text-text-muted">×{offers.length}</span>
+          {countTag}
         </div>
-        {offers.length > 1 && (
-          <button
-            onClick={onDismissAll}
-            className="font-display text-[9px] uppercase tracking-wider text-text-muted hover:text-text-secondary transition px-2 py-1"
-            title="Dismiss all offers and pick a player instead"
-          >
-            Dismiss all
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {offers.length > 1 && (
+            <button
+              onClick={onDismissAll}
+              className="font-display text-[9px] uppercase tracking-wider text-text-muted hover:text-text-secondary transition px-2 py-1"
+              title="Dismiss all offers and pick a player instead"
+            >
+              Dismiss all
+            </button>
+          )}
+          {onToggleCollapsed && (
+            <button
+              onClick={onToggleCollapsed}
+              className="p-1 text-text-muted hover:text-text-secondary transition"
+              title="Collapse panel"
+              aria-label="Collapse trade offers"
+            >
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fillRule="evenodd" d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.94l-3.71 3.83a.75.75 0 11-1.08-1.04l4.25-4.39a.75.75 0 011.08 0l4.25 4.39a.75.75 0 01-.02 1.06z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
       <div className="space-y-2">
         {offers.map((o) => (
