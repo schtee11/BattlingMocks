@@ -277,6 +277,20 @@ CREATE TABLE IF NOT EXISTS user_board_rankings (
   PRIMARY KEY (board_id, player_id)
 );
 CREATE INDEX IF NOT EXISTS idx_ubr_board_rank ON user_board_rankings(board_id, rank);
+
+-- Phase 9: prediction mocks. Sandbox R1 mocks stored per-user with picks and
+-- trade state as JSONB (no need for individual pick rows since they're not
+-- scored). Up to 10 per user, enforced at the API level.
+CREATE TABLE IF NOT EXISTS prediction_mocks (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(80) NOT NULL DEFAULT 'Untitled Mock',
+  picks JSONB NOT NULL DEFAULT '{}'::jsonb,
+  draft_order JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_prediction_mocks_user ON prediction_mocks(user_id);
 `;
 
 // Split the migration SQL into individual statements and run them one at a

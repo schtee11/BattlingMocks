@@ -1339,12 +1339,11 @@ export default function Draft() {
       {showSlots && (
         <PredictionSlotsModal
           currentPicks={picks}
-          currentConfidentSlots={confidentSlots}
           currentDraftOrder={draftOrder}
           filledCount={filledCount}
-          onLoad={({ picks: p, confidentSlots: c, draftOrder: o }) => {
+          userId={user?.id}
+          onLoad={({ picks: p, draftOrder: o }) => {
             setPicks(p);
-            setConfidentSlots(c);
             if (o?.length) setDraftOrder(o);
           }}
           onClose={() => setShowSlots(false)}

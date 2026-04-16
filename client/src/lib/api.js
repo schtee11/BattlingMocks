@@ -254,6 +254,21 @@ export const api = {
   deleteBoard: (id) => request(`/api/boards/${id}`, { method: 'DELETE' }),
   getBoardTop50: (id) => request(`/api/boards/${id}/top50`),
 
+  // Prediction mocks (Phase 9) — DB-backed sandbox R1 mocks, up to 10 per user
+  listPredictionMocks: () => request('/api/prediction-mocks'),
+  savePredictionMock: (name, picks, draftOrder) =>
+    request('/api/prediction-mocks', {
+      method: 'POST',
+      body: { name, picks, draftOrder },
+    }),
+  updatePredictionMock: (id, picks, draftOrder) =>
+    request(`/api/prediction-mocks/${id}`, {
+      method: 'PUT',
+      body: { picks, draftOrder },
+    }),
+  deletePredictionMock: (id) =>
+    request(`/api/prediction-mocks/${id}`, { method: 'DELETE' }),
+
   // admin
   adminGetAlgoConfig: (key) => request('/api/admin/algo-config', { adminKey: key }),
   adminSaveAlgoConfig: (key, config) =>

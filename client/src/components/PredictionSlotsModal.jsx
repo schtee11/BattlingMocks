@@ -1,51 +1,89 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { loadSlots, saveSlot, updateSlot, deleteSlot, MAX_SLOTS } from '../lib/predictionSlots.js';
 
 // Modal for managing saved prediction-mode mocks. Renders a compact
 // "save current" section at the top and a scrollable list of saved slots
 // below with Load / Overwrite / Delete actions.
-export function PredictionSlotsModal({ currentPicks, currentConfidentSlots, currentDraftOrder, filledCount, onLoad, onClose }) {
-  const [slots, setSlots] = useState(loadSlots);
-  const [newName, setNewName] = useState(`Mock ${slots.length + 1}`);
+//
+// userId is passed so the persistence layer knows whether to hit the
+// server (logged-in) or fall back to localStorage (guest).
+export function PredictionSlotsModal({ currentPicks, currentDraftOrder, filledCount, onLoad, onClose, userId }) {
+  const [slots, setSlots] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [newName, setNewName] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
-  const canSave = filledCount > 0 && slots.length < MAX_SLOTS;
+  // Load slots on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await loadSlots(userId);
+        if (!cancelled) {
+          setSlots(data);
+          setNewName(`Mock ${data.length + 1}`);
+        }
+      } catch {
+        if (!cancelled) setSlots([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
 
-  function handleSave() {
+  const canSave = filledCount > 0 && slots.length < MAX_SLOTS && !saving;
+
+  async function handleSave() {
     const name = newName.trim() || `Mock ${slots.length + 1}`;
-    saveSlot({
-      name,
-      picks: currentPicks,
-      confidentSlots: currentConfidentSlots,
-      draftOrder: currentDraftOrder,
-    });
-    setSlots(loadSlots());
-    toast.success(`Saved "${name}"`);
-    setNewName(`Mock ${slots.length + 2}`);
+    setSaving(true);
+    try {
+      await saveSlot({ name, picks: currentPicks, draftOrder: currentDraftOrder }, userId);
+      const refreshed = await loadSlots(userId);
+      setSlots(refreshed);
+      toast.success(`Saved "${name}"`);
+      setNewName(`Mock ${refreshed.length + 1}`);
+    } catch (e) {
+      toast.error(e.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleOverwrite(slot) {
-    updateSlot(slot.id, {
-      picks: currentPicks,
-      confidentSlots: currentConfidentSlots,
-      draftOrder: currentDraftOrder,
-    });
-    setSlots(loadSlots());
-    toast.success(`Updated "${slot.name}"`);
+  async function handleOverwrite(slot) {
+    setSaving(true);
+    try {
+      await updateSlot(slot.id, { picks: currentPicks, draftOrder: currentDraftOrder }, userId);
+      const refreshed = await loadSlots(userId);
+      setSlots(refreshed);
+      toast.success(`Updated "${slot.name}"`);
+    } catch (e) {
+      toast.error(e.message || 'Failed to update');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function handleDelete(id) {
-    deleteSlot(id);
-    setSlots(loadSlots());
-    setConfirmDeleteId(null);
-    toast.success('Deleted');
+  async function handleDelete(id) {
+    setSaving(true);
+    try {
+      await deleteSlot(id, userId);
+      const refreshed = await loadSlots(userId);
+      setSlots(refreshed);
+      setConfirmDeleteId(null);
+      toast.success('Deleted');
+    } catch (e) {
+      toast.error(e.message || 'Failed to delete');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleLoad(slot) {
     onLoad({
       picks: slot.picks || {},
-      confidentSlots: new Set(slot.confidentSlots || []),
       draftOrder: slot.draftOrder || [],
     });
     toast.success(`Loaded "${slot.name}"`);
@@ -69,7 +107,9 @@ export function PredictionSlotsModal({ currentPicks, currentConfidentSlots, curr
             <h2 className="font-display text-[14px] font-bold uppercase tracking-[0.1em] text-text-primary">
               Saved Predictions
             </h2>
-            <p className="text-[10px] text-text-muted">{slots.length}/{MAX_SLOTS} slots used</p>
+            <p className="text-[10px] text-text-muted">
+              {loading ? '…' : `${slots.length}/${MAX_SLOTS} slots used`}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -95,7 +135,7 @@ export function PredictionSlotsModal({ currentPicks, currentConfidentSlots, curr
               disabled={!canSave}
               className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.12em] bg-accent text-bg-deep rounded-md px-3 py-1.5 hover:brightness-110 transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Save
+              {saving ? '…' : 'Save'}
             </button>
           </div>
           {filledCount === 0 && (
@@ -108,7 +148,9 @@ export function PredictionSlotsModal({ currentPicks, currentConfidentSlots, curr
 
         {/* Slot list */}
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {slots.length === 0 ? (
+          {loading ? (
+            <div className="px-5 py-8 text-center text-[11px] text-text-muted">Loading…</div>
+          ) : slots.length === 0 ? (
             <div className="px-5 py-8 text-center text-[11px] text-text-muted">
               No saved predictions yet.
             </div>
@@ -141,7 +183,7 @@ export function PredictionSlotsModal({ currentPicks, currentConfidentSlots, curr
                       </button>
                       <button
                         onClick={() => handleOverwrite(slot)}
-                        disabled={filledCount === 0}
+                        disabled={filledCount === 0 || saving}
                         title="Overwrite with current picks"
                         className="font-display text-[9px] font-bold uppercase tracking-wider text-text-secondary border border-border-subtle rounded px-2 py-1 hover:border-border-focus transition disabled:opacity-30"
                       >
@@ -150,6 +192,7 @@ export function PredictionSlotsModal({ currentPicks, currentConfidentSlots, curr
                       {confirmDeleteId === slot.id ? (
                         <button
                           onClick={() => handleDelete(slot.id)}
+                          disabled={saving}
                           className="font-display text-[9px] font-bold uppercase tracking-wider text-red-400 border border-red-400/40 rounded px-2 py-1 hover:bg-red-400/10 transition"
                         >
                           Confirm
