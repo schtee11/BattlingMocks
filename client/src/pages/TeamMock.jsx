@@ -14,6 +14,7 @@ import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TradeModal } from '../components/TradeModal.jsx';
+import { TradeOffersPanel } from '../components/TradeOffersPanel.jsx';
 import { ConfirmModal } from '../components/ui/ConfirmModal.jsx';
 import { usePageMeta } from '../hooks/usePageMeta.js';
 import {
@@ -22,6 +23,7 @@ import {
   formatPickLabel,
   isFuturePickId,
 } from '../lib/futurePicks.js';
+import { generateBotTradeOffers } from '../lib/botTradeProposer.js';
 
 // ─── NFL Teams ────────────────────────────────────────────────────────────────
 const NFL_TEAMS = [
@@ -1595,6 +1597,17 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const [saved, setSaved] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [trades, setTrades] = useState([]); // record trades for the results view
+  // ── Incoming trade offers (Feature: bot-initiated trades) ──────────────
+  // When the user enters PHASE_ON_CLOCK we generate a fresh batch of offers
+  // from nearby bot teams. Offers persist until the user accepts one,
+  // dismisses each individually, or the on-clock pick resolves. Dismissal
+  // is sticky for the SAME on-clock pick — we record the dismissed ids so
+  // a re-render doesn't resurrect them.
+  const [incomingOffers, setIncomingOffers] = useState([]);
+  const [dismissedOfferIds, setDismissedOfferIds] = useState(new Set());
+  // Tracks the pick number we last generated offers for, so we only
+  // recompute when the user advances to a NEW on-clock slot.
+  const offersForPickRef = useRef(null);
   // Confirmation state for destructive actions. We gate Restart and Change
   // Team behind an explicit confirm as soon as the user has made any real
   // progress — losing a half-finished mock would be a terrible surprise.
@@ -1713,6 +1726,77 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   useEffect(() => {
     if (phase === PHASE_ON_CLOCK) setMobileTab('prospects');
   }, [phase]);
+
+  // ── Generate bot trade offers when the user enters PHASE_ON_CLOCK ─────
+  // Real GMs field calls every time they're on the clock — same idea here.
+  // We only recompute when a NEW user pick comes up so the offer set is
+  // stable across unrelated re-renders (typing in the search box, etc.).
+  // Dismissed offers stay dismissed for that same pick.
+  useEffect(() => {
+    if (phase !== PHASE_ON_CLOCK || !currentSlot) return;
+    if (offersForPickRef.current === currentSlot.pick_number) return;
+
+    offersForPickRef.current = currentSlot.pick_number;
+    setDismissedOfferIds(new Set());
+    try {
+      const offers = generateBotTradeOffers({
+        userTeam: team,
+        liveOrder,
+        picks,
+        effectivePlayers,
+        futureOwnership,
+        randomness,
+        byId,
+      });
+      setIncomingOffers(offers || []);
+    } catch (err) {
+      // Never let offer generation crash the on-clock UI — fail soft so
+      // the user can still draft normally.
+      console.warn('[trade offers] generate failed:', err?.message);
+      setIncomingOffers([]);
+    }
+  }, [phase, currentSlot, team, liveOrder, picks, effectivePlayers, futureOwnership, randomness, byId]);
+
+  // Clear offers when leaving the on-clock state (pick made, restart, etc.).
+  useEffect(() => {
+    if (phase !== PHASE_ON_CLOCK) {
+      setIncomingOffers([]);
+      offersForPickRef.current = null;
+    }
+  }, [phase]);
+
+  function handleAcceptOffer(offer) {
+    // The TradeOffersPanel emits the canonical { yourPicks, theirPicks }
+    // shape so we can route it straight into applyTradeLocal — same path
+    // used by the manual TradeModal. partnerTeam = bot.
+    applyTradeLocal({
+      partnerTeam: offer.botTeam,
+      yourPicks: offer.yourPicks,
+      theirPicks: offer.theirPicks,
+    });
+    setIncomingOffers([]);
+    offersForPickRef.current = null;
+    toast.success(`Trade accepted with ${offer.botTeam}`);
+  }
+
+  function handleDismissOffer(offerId) {
+    setDismissedOfferIds((prev) => {
+      const next = new Set(prev);
+      next.add(offerId);
+      return next;
+    });
+  }
+
+  function handleDismissAllOffers() {
+    setDismissedOfferIds(new Set(incomingOffers.map((o) => o.id)));
+  }
+
+  // The visible-offer set is whatever we generated minus what the user
+  // explicitly dismissed for this on-clock pick.
+  const visibleOffers = useMemo(
+    () => incomingOffers.filter((o) => !dismissedOfferIds.has(o.id)),
+    [incomingOffers, dismissedOfferIds]
+  );
 
   // ── Confetti celebration when the draft finishes ────────────────────────
   useEffect(() => {
@@ -2458,6 +2542,16 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           <div className="border-b border-border-subtle">
             <StatusBanner />
           </div>
+          {phase === PHASE_ON_CLOCK && visibleOffers.length > 0 && (
+            <div className="px-4 py-3 border-b border-border-subtle bg-bg-deep/40">
+              <TradeOffersPanel
+                offers={visibleOffers}
+                onAccept={handleAcceptOffer}
+                onDismiss={handleDismissOffer}
+                onDismissAll={handleDismissAllOffers}
+              />
+            </div>
+          )}
           <div className="px-4 py-2 flex items-center gap-2 border-b border-border-subtle">
             <input
               type="search"
@@ -2627,6 +2721,17 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                       <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.34 1.804A1 1 0 019.32 1h1.36a1 1 0 01.98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 011.262.125l.962.962a1 1 0 01.125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.294a1 1 0 01.804.98v1.362a1 1 0 01-.804.98l-1.473.295a6.95 6.95 0 01-.587 1.416l.834 1.25a1 1 0 01-.125 1.262l-.962.962a1 1 0 01-1.262.125l-1.25-.834a6.953 6.953 0 01-1.416.587l-.294 1.473a1 1 0 01-.98.804H9.32a1 1 0 01-.98-.804l-.295-1.473a6.957 6.957 0 01-1.416-.587l-1.25.834a1 1 0 01-1.262-.125l-.962-.962a1 1 0 01-.125-1.262l.834-1.25a6.957 6.957 0 01-.587-1.416l-1.473-.294A1 1 0 011 11.18V9.82a1 1 0 01.804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 01.125-1.262l.962-.962A1 1 0 015.38 3.53l1.25.834a6.957 6.957 0 011.416-.587l.294-1.473zM13 10a3 3 0 11-6 0 3 3 0 016 0z" clipRule="evenodd" /></svg>
                     </button>
                   </div>
+                  {/* Incoming trade offers (bot-initiated) */}
+                  {visibleOffers.length > 0 && (
+                    <div className="px-3 pb-3">
+                      <TradeOffersPanel
+                        offers={visibleOffers}
+                        onAccept={handleAcceptOffer}
+                        onDismiss={handleDismissOffer}
+                        onDismissAll={handleDismissAllOffers}
+                      />
+                    </div>
+                  )}
                 </div>
               ) : (
                 /* RUNNING / PAUSED — compact progress header */

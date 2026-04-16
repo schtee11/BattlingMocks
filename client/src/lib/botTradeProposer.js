@@ -1,0 +1,323 @@
+// Bot trade proposer.
+//
+// When the user is on the clock in team_mock, real-world GMs would receive
+// trade-up offers from teams picking shortly after. This module assesses
+// each near-future bot team and returns the trade offers they'd propose.
+//
+// Design goals:
+//   - NEEDS-AWARE: a bot only proposes a trade-up if there's a player it
+//     genuinely wants who's at risk of being gone before its real pick.
+//   - TIER-AWARE: a "tier drop" between the user's slot and the bot's slot
+//     amplifies urgency (e.g. five elite WRs left, all five are gone after
+//     the user picks → bot panics and offers more).
+//   - FAIR-ZONE: every accepted offer falls within 5–7% of chart fair value
+//     (slightly favouring the user as a gentle inducement), never a steal
+//     for the user and never a lowball from the bot. This matches the
+//     tradeBasePremium / tradeTop5Bonus already used in TradeModal.
+//   - DETERMINISTIC SHAPE: the offer's pick package is computed from the
+//     value gap and the bot's own future capital — no random chip-tossing.
+//
+// We deliberately do NOT roll acceptance probability here — these are
+// offers TO the user. The user accepts/rejects them through the UI; the
+// "fair-zone" framing means they're already pre-vetted to be reasonable.
+
+import tradeValuesChart from './tradeValues2026.json';
+import { getAlgoConfig } from './algoConfig.js';
+import { pickForTeam, normalizePos } from './botPicker.js';
+import { futurePicksForTeam } from './futurePicks.js';
+
+// How far ahead to look for trade-up candidates. NFL trade-up offers tend
+// to come from teams within a handful of spots — beyond that the value gap
+// is too large to bridge with a normal package.
+const MAX_LOOKAHEAD_PICKS = 12;
+
+// Maximum number of distinct offers to surface at one time. Two-or-three
+// gives the user a real choice without overwhelming the on-clock UI.
+const MAX_OFFERS = 3;
+
+// "Tier drop" detection — if among the top-K candidates at the bot's needed
+// position, M of them get picked between the user's slot and the bot's
+// real slot, the bot perceives a cliff and is willing to deal.
+const TIER_LOOKAHEAD_K = 5;
+const TIER_DROP_THRESHOLD = 2;
+
+// Build a chart lookup once per call.
+function buildValueLookup() {
+  const m = new Map();
+  for (const r of tradeValuesChart) m.set(r.pick, r.value);
+  return (pick) => m.get(pick) ?? 0;
+}
+
+// Sum a list of pick ids. Numeric → chart value. String → ownership row.
+function sumValue(ids, chartGet, futureOwnership) {
+  let total = 0;
+  for (const id of ids) {
+    if (typeof id === 'number') total += chartGet(id);
+    else if (futureOwnership && futureOwnership.has(id)) {
+      total += futureOwnership.get(id).value || 0;
+    }
+  }
+  return total;
+}
+
+// Build the "best package" the bot can offer to reach a target value, using
+// its own remaining current-year picks (other than the one it's trading up
+// FROM) plus its 2027 capital. Greedy descending fill — adds the largest
+// pick that doesn't blow past the target by more than ~10%, repeats until
+// the target is met or no more useful picks fit.
+//
+// Returns { picks, total } or null if no realistic package fits.
+function buildOfferPackage({
+  botTeam,
+  botPick,           // the bot's "real" upcoming pick (the lowest-numbered
+                     //   future slot they own — that's their best leverage)
+  targetValue,       // value the bot needs to send to the user
+  liveOrder,
+  picksMadeCount,
+  futureOwnership,
+  chartGet,
+}) {
+  // Bot's tradeable assets = its remaining current-year picks (excluding
+  // the one being traded up from — that's reserved for "you give") + all
+  // its 2027 picks. We sort descending by value so we take the biggest
+  // chunk first and don't end up with a 50-pick package of 7th-rounders.
+  const candidates = [];
+  for (const row of liveOrder) {
+    if (row.pick_number <= picksMadeCount) continue;
+    if (row.team !== botTeam) continue;
+    if (row.pick_number === botPick) continue;       // we're sending the user this
+    candidates.push({ id: row.pick_number, value: chartGet(row.pick_number) });
+  }
+  if (futureOwnership) {
+    for (const fp of futurePicksForTeam(futureOwnership, botTeam)) {
+      candidates.push({ id: fp.id, value: fp.value || 0 });
+    }
+  }
+  candidates.sort((a, b) => b.value - a.value);
+
+  // The bot's primary ammo is its OWN upcoming pick (botPick), which is
+  // already on the table. We start the package empty and fill until we
+  // reach targetValue. The user already gives up their on-clock pick and
+  // gets botPick back, so the "package" we're building is the SWEETENER.
+  const picks = [];
+  let total = 0;
+  for (const c of candidates) {
+    if (total >= targetValue * 0.97) break;          // close enough to fair
+    // Don't overshoot wildly — picking up a single chunk that puts us 30%+
+    // above target means the bot is overpaying needlessly. Skip it and
+    // try a smaller piece.
+    if (total + c.value > targetValue * 1.12 && total >= targetValue * 0.85) {
+      continue;
+    }
+    picks.push(c.id);
+    total += c.value;
+  }
+
+  // Reject offers that fall too far short — better to send no offer than
+  // a known lopsided lowball. The user said within 5–7% of fair.
+  if (total < targetValue * 0.93) return null;
+  return { picks, total };
+}
+
+// ── Tier-drop / scarcity assessment for a bot at a future slot ──────────────
+//
+// Returns a numeric "urgency" score 0..1 representing how badly the bot
+// wants to move up — used both to gate offer generation (>0 → offer) and
+// to decide HOW MUCH the bot is willing to pay (higher urgency = closer
+// to the user's side of the 5–7% fair band).
+function assessUrgency({
+  botSlot,
+  available,
+  picksBetween,        // bot teams picking BETWEEN the user and this bot
+  draftContext,
+  randomness,
+}) {
+  const needs = (botSlot.team_needs || []).slice(0, 3);
+  if (needs.length === 0) return 0;
+
+  // Simulate what the bot would pick AT its real slot if nothing changed.
+  // This is the player it most wants to lock in — and the one it's afraid
+  // of losing to one of the teams picking in between.
+  const wantedNow = pickForTeam({
+    available,
+    teamNeeds: botSlot.team_needs || [],
+    randomness,
+    pickNumber: botSlot.pick_number,
+    draftContext,
+  });
+  if (!wantedNow) return 0;
+
+  // What's the bot's wanted POSITION? Use the picked player's position as
+  // the canonical signal — needs-priority alone is too noisy.
+  const wantedPos = normalizePos(wantedNow.position || '');
+  if (!wantedPos) return 0;
+
+  // Tier-drop check: among the top-K available players at the wanted
+  // position, how many are likely to be gone by the bot's real pick?
+  // We approximate "likely to be gone" by counting how many picks in
+  // between are made by teams that share the same need.
+  const topAtPos = available
+    .filter((p) => normalizePos(p.position) === wantedPos)
+    .slice(0, TIER_LOOKAHEAD_K);
+  if (topAtPos.length === 0) return 0;
+
+  let competingPicks = 0;
+  for (const slot of picksBetween) {
+    const slotNeeds = (slot.team_needs || []).map((n) => normalizePos(n));
+    if (slotNeeds.includes(wantedPos)) competingPicks++;
+  }
+
+  // Two amplifiers:
+  //   1. Top of position is rare (≤2 elite candidates left at the position
+  //      → urgency snaps to high).
+  //   2. Multiple competing teams in between → urgency rises.
+  const scarcity = topAtPos.length <= 2 ? 0.7 : topAtPos.length <= 3 ? 0.5 : 0.3;
+  const competition =
+    competingPicks >= TIER_DROP_THRESHOLD ? 0.4 : competingPicks * 0.15;
+
+  // Wantedness: if the bot's #1 need matches the wanted position, urgency
+  // is dialled up another notch — it's not just BPA, it's a true target.
+  const isTopNeed = normalizePos(needs[0] || '') === wantedPos;
+  const wantedness = isTopNeed ? 0.2 : 0.05;
+
+  return Math.min(1, scarcity + competition + wantedness);
+}
+
+// ── Main entry point ────────────────────────────────────────────────────────
+//
+// Returns an array of trade offer objects:
+//   [{
+//     id,                  // stable id (botTeam-userPick) so dismissal sticks
+//     botTeam,             // proposing team abbr
+//     botPick,             // the pick the bot sends to the user (their slot)
+//     userPick,            // the user's on-clock pick the bot wants
+//     theirPicks: number[],// (legacy alias) "their" = bot, sent to user
+//     yourPicks: number[], // (legacy alias) "your"  = user, sent to bot
+//     summary: { yourValue, theirValue, surplusPct, urgency },
+//   }, ...]
+//
+// `theirPicks` includes botPick; `yourPicks` is just [userPick] — that's
+// the asymmetric trade-up shape the user will see ("you send your pick,
+// they send theirs plus a sweetener").
+export function generateBotTradeOffers({
+  userTeam,
+  liveOrder,
+  picks,                      // already-made picks
+  effectivePlayers,
+  futureOwnership,
+  randomness = 0.25,
+  byId,
+}) {
+  if (!liveOrder || liveOrder.length === 0) return [];
+  const picksMadeCount = picks.length;
+  const userSlot = liveOrder[picksMadeCount];
+  if (!userSlot || userSlot.team !== userTeam) return [];
+
+  const chartGet = buildValueLookup();
+  const userPickValue = chartGet(userSlot.pick_number);
+  if (userPickValue <= 0) return [];                   // nothing valuable to trade
+
+  const cfg = getAlgoConfig();
+
+  // Available player pool, identical to what the bot would see at its slot.
+  const taken = new Set(picks.map((p) => p.player_id));
+  const available = effectivePlayers.filter((p) => !taken.has(p.id));
+  const allPlayers = effectivePlayers;
+
+  // Look at the next N slots after the user's. Each non-user slot is a
+  // candidate trader-upper. We only consider the FIRST upcoming pick per
+  // bot team (their next chance to draft), since that's the leverage they'd
+  // be giving up to move up.
+  const seenTeams = new Set([userTeam]);
+  const offers = [];
+
+  for (
+    let i = picksMadeCount + 1;
+    i < Math.min(liveOrder.length, picksMadeCount + 1 + MAX_LOOKAHEAD_PICKS);
+    i++
+  ) {
+    const botSlot = liveOrder[i];
+    if (!botSlot || botSlot.team === userTeam) continue;
+    if (seenTeams.has(botSlot.team)) continue;
+    seenTeams.add(botSlot.team);
+
+    const botPickValue = chartGet(botSlot.pick_number);
+    if (botPickValue <= 0) continue;
+
+    // Required value the bot must send the user under chart conventions:
+    //   user sends their pick → bot sends bot pick + premium-padded difference.
+    // Premium matches the TradeModal's evaluator so accepted offers will
+    // also pass evaluation if the user re-opens the modal to inspect.
+    let premium = cfg.tradeBasePremium ?? 0.05;
+    if (userSlot.pick_number <= 5) premium += cfg.tradeTop5Bonus ?? 0.03;
+    const requiredFromBot = userPickValue * (1 + premium);
+    const sweetenerValue = requiredFromBot - botPickValue;
+    if (sweetenerValue <= 0) continue;                 // bot's own pick already covers it
+
+    const picksBetween = liveOrder.slice(picksMadeCount + 1, i);
+
+    const botContext = {
+      allPlayers,
+      teamDraftedPos: picks
+        .filter((pk) => pk.team === botSlot.team)
+        .map((pk) => normalizePos(byId.get(pk.player_id)?.position || '')),
+      recentPicks: picks
+        .slice(-(cfg.runWindowSize || 8))
+        .map((pk) => ({ position: normalizePos(byId.get(pk.player_id)?.position || '') })),
+    };
+
+    const urgency = assessUrgency({
+      botSlot,
+      available,
+      picksBetween,
+      draftContext: botContext,
+      randomness,
+    });
+    if (urgency < 0.35) continue;                      // not worth the asset cost
+
+    // Target sweetener value — slide between 1.0× and 1.05× of the strict
+    // requirement based on urgency. High urgency = bot pays the full top
+    // of the fair zone; lower urgency = bot pays the bare minimum. Both
+    // are within the 5–7% fair band by construction.
+    const targetValue = sweetenerValue * (1 + 0.02 + urgency * 0.04);
+
+    const pkg = buildOfferPackage({
+      botTeam: botSlot.team,
+      botPick: botSlot.pick_number,
+      targetValue,
+      liveOrder,
+      picksMadeCount,
+      futureOwnership,
+      chartGet,
+    });
+    if (!pkg) continue;
+
+    const theirPicks = [botSlot.pick_number, ...pkg.picks];
+    const yourPicks = [userSlot.pick_number];
+
+    const yourValue = userPickValue;
+    const theirValue = sumValue(theirPicks, chartGet, futureOwnership);
+    const surplusPct = (theirValue - requiredFromBot) / Math.max(requiredFromBot, 1);
+
+    offers.push({
+      id: `${botSlot.team}-${userSlot.pick_number}-${botSlot.pick_number}`,
+      botTeam: botSlot.team,
+      botPick: botSlot.pick_number,
+      userPick: userSlot.pick_number,
+      theirPicks,
+      yourPicks,
+      summary: {
+        yourValue: Math.round(yourValue),
+        theirValue: Math.round(theirValue),
+        surplusPct: Math.round(surplusPct * 1000) / 10,  // %, 1 decimal
+        urgency: Math.round(urgency * 100) / 100,
+      },
+    });
+
+    if (offers.length >= MAX_OFFERS) break;
+  }
+
+  // Sort by urgency descending so the most "real" offer is always on top.
+  offers.sort((a, b) => b.summary.urgency - a.summary.urgency);
+  return offers.slice(0, MAX_OFFERS);
+}
