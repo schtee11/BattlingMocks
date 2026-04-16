@@ -11,12 +11,17 @@ router.get('/', async (req, res) => {
   // ?round=all to get every row (used by the team mock page).
   //
   // Team needs resolution strategy:
-  //   1. Prefer the live team_needs table (single source of truth, updated
-  //      via admin UI).
-  //   2. Fall back to the draft_order.team_needs JSONB column (legacy
-  //      denormalized cache — can be stale or empty on dev DBs).
-  // This keeps the bot picker + trade proposer functional even when the
-  // admin-panel sync that refreshes the JSONB mirror hasn't been run.
+  //   1. Prefer the draft_order.team_needs JSONB column when populated —
+  //      that's where the admin UI writes user-customised needs.
+  //   2. Fall back to the live team_needs table (populated on first migrate
+  //      from server/src/data/team-needs-2026.json).
+  // Both paths keep the bot picker + trade proposer needs-aware. The fall-
+  // back matters on dev DBs where the admin UI was never opened — without
+  // it, the JSONB column is empty and every bot runs pure BPA.
+  //
+  // NULLIF vs empty array: COALESCE only falls through on NULL, not on an
+  // empty JSONB array. NULLIF(...,'[]') coerces empty arrays to NULL so
+  // the fallback kicks in.
   const roundParam = (req.query.round || '1').toString().toLowerCase();
   const sql = `
     SELECT
@@ -25,10 +30,10 @@ router.get('/', async (req, res) => {
       d.team_name,
       d.round,
       COALESCE(
+        NULLIF(d.team_needs, '[]'::jsonb),
         (SELECT jsonb_agg(tn.position ORDER BY tn.priority ASC)
            FROM team_needs tn
-          WHERE tn.team_id = d.team AND tn.draft_year = 2026),
-        d.team_needs
+          WHERE tn.team_id = d.team AND tn.draft_year = 2026)
       ) AS team_needs
     FROM draft_order d
     ${roundParam === 'all' ? '' : 'WHERE d.round = $1'}
