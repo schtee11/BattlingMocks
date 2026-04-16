@@ -434,21 +434,23 @@ export function TradeModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      // `items-start` + `pt-20` pins the modal below the sticky navbar (which
+      // is z-40 with its own stacking context from backdrop-filter, so a
+      // centered modal at inset-0 ends up with its header partially hidden
+      // behind it). The bottom `p-4` keeps breathing room on short viewports.
+      className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-20 pb-4"
       style={{ background: 'rgba(0,0,0,0.7)' }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        // `max-h-[calc(100dvh-2rem)]` handles short viewports (MacBook Pro at
-        // full-screen with dock, 13" laptops, browser devtools open) where
-        // `90vh` would still clip the footer. `dvh` tracks the *dynamic*
-        // viewport so mobile URL bars don't cut us off either.
+        // Cap at the usable viewport minus the navbar offset. `dvh` so mobile
+        // browsers don't clip when the URL bar appears/disappears mid-trade.
         className="w-full max-w-2xl rounded-2xl border border-border-subtle bg-bg-deep flex flex-col overflow-hidden"
-        style={{ maxHeight: 'min(90vh, calc(100dvh - 2rem))' }}
+        style={{ maxHeight: 'min(82vh, calc(100dvh - 6rem))' }}
       >
         {/* Header */}
-        <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
+        <div className="shrink-0 px-5 py-3 border-b border-border-subtle flex items-center justify-between">
           <div>
             <h2 className="font-display text-[16px] font-bold uppercase tracking-[0.1em] text-text-primary">
               {fromTeamEditable ? 'Simulate Trade' : 'Propose Trade'}
@@ -468,7 +470,7 @@ export function TradeModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {/* Team selectors. In arbiter (R1) mode both sides live in a single
               two-column grid of logo-only buttons so the modal stays short
               even with all 32 teams visible. Abbreviations appear in the
@@ -576,7 +578,7 @@ export function TradeModal({
                 // Scale with the viewport so short-screen laptops (13" MBP
                 // with browser chrome) still see the verdict + footer without
                 // having to scroll the modal body.
-                style={{ maxHeight: 'min(15rem, 28dvh)' }}
+                style={{ maxHeight: 'min(11rem, 22dvh)' }}
               >
                 {myFuturePicks.map((s) =>
                   pickButton(s, yourSelected.has(s.pick_number), () =>
@@ -603,7 +605,7 @@ export function TradeModal({
                 // Scale with the viewport so short-screen laptops (13" MBP
                 // with browser chrome) still see the verdict + footer without
                 // having to scroll the modal body.
-                style={{ maxHeight: 'min(15rem, 28dvh)' }}
+                style={{ maxHeight: 'min(11rem, 22dvh)' }}
               >
                 {partnerFuturePicks.map((s) =>
                   pickButton(s, theirSelected.has(s.pick_number), () =>
@@ -641,7 +643,7 @@ export function TradeModal({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-border-subtle flex gap-2 items-center">
+        <div className="shrink-0 px-5 py-3 border-t border-border-subtle flex gap-2 items-center">
           <button
             onClick={onClose}
             className="font-display font-semibold text-[11px] uppercase tracking-[0.12em] text-text-secondary rounded-lg px-4 py-2 border border-border-subtle hover:border-border-focus transition"
