@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useBlocker } from 'react-router-dom';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
 import { snapCenterToCursor } from '../lib/dndModifiers.js';
 import { DndScrollSync } from '../lib/DndScrollSync.jsx';
@@ -22,6 +22,7 @@ import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { TradeModal } from '../components/TradeModal.jsx';
 import { CountdownTimer, DRAFT_START_2026 } from '../components/ui/CountdownTimer.jsx';
 import { Round1ExportCard, useRound1ShareExport } from '../components/Round1Export.jsx';
+import { PredictionSlotsModal } from '../components/PredictionSlotsModal.jsx';
 import { prettyName } from '../lib/displayName.js';
 import { usePageMeta } from '../hooks/usePageMeta.js';
 
@@ -39,6 +40,28 @@ export default function Draft() {
   });
   const { user } = useAuth();
   const nav = useNavigate();
+
+  // ── Draft Mode ──────────────────────────────────────────────────────────
+  // Competition: single scored mock, server-backed, submit to leaderboard.
+  // Prediction:  sandbox, trades + exports, up to 10 saved slots in local
+  //              storage, resets on page leave unless explicitly saved.
+  const [draftMode, setDraftMode] = useState(() => {
+    if (typeof window === 'undefined') return 'competition';
+    return localStorage.getItem('mds_draft_mode') === 'prediction' ? 'prediction' : 'competition';
+  });
+  useEffect(() => {
+    localStorage.setItem('mds_draft_mode', draftMode);
+  }, [draftMode]);
+
+  // Snapshot bundles for the *inactive* mode's state so switching modes
+  // doesn't wipe work. A null bundle means the mode hasn't been visited
+  // yet — switching to it initialises a fresh state from the API order.
+  const compBundleRef = useRef(null);
+  const predBundleRef = useRef(null);
+  // Immutable copy of the API-delivered draft order, used to reset trades
+  // when creating a fresh prediction bundle.
+  const baseOrderRef = useRef([]);
+
   const [players, setPlayers] = useState(null);
   const [draftOrder, setDraftOrder] = useState([]);
   // Snapshot of the original owner of each pick_number as delivered by the API.
@@ -63,6 +86,7 @@ export default function Draft() {
   const [view, setView] = useState('bigboard');
   const [showConfirm, setShowConfirm] = useState(false);
   const [showClearAll, setShowClearAll] = useState(false);
+  const [showSlots, setShowSlots] = useState(false);
   // Mobile: which pick slot is currently being drafted for. Always non-null
   // on mobile once data has loaded — initialized from on-the-clock.
   const [draftingForSlot, setDraftingForSlot] = useState(null);
@@ -84,6 +108,38 @@ export default function Draft() {
   // Custom big board (Phase 8) — re-orders the prospect sidebar
   const [userBoards, setUserBoards] = useState([]);
   const [selectedBoardId, setSelectedBoardId] = useState('');
+
+  // ── Mode switch ─────────────────────────────────────────────────────────
+  // Snapshot current state into the appropriate bundle, then restore the
+  // target mode's bundle (or start fresh if first visit).
+  function switchMode(newMode) {
+    if (newMode === draftMode) return;
+    const snap = { picks, confidentSlots, draftOrder, submitted };
+    if (draftMode === 'competition') compBundleRef.current = snap;
+    else predBundleRef.current = snap;
+
+    const target = newMode === 'competition' ? compBundleRef.current : predBundleRef.current;
+    if (target) {
+      setPicks(target.picks);
+      setConfidentSlots(target.confidentSlots);
+      setDraftOrder(target.draftOrder);
+      setSubmitted(target.submitted ?? false);
+    } else {
+      // Fresh bundle — reset to blank board with original NFL order.
+      setPicks({});
+      setConfidentSlots(new Set());
+      setDraftOrder(baseOrderRef.current);
+      setSubmitted(false);
+    }
+    setDraftMode(newMode);
+  }
+
+  const isCompetition = draftMode === 'competition';
+  const isPrediction = draftMode === 'prediction';
+
+  // Prediction mode: track whether the user has made progress (any picks).
+  // This gates the "are you sure?" prompt when navigating away.
+  const predHasProgress = isPrediction && Object.keys(picks).length > 0;
 
   // Persist resize across reloads
   useEffect(() => {
@@ -145,6 +201,9 @@ export default function Draft() {
         ]);
         setPlayers(p);
         setDraftOrder(o);
+        // Keep an immutable snapshot of the NFL order so prediction mode
+        // can always reset to a clean slate when first entered.
+        if (baseOrderRef.current.length === 0) baseOrderRef.current = o;
         // Capture the original owner of every pick exactly once — subsequent
         // trade applies only mutate `draftOrder`, not this snapshot.
         setOriginalTeamByPick((prev) => {
@@ -154,10 +213,9 @@ export default function Draft() {
           return m;
         });
         setSettings(s);
-        // Only logged-in users have a saved mock to resume — anonymous
-        // visitors start with an empty board and only need to auth when
-        // they actually submit.
-        if (user) {
+        // Only logged-in users in Competition mode have a saved mock to
+        // resume. In Prediction mode the board starts blank.
+        if (user && draftMode === 'competition') {
           try {
             const m = await api.getMock(user.id);
             const map = {};
@@ -170,12 +228,48 @@ export default function Draft() {
             setConfidentSlots(conf);
             setSubmitted(true);
           } catch { /* no existing mock */ }
+        } else if (user && draftMode === 'prediction') {
+          // In prediction mode, still pre-load the comp mock into its
+          // bundle so toggling to competition later has it ready.
+          try {
+            const m = await api.getMock(user.id);
+            const map = {};
+            const conf = new Set();
+            m.picks.forEach((pk) => {
+              map[pk.pick_number] = pk.player_id;
+              if (pk.is_confident) conf.add(pk.pick_number);
+            });
+            compBundleRef.current = { picks: map, confidentSlots: conf, draftOrder: o, submitted: true };
+          } catch { /* no comp mock */ }
         }
       } catch (e) {
         toast.error('Failed to load: ' + e.message);
       }
     })();
   }, [user]);
+
+  // ── Prediction leave guard ───────────────────────────────────────────────
+  // If the user has made picks in Prediction mode and tries to navigate
+  // away (react-router navigation), show a confirmation modal first.
+  // Also gate browser refresh/close via beforeunload.
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      predHasProgress && currentLocation.pathname !== nextLocation.pathname,
+  );
+  useEffect(() => {
+    if (blocker.state === 'blocked') setShowLeaveConfirm(true);
+  }, [blocker.state]);
+  // Browser refresh / tab close guard
+  useEffect(() => {
+    if (!predHasProgress) return;
+    function onBeforeUnload(e) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [predHasProgress]);
 
   // Load the user's boards so they can optionally reorder the prospect sidebar.
   useEffect(() => {
@@ -617,15 +711,40 @@ export default function Draft() {
         />
       </div>
 
-      {/* Compact desktop header — single row with title, on-the-clock status,
-          countdown, and board selector. All stats/buttons moved to footer. */}
+      {/* Compact desktop header — single row with title, mode toggle,
+          on-the-clock status, countdown, and board selector. */}
       <div className="hidden md:block shrink-0 border-b border-border-subtle bg-bg-surface/20">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
-          <div className="min-w-0">
-            <div className="caption text-accent text-[10px]">War Room · 2026</div>
-            <h1 className="font-display font-bold text-[22px] text-text-primary leading-none mt-0.5">
-              Build Your Mock
-            </h1>
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="min-w-0">
+              <div className="caption text-accent text-[10px]">War Room · 2026</div>
+              <h1 className="font-display font-bold text-[22px] text-text-primary leading-none mt-0.5">
+                Build Your Mock
+              </h1>
+            </div>
+            {/* See-saw mode toggle */}
+            <div className="flex rounded-lg border border-border-subtle overflow-hidden shrink-0">
+              <button
+                onClick={() => switchMode('competition')}
+                className={`font-display text-[10px] font-bold uppercase tracking-[0.1em] px-3 py-1.5 transition ${
+                  isCompetition
+                    ? 'bg-accent text-bg-deep'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                Competition
+              </button>
+              <button
+                onClick={() => switchMode('prediction')}
+                className={`font-display text-[10px] font-bold uppercase tracking-[0.1em] px-3 py-1.5 transition ${
+                  isPrediction
+                    ? 'bg-accent text-bg-deep'
+                    : 'text-text-muted hover:text-text-primary'
+                }`}
+              >
+                Prediction
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             {onClockSlot && !locked && (
@@ -1035,9 +1154,6 @@ export default function Draft() {
             </Button>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {/* Export is available to anyone who completed their 32 picks —
-                including users who just want the exercise and don't care
-                about the competition leaderboard. */}
             <Button
               size="sm"
               variant="outline"
@@ -1064,47 +1180,86 @@ export default function Draft() {
                 Download
               </Button>
             )}
-            <Button
-              size="md"
-              onClick={handleSubmitClick}
-              disabled={!complete || locked || busy}
-              className={`${complete && !submitted ? 'animate-pulse-glow' : ''}`}
-            >
-              {submitted ? 'Submitted ✓' : complete ? (user ? 'Submit Mock →' : 'Log in & Submit →') : `${32 - filledCount} to go`}
-            </Button>
+            {isCompetition ? (
+              <Button
+                size="md"
+                onClick={handleSubmitClick}
+                disabled={!complete || locked || busy}
+                className={`${complete && !submitted ? 'animate-pulse-glow' : ''}`}
+              >
+                {submitted ? 'Submitted ✓' : complete ? (user ? 'Submit Mock →' : 'Log in & Submit →') : `${32 - filledCount} to go`}
+              </Button>
+            ) : (
+              <Button
+                size="md"
+                variant="outline"
+                onClick={() => setShowSlots(true)}
+              >
+                Save / Load
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
       {/* Mobile — fixed bottom action bar */}
-      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 p-3 bg-bg-deep/95 backdrop-blur-md border-t border-border-subtle">
-        <div className="flex items-center gap-2">
+      <div className="md:hidden fixed left-0 right-0 bottom-0 z-30 bg-bg-deep/95 backdrop-blur-md border-t border-border-subtle">
+        {/* Compact mode toggle row */}
+        <div className="flex justify-center pt-2 pb-1 px-3">
+          <div className="flex rounded-lg border border-border-subtle overflow-hidden">
+            <button
+              onClick={() => switchMode('competition')}
+              className={`font-display text-[9px] font-bold uppercase tracking-[0.1em] px-3 py-1 transition ${
+                isCompetition ? 'bg-accent text-bg-deep' : 'text-text-muted'
+              }`}
+            >
+              Competition
+            </button>
+            <button
+              onClick={() => switchMode('prediction')}
+              className={`font-display text-[9px] font-bold uppercase tracking-[0.1em] px-3 py-1 transition ${
+                isPrediction ? 'bg-accent text-bg-deep' : 'text-text-muted'
+              }`}
+            >
+              Prediction
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-3 pb-3">
           <Button size="xs" variant="outline" onClick={autoFill} disabled={locked || complete} className="shrink-0">
             Auto-fill
           </Button>
           <Button size="xs" variant="outline" onClick={() => setShowClearAll(true)} disabled={locked || filledCount === 0} className="shrink-0">
             Clear
           </Button>
-          {/* Export — lets users sharing the exercise save a PNG without
-              submitting to the competition. */}
           <Button
             size="xs"
             variant="outline"
             onClick={handleExportShare}
             disabled={!complete || exporting}
             className="shrink-0"
-            title="Export your mock as a PNG"
           >
             {exporting ? '…' : 'Export'}
           </Button>
-          <Button
-            size="lg"
-            className="flex-1"
-            onClick={handleSubmitClick}
-            disabled={!complete || locked || busy}
-          >
-            {submitted ? 'Submitted ✓' : complete ? (user ? 'Submit Mock' : 'Log in & Submit') : `${filledCount}/32`}
-          </Button>
+          {isCompetition ? (
+            <Button
+              size="lg"
+              className="flex-1"
+              onClick={handleSubmitClick}
+              disabled={!complete || locked || busy}
+            >
+              {submitted ? 'Submitted ✓' : complete ? (user ? 'Submit Mock' : 'Log in & Submit') : `${filledCount}/32`}
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowSlots(true)}
+            >
+              Save / Load
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1153,6 +1308,39 @@ export default function Draft() {
           }}
         />
       )}
+
+      {/* Prediction slots modal (save / load) */}
+      {showSlots && (
+        <PredictionSlotsModal
+          currentPicks={picks}
+          currentConfidentSlots={confidentSlots}
+          currentDraftOrder={draftOrder}
+          filledCount={filledCount}
+          onLoad={({ picks: p, confidentSlots: c, draftOrder: o }) => {
+            setPicks(p);
+            setConfidentSlots(c);
+            if (o?.length) setDraftOrder(o);
+          }}
+          onClose={() => setShowSlots(false)}
+        />
+      )}
+
+      {/* Leave-guard modal for unsaved prediction progress */}
+      <ConfirmModal
+        open={showLeaveConfirm}
+        onClose={() => {
+          setShowLeaveConfirm(false);
+          blocker.reset?.();
+        }}
+        onConfirm={() => {
+          setShowLeaveConfirm(false);
+          blocker.proceed?.();
+        }}
+        title="Leave prediction mock?"
+        description="Your prediction progress hasn't been saved. Save it from the footer first, or leave and lose your current picks."
+        confirmLabel="Leave"
+        confirmVariant="danger"
+      />
 
       {/* No mobile bottom spacer needed — the mobile two-panel layout is
           fixed-positioned and the body scroll is locked via useEffect. */}
