@@ -344,6 +344,15 @@ export default function Draft() {
     }
   }, [isMobile, draftingForSlot, topCollapsed, topHeight]);
 
+  // Desktop: auto-scroll the on-the-clock row into view after each pick
+  useEffect(() => {
+    if (isMobile || onClockSlot == null || locked) return;
+    const el = boardRowRefs.current[onClockSlot];
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
+  }, [isMobile, onClockSlot, locked]);
+
   const filteredProspects = useMemo(() => {
     const list = players || [];
     return list.filter((p) => {
