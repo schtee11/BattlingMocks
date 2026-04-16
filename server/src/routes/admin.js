@@ -47,7 +47,12 @@ router.post('/sync/draft-order', async (req, res) => {
   try {
     const picks = await fetchRoundOne(year);
     if (picks.length === 0) {
-      return res.status(502).json({ error: 'ESPN returned no picks; check logs' });
+      const currentYear = new Date().getFullYear();
+      const future = year > currentYear || (year === currentYear && new Date().getMonth() < 3);
+      const hint = future
+        ? `ESPN has not published the ${year} draft order yet — it typically appears after the prior draft concludes. The /api/draft-order/future?year=${year} endpoint will keep using the synthetic fallback.`
+        : 'ESPN returned no picks; check logs';
+      return res.status(502).json({ error: hint, year });
     }
 
     const r1 = picks.filter((p) => p.round === 1 && p.pick >= 1 && p.pick <= 32 && p.team_abbr);
@@ -102,7 +107,12 @@ router.post('/sync/draft-order-all', async (req, res) => {
   try {
     const picks = await fetchAllRounds(year);
     if (picks.length === 0) {
-      return res.status(502).json({ error: 'ESPN returned no picks across any round; check logs' });
+      const currentYear = new Date().getFullYear();
+      const future = year > currentYear || (year === currentYear && new Date().getMonth() < 3);
+      const hint = future
+        ? `ESPN has not published the ${year} draft order yet — it typically appears after the prior draft concludes. The /api/draft-order/future?year=${year} endpoint will keep using the synthetic fallback.`
+        : 'ESPN returned no picks across any round; check logs';
+      return res.status(502).json({ error: hint, year });
     }
 
     const filtered = picks.filter((p) => {

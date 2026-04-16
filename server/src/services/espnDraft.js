@@ -114,6 +114,20 @@ async function fetchFromSiteWeb(year, round) {
       const draft = extractNflDraft(data);
       if (!draft) continue;
 
+      // ESPN's /apis/site/v2/.../draft?year=YYYY endpoint silently falls back
+      // to the most recently published draft when the requested year isn't
+      // available yet (e.g. asking for 2027 before the 2026 draft concludes).
+      // Reject any payload whose year doesn't match what we asked for, so the
+      // caller gets 0 picks and surfaces a clean "not available" error instead
+      // of writing last year's order under the wrong draft_year.
+      const returnedYear = Number(draft.year ?? (draft.uid && draft.uid.match(/y:(\d{4})/)?.[1]));
+      if (Number.isFinite(returnedYear) && returnedYear !== Number(year)) {
+        console.warn(
+          `[espn draft] strategy returned year ${returnedYear} for requested year ${year}; rejecting stale payload`
+        );
+        continue;
+      }
+
       const rounds = Array.isArray(draft.rounds) ? draft.rounds : [];
       const target =
         rounds.find((r) => Number(r.number) === Number(round)) || rounds[0];
