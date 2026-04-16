@@ -90,6 +90,11 @@ export default function Draft() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showClearAll, setShowClearAll] = useState(false);
   const [showSlots, setShowSlots] = useState(false);
+  // ID of the saved prediction slot currently loaded into the board (if any).
+  // Used to attribute export/download events back to a specific mock in the
+  // admin analytics panel — null for fresh, un-loaded boards and all
+  // competition-mode boards.
+  const [loadedMockId, setLoadedMockId] = useState(null);
   // Mobile: which pick slot is currently being drafted for. Always non-null
   // on mobile once data has loaded — initialized from on-the-clock.
   const [draftingForSlot, setDraftingForSlot] = useState(null);
@@ -134,6 +139,9 @@ export default function Draft() {
       setDraftOrder(baseOrderRef.current);
       setSubmitted(false);
     }
+    // Switching modes detaches the board from any previously-loaded saved
+    // slot — exports from the new mode shouldn't be attributed to it.
+    setLoadedMockId(null);
     setDraftMode(newMode);
   }
 
@@ -677,8 +685,8 @@ export default function Draft() {
     theme: exportTheme,
     teamLogoDataUrls,
     headshotDataUrls,
-    handleShare: handleExportShare,
-    handleDownload: handleExportDownload,
+    handleShare: rawHandleExportShare,
+    handleDownload: rawHandleExportDownload,
     isMobile: exportIsMobile,
   } = useRound1ShareExport({
     picks: exportPicks,
@@ -687,6 +695,35 @@ export default function Draft() {
     originalTeamByPickNumber: originalTeamByPick,
     tradedPicks: exportTradedPicks,
   });
+
+  // Thin telemetry wrappers around the export hook's handlers. Fire-and-forget
+  // — analytics must never block or break the user-facing action, so errors
+  // are swallowed. Runs BEFORE the underlying handler so the event lands even
+  // if the render fails downstream.
+  function logExportEvent(eventType) {
+    api
+      .logPredictionMockEvent({
+        event_type: eventType,
+        mock_id: isPrediction ? loadedMockId : null,
+        metadata: {
+          mode: draftMode,
+          pick_count: filledCount,
+          traded_pick_count: exportTradedPicks.size,
+          surface: exportIsMobile ? 'mobile' : 'desktop',
+        },
+      })
+      .catch(() => {});
+  }
+  const handleExportShare = useCallback(() => {
+    logExportEvent('export');
+    rawHandleExportShare();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawHandleExportShare, draftMode, loadedMockId, filledCount, exportIsMobile, exportTradedPicks]);
+  const handleExportDownload = useCallback(() => {
+    logExportEvent('download');
+    rawHandleExportDownload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawHandleExportDownload, draftMode, loadedMockId, filledCount, exportIsMobile, exportTradedPicks]);
 
   const activePlayer = activeDragId?.startsWith('player-')
     ? playerById.get(Number(activeDragId.replace('player-', '')))
@@ -1360,9 +1397,12 @@ export default function Draft() {
           currentDraftOrder={draftOrder}
           filledCount={filledCount}
           userId={user?.id}
-          onLoad={({ picks: p, draftOrder: o }) => {
+          onLoad={({ id, picks: p, draftOrder: o }) => {
             setPicks(p);
             if (o?.length) setDraftOrder(o);
+            // Remember which slot these picks came from so subsequent
+            // export/download events can be attributed to it.
+            setLoadedMockId(typeof id === 'number' ? id : null);
           }}
           onClose={() => setShowSlots(false)}
         />

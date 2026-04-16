@@ -268,6 +268,14 @@ export const api = {
     }),
   deletePredictionMock: (id) =>
     request(`/api/prediction-mocks/${id}`, { method: 'DELETE' }),
+  // Usage telemetry — fire-and-forget. Server accepts optional auth so guest
+  // exports still get counted. Callers should .catch() silently; analytics
+  // failures must never break the user-facing action (download, share, etc.).
+  logPredictionMockEvent: ({ event_type, mock_id = null, metadata = {} } = {}) =>
+    request('/api/prediction-mocks/events', {
+      method: 'POST',
+      body: { event_type, mock_id, metadata },
+    }),
 
   // admin
   adminGetAlgoConfig: (key) => request('/api/admin/algo-config', { adminKey: key }),
@@ -357,4 +365,6 @@ export const api = {
     request(`/api/admin/volume-stats?year=${year}`, { adminKey: key }),
   adminBoardStats: (key) =>
     request('/api/admin/boards', { adminKey: key }),
+  predictionMockStats: (key) =>
+    request('/api/admin/prediction-mock-stats', { adminKey: key }),
 };

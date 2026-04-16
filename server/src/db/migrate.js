@@ -291,6 +291,29 @@ CREATE TABLE IF NOT EXISTS prediction_mocks (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_prediction_mocks_user ON prediction_mocks(user_id);
+
+-- Phase 9b: prediction_mocks usage telemetry. Append-only event log covering
+-- both CRUD on saved mocks (create/update/delete) and UI-initiated actions
+-- (load/export/download/share) — including events from guests (user_id NULL)
+-- and from unsaved boards (mock_id NULL) so we can understand the full
+-- usage funnel, not just persisted slots. ON DELETE SET NULL on both FKs so
+-- deleting a user or a mock preserves the historical event count.
+CREATE TABLE IF NOT EXISTS prediction_mock_events (
+  id BIGSERIAL PRIMARY KEY,
+  mock_id INTEGER REFERENCES prediction_mocks(id) ON DELETE SET NULL,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  event_type VARCHAR(20) NOT NULL,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_prediction_mock_events_type_time
+  ON prediction_mock_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prediction_mock_events_created_at
+  ON prediction_mock_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_prediction_mock_events_user
+  ON prediction_mock_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_prediction_mock_events_mock
+  ON prediction_mock_events(mock_id);
 `;
 
 // Split the migration SQL into individual statements and run them one at a

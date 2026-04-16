@@ -1021,4 +1021,155 @@ router.get('/boards', async (req, res) => {
   }
 });
 
+// ---------- Prediction mocks analytics ----------
+// Usage dashboard for the predictive-draft tool: how many mocks users save,
+// how often they load/export/download, and who the power users are. Powers
+// the "Prediction Mocks" panel inside the Volume Stats tab.
+router.get('/prediction-mock-stats', async (_req, res) => {
+  try {
+    // 1) Saved-slot overview — the state of the prediction_mocks table
+    //    right now (not an event count).
+    const { rows: [slotOverview] } = await pool.query(`
+      SELECT
+        COUNT(*)::int                                AS total_mocks,
+        COUNT(DISTINCT user_id)::int                 AS unique_users,
+        ROUND(
+          CASE WHEN COUNT(DISTINCT user_id) > 0
+            THEN COUNT(*)::numeric / COUNT(DISTINCT user_id)
+            ELSE 0
+          END, 2
+        )                                            AS avg_mocks_per_user,
+        MIN(created_at)                              AS earliest_mock,
+        MAX(updated_at)                              AS latest_mock_update
+      FROM prediction_mocks
+    `);
+
+    // 2) Event counts grouped by event_type (all time + last 30 days).
+    //    The caller gets both windows so the UI can show "lifetime" and
+    //    "trailing 30" side-by-side.
+    const { rows: eventsByType } = await pool.query(`
+      SELECT
+        event_type,
+        COUNT(*)::int                                                        AS total,
+        SUM(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::int AS last_30d,
+        SUM(CASE WHEN created_at >= NOW() - INTERVAL '7 days'  THEN 1 ELSE 0 END)::int AS last_7d,
+        COUNT(DISTINCT user_id)::int                                         AS unique_users,
+        SUM(CASE WHEN user_id IS NULL THEN 1 ELSE 0 END)::int                AS guest_events
+      FROM prediction_mock_events
+      GROUP BY event_type
+      ORDER BY total DESC
+    `);
+
+    // 3) Daily trend — one row per EST/EDT day for the last 30 days, with
+    //    each event_type pivoted into its own column so the UI can render a
+    //    stacked bar without post-processing.
+    const { rows: daily } = await pool.query(`
+      SELECT
+        TO_CHAR(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS day,
+        COUNT(*)::int                                                     AS total,
+        SUM(CASE WHEN event_type = 'create'   THEN 1 ELSE 0 END)::int     AS created,
+        SUM(CASE WHEN event_type = 'update'   THEN 1 ELSE 0 END)::int     AS updated,
+        SUM(CASE WHEN event_type = 'delete'   THEN 1 ELSE 0 END)::int     AS deleted,
+        SUM(CASE WHEN event_type = 'load'     THEN 1 ELSE 0 END)::int     AS loaded,
+        SUM(CASE WHEN event_type = 'export'   THEN 1 ELSE 0 END)::int     AS exported,
+        SUM(CASE WHEN event_type = 'download' THEN 1 ELSE 0 END)::int     AS downloaded
+      FROM prediction_mock_events
+      WHERE created_at >= NOW() - INTERVAL '30 days'
+      GROUP BY TO_CHAR(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD')
+      ORDER BY day DESC
+    `);
+
+    // 4) Top users — who is getting the most value out of the tool? Ranks by
+    //    export+download events (the "shared their mock" signal) with ties
+    //    broken by total activity. Guests (user_id NULL) are lumped into one
+    //    row so the leaderboard doesn't get overwhelmed by anonymous usage.
+    const { rows: topUsers } = await pool.query(`
+      SELECT
+        COALESCE(e.user_id::text, 'guest')                                  AS user_id,
+        COALESCE(u.display_name, 'Guest')                                   AS display_name,
+        u.avatar_url                                                        AS avatar_url,
+        COUNT(*)::int                                                       AS total_events,
+        SUM(CASE WHEN e.event_type IN ('export','download','share') THEN 1 ELSE 0 END)::int AS exports,
+        SUM(CASE WHEN e.event_type = 'create' THEN 1 ELSE 0 END)::int       AS mocks_created,
+        SUM(CASE WHEN e.event_type = 'load'   THEN 1 ELSE 0 END)::int       AS loads,
+        MAX(e.created_at)                                                   AS last_active
+      FROM prediction_mock_events e
+      LEFT JOIN users u ON u.id = e.user_id
+      GROUP BY COALESCE(e.user_id::text, 'guest'),
+               COALESCE(u.display_name, 'Guest'),
+               u.avatar_url
+      ORDER BY exports DESC, total_events DESC
+      LIMIT 15
+    `);
+
+    // 5) Mode breakdown for export/download — how much of the export volume
+    //    comes from prediction mode vs. competition mode? The client sends
+    //    metadata.mode with each export event, so this is a JSONB lookup.
+    const { rows: byMode } = await pool.query(`
+      SELECT
+        COALESCE(metadata->>'mode', 'unknown') AS mode,
+        event_type,
+        COUNT(*)::int                          AS count
+      FROM prediction_mock_events
+      WHERE event_type IN ('export', 'download')
+      GROUP BY COALESCE(metadata->>'mode', 'unknown'), event_type
+      ORDER BY mode, event_type
+    `);
+
+    // 6) Most-popular saved slots — which mocks are being exported/downloaded
+    //    most. Helps identify which user-generated content is "going viral"
+    //    (relative to the small scale of this tool). Only rows where mock_id
+    //    is still attached — excludes events whose mocks have been deleted.
+    const { rows: topMocks } = await pool.query(`
+      SELECT
+        pm.id,
+        pm.name,
+        pm.updated_at,
+        u.display_name,
+        COUNT(*) FILTER (WHERE e.event_type IN ('export','download','share'))::int AS export_count,
+        COUNT(*) FILTER (WHERE e.event_type = 'load')::int                         AS load_count
+      FROM prediction_mock_events e
+      JOIN prediction_mocks pm ON pm.id = e.mock_id
+      LEFT JOIN users u        ON u.id = pm.user_id
+      WHERE e.mock_id IS NOT NULL
+        AND e.event_type IN ('export','download','share','load')
+      GROUP BY pm.id, pm.name, pm.updated_at, u.display_name
+      HAVING COUNT(*) FILTER (WHERE e.event_type IN ('export','download','share','load')) > 0
+      ORDER BY export_count DESC, load_count DESC
+      LIMIT 10
+    `);
+
+    // 7) Recent event stream — last 20 events, for a "what's happening right
+    //    now" feel. Includes the mock name + user display when resolvable.
+    const { rows: recent } = await pool.query(`
+      SELECT
+        e.id,
+        e.event_type,
+        e.created_at,
+        e.metadata,
+        COALESCE(u.display_name, 'Guest') AS display_name,
+        CASE WHEN e.user_id IS NULL THEN TRUE ELSE FALSE END AS is_guest,
+        pm.name AS mock_name
+      FROM prediction_mock_events e
+      LEFT JOIN users u            ON u.id = e.user_id
+      LEFT JOIN prediction_mocks pm ON pm.id = e.mock_id
+      ORDER BY e.created_at DESC
+      LIMIT 20
+    `);
+
+    res.json({
+      slotOverview,
+      eventsByType,
+      daily,
+      topUsers,
+      byMode,
+      topMocks,
+      recent,
+    });
+  } catch (e) {
+    console.error('[prediction-mock-stats]', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
 export default router;

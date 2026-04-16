@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { loadSlots, saveSlot, updateSlot, deleteSlot, MAX_SLOTS } from '../lib/predictionSlots.js';
+import { api } from '../lib/api.js';
 
 // Modal for managing saved prediction-mode mocks. Renders a compact
 // "save current" section at the top and a scrollable list of saved slots
@@ -83,9 +84,22 @@ export function PredictionSlotsModal({ currentPicks, currentDraftOrder, filledCo
 
   function handleLoad(slot) {
     onLoad({
+      id: slot.id,
       picks: slot.picks || {},
       draftOrder: slot.draftOrder || [],
     });
+    // Fire-and-forget usage log. Only server-backed slots have numeric ids;
+    // guest slots (localStorage) use string ids and are skipped — we can't
+    // attribute those to a DB row anyway.
+    if (typeof slot.id === 'number') {
+      api
+        .logPredictionMockEvent({
+          event_type: 'load',
+          mock_id: slot.id,
+          metadata: { pick_count: Object.keys(slot.picks || {}).length },
+        })
+        .catch(() => {});
+    }
     toast.success(`Loaded "${slot.name}"`);
     onClose();
   }
