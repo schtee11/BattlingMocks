@@ -26,10 +26,12 @@ import { getAlgoConfig } from './algoConfig.js';
 import { pickForTeam, normalizePos } from './botPicker.js';
 import { futurePicksForTeam } from './futurePicks.js';
 
-// How far ahead to look for trade-up candidates. NFL trade-up offers tend
-// to come from teams within a handful of spots — beyond that the value gap
-// is too large to bridge with a normal package.
-const MAX_LOOKAHEAD_PICKS = 12;
+// How far ahead to look for trade-up candidates. Calibrated against the
+// 2025 NFL draft trades dataset (see scratch/analyze-trades.mjs). Real R1
+// trade-ups ranged 1-20 spots with a median of 3; R2-to-R1 jumps (HOU #34
+// → #25, ATL #46 → #26) were both inside 24 spots. Going wider than 24
+// starts capturing trade shapes a bot couldn't realistically finance.
+const MAX_LOOKAHEAD_PICKS = 24;
 
 // Maximum number of distinct offers to surface at one time. Two-or-three
 // gives the user a real choice without overwhelming the on-clock UI.
@@ -80,9 +82,15 @@ function sumValue(ids, chartGet, futureOwnership) {
 
 // Build the "best package" the bot can offer to reach a target value, using
 // its own remaining current-year picks (other than the one it's trading up
-// FROM) plus its 2027 capital. Greedy descending fill — adds the largest
-// pick that doesn't blow past the target by more than ~10%, repeats until
-// the target is met or no more useful picks fit.
+// FROM) plus its 2027 capital.
+//
+// Biased toward the canonical real-world R1 trade-up shape observed in the
+// 2025 dataset: median 3 pieces (bot's lead pick + 1 current-year sweetener
+// + 1 future pick), with 75% of R1 trade-ups including a future pick. We
+// therefore try, in order:
+//   Pass 1 — current-year + future-year pair that lands in 93-112% band.
+//   Pass 2 — single current-year pick in band (covers small moves).
+//   Pass 3 — greedy fill as a last resort.
 //
 // Returns { picks, total } or null if no realistic package fits.
 function buildOfferPackage({
@@ -95,55 +103,76 @@ function buildOfferPackage({
   futureOwnership,
   chartGet,
 }) {
-  // Bot's tradeable assets = its remaining current-year picks (excluding
-  // the one being traded up from — that's reserved for "you give") + all
-  // its 2027 picks. We sort DESCENDING so we try to cover the target with
-  // the smallest number of picks; small 2027 picks backfill precision.
-  const candidates = [];
+  // Split candidates by source so we can intentionally pair current + future.
+  const currentCandidates = [];
+  const futureCandidates = [];
   for (const row of liveOrder) {
     if (row.pick_number <= picksMadeCount) continue;
     if (row.team !== botTeam) continue;
     if (row.pick_number === botPick) continue;       // we're sending the user this
-    candidates.push({ id: row.pick_number, value: chartGet(row.pick_number) });
+    currentCandidates.push({ id: row.pick_number, value: chartGet(row.pick_number) });
   }
   if (futureOwnership) {
     for (const fp of futurePicksForTeam(futureOwnership, botTeam)) {
-      candidates.push({ id: fp.id, value: fp.value || 0 });
+      futureCandidates.push({ id: fp.id, value: fp.value || 0 });
     }
   }
-  candidates.sort((a, b) => b.value - a.value);
+  // Descending sort — smallest number of pieces wins ties.
+  currentCandidates.sort((a, b) => b.value - a.value);
+  futureCandidates.sort((a, b) => b.value - a.value);
 
-  // Pass 1 — single best-fit pick. A lot of real-world trade-up moves
-  // are "my pick + ONE sweetener" (bot's 3rd-rounder, a 2027 R2, etc.),
-  // so prefer that shape when anything in the candidate pool lands in the
-  // 93%-112% target band.
+  const LOW = targetValue * 0.93;
+  const HIGH = targetValue * 1.12;
+  const closer = (a, b) => Math.abs(a - targetValue) < Math.abs(b - targetValue);
+
+  // Pass 1 — canonical shape: current-year sweetener + future pick. Matches
+  // the 75% future-pick rate in the 2025 R1 trade-up dataset. We search for
+  // the pair whose combined value sits closest to targetValue within the
+  // fair band.
+  let bestPair = null;
+  for (const c of currentCandidates) {
+    for (const f of futureCandidates) {
+      const total = c.value + f.value;
+      if (total < LOW || total > HIGH) continue;
+      if (!bestPair || closer(total, bestPair.total)) {
+        bestPair = { picks: [c.id, f.id], total };
+      }
+    }
+  }
+  if (bestPair) return bestPair;
+
+  // Pass 2 — single current-year pick in band. Used for small moves where
+  // the sweetener is naturally one mid-round pick (e.g. bot's R3 covers a
+  // 3-spot R1 jump without needing a future).
   let bestSingle = null;
-  for (const c of candidates) {
-    if (c.value < targetValue * 0.93) continue;
-    if (c.value > targetValue * 1.12) continue;
-    if (!bestSingle || Math.abs(c.value - targetValue) < Math.abs(bestSingle.value - targetValue)) {
+  for (const c of [...currentCandidates, ...futureCandidates]) {
+    if (c.value < LOW || c.value > HIGH) continue;
+    if (!bestSingle || closer(c.value, bestSingle.value)) {
       bestSingle = c;
     }
   }
   if (bestSingle) return { picks: [bestSingle.id], total: bestSingle.value };
 
-  // Pass 2 — greedy fill with a HARD overshoot guard. Never push total
+  // Pass 3 — greedy fill with a HARD overshoot guard. Never push total
   // above 1.12× target, ever. The previous version allowed an initial
   // oversized dump whenever total was below 85% of target, which let bots
   // throw R1s into 3-spot-move trades (40-50% surplus, way outside the
   // 5-7% fair band).
+  const allCandidates = [...currentCandidates, ...futureCandidates].sort(
+    (a, b) => b.value - a.value
+  );
   const picks = [];
   let total = 0;
-  for (const c of candidates) {
+  for (const c of allCandidates) {
     if (total >= targetValue * 0.97) break;
-    if (total + c.value > targetValue * 1.12) continue;
+    if (total + c.value > HIGH) continue;
     picks.push(c.id);
     total += c.value;
   }
 
   // Reject offers that fall too short — better to send no offer than a
   // known lopsided lowball. Keeps surplus in the advertised 5-7% band.
-  if (total < targetValue * 0.93) return null;
+  if (total < LOW) return null;
   return { picks, total };
 }
 
@@ -155,6 +184,7 @@ function buildOfferPackage({
 // to the user's side of the 5–7% fair band).
 function assessUrgency({
   botSlot,
+  userSlot,            // user's on-clock pick (what we're assessing vs)
   available,
   picksBetween,        // bot teams picking BETWEEN the user and this bot
   draftContext,
@@ -207,20 +237,36 @@ function assessUrgency({
     if (slotNeeds.includes(wantedPos)) competingPicks++;
   }
 
-  // Two amplifiers:
-  //   1. Top of position is rare (≤2 elite candidates left at the position
-  //      → urgency snaps to high).
-  //   2. Multiple competing teams in between → urgency rises.
+  // ── Amplifiers ──────────────────────────────────────────────────────────
+  //
+  // 1. Scarcity — top of position is running thin.
+  // 2. Competition — multiple teams in-between share the need.
+  // 3. Wantedness — wanted position matches the bot's #1 need.
+  // 4. BPA cliff — the player available at the USER's slot is dramatically
+  //    better than what the bot expects at their own slot. This models the
+  //    "player is falling, go grab him" dynamic from real draft trades (the
+  //    ATL #46 → LAR #26 trade-up for Pearce Jr. was driven by this cliff).
   const scarcity = topAtPos.length <= 2 ? 0.7 : topAtPos.length <= 3 ? 0.5 : 0.3;
   const competition =
     competingPicks >= TIER_DROP_THRESHOLD ? 0.4 : competingPicks * 0.15;
-
-  // Wantedness: if the bot's #1 need matches the wanted position, urgency
-  // is dialled up another notch — it's not just BPA, it's a true target.
   const isTopNeed = normalizePos(needs[0] || '') === wantedPos;
   const wantedness = isTopNeed ? 0.2 : 0.05;
 
-  return Math.min(1, scarcity + competition + wantedness);
+  // BPA cliff — approximate by comparing the wantedNow rank vs the best
+  // player at the same position available RIGHT NOW (user's slot).
+  let bpaCliff = 0;
+  if (userSlot) {
+    const bestAtUserSlot = available.find((p) => normalizePos(p.position) === wantedPos);
+    const nowRank = Number.isFinite(wantedNow.rank) ? wantedNow.rank : 999;
+    const bestRank = Number.isFinite(bestAtUserSlot?.rank) ? bestAtUserSlot.rank : 999;
+    const rankDelta = nowRank - bestRank;
+    // Significant cliffs only — 15+ ranks of upgrade is "star falling to you".
+    if (rankDelta >= 30) bpaCliff = 0.35;
+    else if (rankDelta >= 15) bpaCliff = 0.2;
+    else if (rankDelta >= 8) bpaCliff = 0.1;
+  }
+
+  return Math.min(1, scarcity + competition + wantedness + bpaCliff);
 }
 
 // ── Main entry point ────────────────────────────────────────────────────────
@@ -331,6 +377,7 @@ export function generateBotTradeOffers({
 
     const urgency = assessUrgency({
       botSlot,
+      userSlot,
       available,
       picksBetween,
       draftContext: botContext,
