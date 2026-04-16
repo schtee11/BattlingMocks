@@ -1798,9 +1798,15 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               effectivePlayers,
               randomness,
             });
-            if (reluctance >= 0.9) {
+            if (reluctance >= 0.8) {
               // Hard block — seller won't even entertain this trade.
-              // Skip the acceptance roll entirely.
+              // Skip the acceptance roll entirely. Threshold matches the
+              // user-facing offers gate so behavior is consistent across
+              // bot-vs-bot and the panel.
+              // eslint-disable-next-line no-console
+              console.info(
+                `[bot-vs-bot] BLOCKED #${currentSlot.pick_number} ${currentSlot.team}: reluctance ${reluctance.toFixed(2)} (${offer.buyerTeam} wanted ${offer.wantedPlayer?.name || 'pick'})`
+              );
             } else {
             // Seller surplusPct is user-side-positive convention; from the
             // seller's perspective a positive surplus means they're getting
@@ -1826,7 +1832,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               );
               // eslint-disable-next-line no-console
               console.info(
-                `[bot-vs-bot] pick #${offer.sellerPick}: ${offer.sellerTeam} → ${offer.buyerTeam}${forWho} (urgency ${offer.summary.urgency})`
+                `[bot-vs-bot] pick #${offer.sellerPick}: ${offer.sellerTeam} → ${offer.buyerTeam}${forWho} (urgency ${offer.summary.urgency}, reluctance ${reluctance.toFixed(2)})`
               );
               // Don't pick this tick — the swap will re-render and the new
               // owner picks on the next engine iteration.

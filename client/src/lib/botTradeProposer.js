@@ -399,11 +399,14 @@ export function assessSellerReluctance({
   if (isTopNeed) reluctance += 0.15;
 
   // 3. Premium slot — top picks are cultural anchors; franchises almost
-  //    never move back from them.
+  //    never move back from them. Weighted heavily so a clear top-need
+  //    star at a premium pick definitely clears the 0.8 block threshold
+  //    even when the position pool is deep (scarcity = 0).
   const n = sellerSlot.pick_number;
-  if (n <= 5) reluctance += 0.25;
-  else if (n <= 10) reluctance += 0.15;
-  else if (n <= 20) reluctance += 0.05;
+  if (n <= 3) reluctance += 0.45;
+  else if (n <= 5) reluctance += 0.35;
+  else if (n <= 10) reluctance += 0.25;
+  else if (n <= 20) reluctance += 0.10;
 
   // 4. Scarcity at wanted position — if only 1–2 top-32 players at this
   //    position remain, moving back likely means losing them entirely.
