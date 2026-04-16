@@ -105,6 +105,7 @@ export default function Draft() {
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const mobileContainerRef = useRef(null);
   const boardRowRefs = useRef({}); // pick_number → li element, for scroll-into-view
+  const desktopBoardRef = useRef(null); // desktop <ul> scroll container
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
@@ -344,13 +345,18 @@ export default function Draft() {
     }
   }, [isMobile, draftingForSlot, topCollapsed, topHeight]);
 
-  // Desktop: auto-scroll the on-the-clock row into view after each pick
+  // Desktop: auto-scroll the on-the-clock row into view after each pick.
+  // We scroll the <ul> container directly instead of using scrollIntoView,
+  // which can fight with nested overflow:hidden ancestors in the layout.
   useEffect(() => {
     if (isMobile || onClockSlot == null || locked) return;
     const el = boardRowRefs.current[onClockSlot];
-    if (el && typeof el.scrollIntoView === 'function') {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-    }
+    const container = desktopBoardRef.current;
+    if (!el || !container) return;
+    requestAnimationFrame(() => {
+      const top = el.offsetTop - container.offsetHeight / 2 + el.offsetHeight / 2;
+      container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    });
   }, [isMobile, onClockSlot, locked]);
 
   const filteredProspects = useMemo(() => {
@@ -1062,6 +1068,7 @@ export default function Draft() {
                 </div>
               </div>
               <ul
+                ref={desktopBoardRef}
                 className="stagger space-y-1.5 flex-1 min-h-0 overflow-y-auto pr-1"
                 style={{ overscrollBehavior: 'contain' }}
               >
