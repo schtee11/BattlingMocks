@@ -20,8 +20,9 @@ router.get('/', async (req, res) => {
   // it, the JSONB column is empty and every bot runs pure BPA.
   //
   // NULLIF vs empty array: COALESCE only falls through on NULL, not on an
-  // empty JSONB array. NULLIF(...,'[]') coerces empty arrays to NULL so
-  // the fallback kicks in.
+  // empty array. NULLIF(...,ARRAY[]::TEXT[]) coerces empty arrays to NULL
+  // so the fallback kicks in. Both sides must be TEXT[] — draft_order
+  // stores needs as a text array, and array_agg() returns TEXT[] too.
   const roundParam = (req.query.round || '1').toString().toLowerCase();
   const sql = `
     SELECT
@@ -30,8 +31,8 @@ router.get('/', async (req, res) => {
       d.team_name,
       d.round,
       COALESCE(
-        NULLIF(d.team_needs, '[]'::jsonb),
-        (SELECT jsonb_agg(tn.position ORDER BY tn.priority ASC)
+        NULLIF(d.team_needs, ARRAY[]::TEXT[]),
+        (SELECT array_agg(tn.position ORDER BY tn.priority ASC)
            FROM team_needs tn
           WHERE tn.team_id = d.team AND tn.draft_year = 2026)
       ) AS team_needs
