@@ -1079,6 +1079,7 @@ export default function Draft() {
                       isActive={selectedPlayer != null}
                       isConfident={confidentSlots.has(slot)}
                       onToggleConfident={toggleConfidence}
+                      boardRef={boardRowRefs}
                     />
                   ))
                 )}

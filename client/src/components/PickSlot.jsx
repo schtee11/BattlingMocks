@@ -9,8 +9,12 @@ import { PlayerHeadshot } from './ui/PlayerHeadshot.jsx';
 // instead of all 32. Parent passes STABLE onClear/onClick identities (via
 // useCallback with empty deps + latestRef pattern) so the memo comparator
 // stays effective — inline arrow functions would defeat it.
-function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfident, onToggleConfident }) {
+function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfident, onToggleConfident, boardRef }) {
   const { setNodeRef, isOver } = useDroppable({ id: `slot-${slot}` });
+  const mergedRef = useCallback((el) => {
+    setNodeRef(el);
+    if (boardRef && el) boardRef.current[slot] = el;
+  }, [setNodeRef, boardRef, slot]);
   const [flash, setFlash] = useState(false);
   const [prevPid, setPrevPid] = useState(player?.id ?? null);
 
@@ -54,7 +58,7 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfi
 
   return (
     <li
-      ref={setNodeRef}
+      ref={mergedRef}
       onClick={handleClick}
       tabIndex={0}
       aria-label={`Pick ${slot}${team ? ` - ${team.team_name}` : ''}${player ? ` - ${player.name}` : ' - empty'}`}
@@ -160,5 +164,6 @@ export const PickSlot = memo(PickSlotInner, (prev, next) =>
   prev.isConfident === next.isConfident &&
   prev.onClear === next.onClear &&
   prev.onClick === next.onClick &&
-  prev.onToggleConfident === next.onToggleConfident
+  prev.onToggleConfident === next.onToggleConfident &&
+  prev.boardRef === next.boardRef
 );
