@@ -629,31 +629,35 @@ export function TradeModal({
                 <span className="ml-auto font-mono text-[11px] text-text-primary">{yourTotal}</span>
               </div>
               <div
-                className="grid grid-cols-3 gap-1.5 overflow-y-auto pr-1"
+                className="overflow-y-auto pr-1"
                 // Scale with the viewport so short-screen laptops (13" MBP
                 // with browser chrome) still see the verdict + footer without
-                // having to scroll the modal body.
-                style={{ maxHeight: 'min(11rem, 22dvh)' }}
+                // having to scroll the modal body. 2027 future picks share
+                // the same scroll container so a 7-row future stack can't
+                // push the modal off-screen.
+                style={{ maxHeight: 'min(14rem, 28dvh)' }}
               >
-                {myFuturePicks.map((s) =>
-                  pickButton(s, yourSelected.has(s.pick_number), () =>
-                    togglePick(yourSelected, setYourSelected, s.pick_number)
-                  )
-                )}
-                {myFuturePicks.length === 0 && myFutureYearPicks.length === 0 && (
-                  <div className="col-span-3 text-[11px] text-text-muted py-2">
-                    No remaining picks.
-                  </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {myFuturePicks.map((s) =>
+                    pickButton(s, yourSelected.has(s.pick_number), () =>
+                      togglePick(yourSelected, setYourSelected, s.pick_number)
+                    )
+                  )}
+                  {myFuturePicks.length === 0 && myFutureYearPicks.length === 0 && (
+                    <div className="col-span-3 text-[11px] text-text-muted py-2">
+                      No remaining picks.
+                    </div>
+                  )}
+                </div>
+                {myFutureYearPicks.length > 0 && (
+                  <FuturePickRow
+                    picks={myFutureYearPicks}
+                    selected={yourSelected}
+                    onToggle={(id) => togglePick(yourSelected, setYourSelected, id)}
+                    renderButton={futurePickButton}
+                  />
                 )}
               </div>
-              {myFutureYearPicks.length > 0 && (
-                <FuturePickRow
-                  picks={myFutureYearPicks}
-                  selected={yourSelected}
-                  onToggle={(id) => togglePick(yourSelected, setYourSelected, id)}
-                  renderButton={futurePickButton}
-                />
-              )}
             </div>
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -664,31 +668,30 @@ export function TradeModal({
                 <span className="ml-auto font-mono text-[11px] text-text-primary">{theirTotal}</span>
               </div>
               <div
-                className="grid grid-cols-3 gap-1.5 overflow-y-auto pr-1"
-                // Scale with the viewport so short-screen laptops (13" MBP
-                // with browser chrome) still see the verdict + footer without
-                // having to scroll the modal body.
-                style={{ maxHeight: 'min(11rem, 22dvh)' }}
+                className="overflow-y-auto pr-1"
+                style={{ maxHeight: 'min(14rem, 28dvh)' }}
               >
-                {partnerFuturePicks.map((s) =>
-                  pickButton(s, theirSelected.has(s.pick_number), () =>
-                    togglePick(theirSelected, setTheirSelected, s.pick_number)
-                  )
-                )}
-                {partnerFuturePicks.length === 0 && partnerFutureYearPicks.length === 0 && (
-                  <div className="col-span-3 text-[11px] text-text-muted py-2">
-                    No picks remaining.
-                  </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {partnerFuturePicks.map((s) =>
+                    pickButton(s, theirSelected.has(s.pick_number), () =>
+                      togglePick(theirSelected, setTheirSelected, s.pick_number)
+                    )
+                  )}
+                  {partnerFuturePicks.length === 0 && partnerFutureYearPicks.length === 0 && (
+                    <div className="col-span-3 text-[11px] text-text-muted py-2">
+                      No picks remaining.
+                    </div>
+                  )}
+                </div>
+                {partnerFutureYearPicks.length > 0 && (
+                  <FuturePickRow
+                    picks={partnerFutureYearPicks}
+                    selected={theirSelected}
+                    onToggle={(id) => togglePick(theirSelected, setTheirSelected, id)}
+                    renderButton={futurePickButton}
+                  />
                 )}
               </div>
-              {partnerFutureYearPicks.length > 0 && (
-                <FuturePickRow
-                  picks={partnerFutureYearPicks}
-                  selected={theirSelected}
-                  onToggle={(id) => togglePick(theirSelected, setTheirSelected, id)}
-                  renderButton={futurePickButton}
-                />
-              )}
             </div>
           </div>
 
