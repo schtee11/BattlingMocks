@@ -2761,45 +2761,49 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                 className="w-full h-1 accent-accent cursor-pointer"
               />
             </div>
-            {/* Bot chaos slider */}
-            <div>
-              <div className="flex justify-between text-[10px] text-text-muted mb-1">
-                <span>Bot Chaos</span>
-                <span>{Math.round(randomness * 100)}%</span>
+            {/* Bot chaos slider — only meaningful pre-draft; once picks are
+                running the score curves are already baked in. */}
+            {phase === PHASE_READY && (
+              <div>
+                <div className="flex justify-between text-[10px] text-text-muted mb-1">
+                  <span>Bot Chaos</span>
+                  <span>{Math.round(randomness * 100)}%</span>
+                </div>
+                <input
+                  type="range" min="0" max="1" step="0.05"
+                  value={randomness}
+                  onChange={(e) => setRandomness(Number(e.target.value))}
+                  className="w-full h-1 accent-accent cursor-pointer"
+                />
               </div>
-              <input
-                type="range" min="0" max="1" step="0.05"
-                value={randomness}
-                onChange={(e) => setRandomness(Number(e.target.value))}
-                className="w-full h-1 accent-accent cursor-pointer"
-              />
-            </div>
-            {/* Trade feature toggles — locked after the draft starts so
-                a mid-run flip doesn't leave a half-applied state. */}
-            <div className={`space-y-1.5 ${phase !== PHASE_READY ? 'opacity-60' : ''}`}>
-              <label className={`flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted select-none ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                <span>Trade Offers</span>
-                <input
-                  type="checkbox"
-                  checked={offersEnabled}
-                  disabled={phase !== PHASE_READY}
-                  onChange={(e) => setOffersEnabled(e.target.checked)}
-                  className={`w-3.5 h-3.5 accent-accent ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                  title={phase !== PHASE_READY ? 'Locked during an active draft — restart to change' : "Incoming trade offers from bot teams when you're on the clock"}
-                />
-              </label>
-              <label className={`flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted select-none ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                <span>Bot-vs-Bot Trades</span>
-                <input
-                  type="checkbox"
-                  checked={botBotEnabled}
-                  disabled={phase !== PHASE_READY}
-                  onChange={(e) => setBotBotEnabled(e.target.checked)}
-                  className={`w-3.5 h-3.5 accent-accent ${phase !== PHASE_READY ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                  title={phase !== PHASE_READY ? 'Locked during an active draft — restart to change' : 'CPU teams trade amongst themselves during auto-run'}
-                />
-              </label>
-            </div>
+            )}
+            {/* Trade feature toggles — pre-draft only. Locked mid-run would
+                leave a half-applied state, and they take a lot of vertical
+                space on the left panel. */}
+            {phase === PHASE_READY && (
+              <div className="space-y-1.5">
+                <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                  <span>Trade Offers</span>
+                  <input
+                    type="checkbox"
+                    checked={offersEnabled}
+                    onChange={(e) => setOffersEnabled(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                    title="Incoming trade offers from bot teams when you're on the clock"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                  <span>Bot-vs-Bot Trades</span>
+                  <input
+                    type="checkbox"
+                    checked={botBotEnabled}
+                    onChange={(e) => setBotBotEnabled(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                    title="CPU teams trade amongst themselves during auto-run"
+                  />
+                </label>
+              </div>
+            )}
             {/* Start / Pause / Resume / Trade */}
             {phase === PHASE_READY ? (
               <button
