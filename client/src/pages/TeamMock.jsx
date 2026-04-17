@@ -1189,7 +1189,10 @@ function ResultsView({
               {team} Team Mock
             </h2>
             <p className="text-text-secondary text-[11px]">
-              {userPicksMade} picks for {team}{trades.length > 0 ? ` · ${trades.length} trade${trades.length === 1 ? '' : 's'}` : ''}
+              {userPicksMade} picks for {team}{(() => {
+                const n = trades.filter((t) => t.initiator !== 'cpu').length;
+                return n > 0 ? ` · ${n} trade${n === 1 ? '' : 's'}` : '';
+              })()}
             </p>
           </div>
         </div>

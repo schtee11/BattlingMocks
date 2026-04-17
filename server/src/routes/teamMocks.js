@@ -112,11 +112,17 @@ router.post('/', requireAuth, submitTeamMockSchema, async (req, res) => {
 // (metadata only, no picks — keeps the payload small for the list view)
 router.get('/user/:userId', async (req, res) => {
   // Count only the picks owned by the user's team (not all 262 bot+user
-  // picks), and include the trade count for the list card.
+  // picks), and the USER trade count for the list card. CPU-to-CPU
+  // trades live in m.trades too (for board indicators + replay state)
+  // but shouldn't inflate the headline count; filter them out here.
   const { rows } = await pool.query(
     `SELECT m.id, m.user_id, m.submitted_at, m.team_abbr, m.title,
             COUNT(mp.*) FILTER (WHERE mp.team = m.team_abbr)::int AS pick_count,
-            COALESCE(jsonb_array_length(m.trades), 0)::int AS trade_count
+            COALESCE((
+              SELECT COUNT(*)::int
+              FROM jsonb_array_elements(m.trades) AS t
+              WHERE (t ->> 'initiator') IS DISTINCT FROM 'cpu'
+            ), 0) AS trade_count
      FROM mocks m
      LEFT JOIN mock_picks mp ON mp.mock_id = m.id
      WHERE m.user_id = $1 AND m.mock_type = 'team'
