@@ -114,10 +114,13 @@ router.get('/future', async (req, res) => {
     [year]
   );
 
+  // Pull the canonical team list from ANY round of the current draft. Filtering
+  // to round = 1 drops teams that traded their R1 away (e.g. GB in 2026), which
+  // then hides all seven of their 2027 picks from the trade UI.
   const { rows: teams } = await pool.query(
     `SELECT DISTINCT ON (team) team, team_name
        FROM draft_order
-      WHERE round = 1 AND draft_year = 2026
+      WHERE draft_year = 2026
       ORDER BY team, pick_number`
   );
 
