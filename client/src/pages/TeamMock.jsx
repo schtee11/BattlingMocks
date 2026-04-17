@@ -1829,10 +1829,9 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               const forWho = offer.wantedPlayer?.name
                 ? ` for ${offer.wantedPlayer.name}`
                 : '';
-              toast.success(
-                `${offer.buyerTeam} traded up with ${offer.sellerTeam}${forWho}`,
-                { icon: '🔀', duration: 3500, id: `bot-trade-${offer.id}` }
-              );
+              // No toast — at Fast speed they stacked up and clogged the
+              // screen. The trade still shows via the Draft Board ⇄ glyph,
+              // the Trades Made summary, and the console log below.
               // eslint-disable-next-line no-console
               console.info(
                 `[bot-vs-bot] pick #${offer.sellerPick}: ${offer.sellerTeam} → ${offer.buyerTeam}${forWho} (urgency ${offer.summary.urgency}, reluctance ${reluctance.toFixed(2)})`
