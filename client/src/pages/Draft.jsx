@@ -335,6 +335,23 @@ export default function Draft() {
   }, [draftOrder]);
 
   const usedPlayerIds = useMemo(() => new Set(Object.values(picks)), [picks]);
+
+  // Per-team positions already drafted, joined as a sorted comma string so
+  // memoised PickSlot rows only rerender when their own team's set changes.
+  const satisfiedNeedsByTeam = useMemo(() => {
+    const acc = new Map();
+    for (const slotKey of Object.keys(picks)) {
+      const slot = Number(slotKey);
+      const player = playerById.get(picks[slot]);
+      const teamAbbr = orderByPick.get(slot)?.team;
+      if (!player?.position || !teamAbbr) continue;
+      if (!acc.has(teamAbbr)) acc.set(teamAbbr, new Set());
+      acc.get(teamAbbr).add(player.position);
+    }
+    const out = new Map();
+    for (const [t, set] of acc) out.set(t, [...set].sort().join(','));
+    return out;
+  }, [picks, playerById, orderByPick]);
   const filledCount = Object.keys(picks).length;
   const locked = !!settings?.is_locked;
   const complete = filledCount === 32;
@@ -1003,13 +1020,26 @@ export default function Draft() {
                         <div className="text-[12px] text-text-secondary truncate">
                           {isActive ? 'On the clock — pick a player below' : (team?.team_name || 'Empty')}
                         </div>
-                        {Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
-                          <div className="flex items-center gap-1 mt-1 flex-wrap">
-                            {team.team_needs.slice(0, 4).map((need) => (
-                              <PositionBadge key={need} position={need} />
-                            ))}
-                          </div>
-                        )}
+                        {Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (() => {
+                          const satisfied = satisfiedNeedsByTeam.get(team?.team) || '';
+                          const satisfiedSet = satisfied ? new Set(satisfied.split(',')) : null;
+                          return (
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              {team.team_needs.slice(0, 4).map((need) => {
+                                const done = satisfiedSet?.has(need);
+                                return (
+                                  <span
+                                    key={need}
+                                    title={done ? `${need} need addressed` : undefined}
+                                    className={done ? 'line-through opacity-50' : ''}
+                                  >
+                                    <PositionBadge position={need} muted={done} />
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                     {player && isCompetition && (
@@ -1161,6 +1191,7 @@ export default function Draft() {
                       isConfident={isCompetition && confidentSlots.has(slot)}
                       onToggleConfident={isCompetition ? toggleConfidence : undefined}
                       boardRef={boardRowRefs}
+                      satisfiedNeeds={satisfiedNeedsByTeam.get(orderByPick.get(slot)?.team) || ''}
                     />
                   ))
                 )}

@@ -9,7 +9,9 @@ import { PlayerHeadshot } from './ui/PlayerHeadshot.jsx';
 // instead of all 32. Parent passes STABLE onClear/onClick identities (via
 // useCallback with empty deps + latestRef pattern) so the memo comparator
 // stays effective — inline arrow functions would defeat it.
-function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfident, onToggleConfident, boardRef }) {
+// `satisfiedNeeds` arrives as a sorted comma-joined string ("CB,QB") so the
+// memo comparator stays a primitive identity check.
+function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfident, onToggleConfident, boardRef, satisfiedNeeds = '' }) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `slot-${slot}` });
   const {
     setNodeRef: setDragRef,
@@ -127,9 +129,18 @@ function PickSlotInner({ slot, team, player, onClear, onClick, isActive, isConfi
         {!player && Array.isArray(team?.team_needs) && team.team_needs.length > 0 && (
           <div className="flex items-center gap-1 mt-1 flex-wrap">
             <span className="caption text-[9px] text-text-muted shrink-0">Needs</span>
-            {team.team_needs.slice(0, 4).map((need) => (
-              <PositionBadge key={need} position={need} />
-            ))}
+            {team.team_needs.slice(0, 4).map((need) => {
+              const done = satisfiedNeeds.length > 0 && satisfiedNeeds.split(',').includes(need);
+              return (
+                <span
+                  key={need}
+                  title={done ? `${need} need addressed` : undefined}
+                  className={done ? 'line-through opacity-50' : ''}
+                >
+                  <PositionBadge position={need} muted={done} />
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
@@ -175,5 +186,6 @@ export const PickSlot = memo(PickSlotInner, (prev, next) =>
   prev.onClear === next.onClear &&
   prev.onClick === next.onClick &&
   prev.onToggleConfident === next.onToggleConfident &&
-  prev.boardRef === next.boardRef
+  prev.boardRef === next.boardRef &&
+  prev.satisfiedNeeds === next.satisfiedNeeds
 );

@@ -1741,6 +1741,19 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
   const currentSlot = currentIdx < liveOrder.length ? liveOrder[currentIdx] : null;
   const usedIds = useMemo(() => new Set(picks.map((p) => p.player_id)), [picks]);
 
+  // Positions the on-clock team has already drafted in this mock — used to
+  // strike through team_needs entries once addressed.
+  const satisfiedNeeds = useMemo(() => {
+    if (!currentSlot?.team) return new Set();
+    const set = new Set();
+    for (const p of picks) {
+      if (p.team !== currentSlot.team) continue;
+      const pos = byId.get(p.player_id)?.position;
+      if (pos) set.add(pos);
+    }
+    return set;
+  }, [picks, byId, currentSlot?.team]);
+
   const userPicksMade = picks.filter((p) => p.is_user).length;
 
   // Main engine: drive bot picks forward while phase is running. When the slot
@@ -2494,9 +2507,18 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           </div>
           {slotNeeds.length > 0 && (
             <div className="flex items-center gap-1 mt-1 flex-wrap">
-              {slotNeeds.slice(0, 5).map((need) => (
-                <PositionBadge key={need} position={need} />
-              ))}
+              {slotNeeds.slice(0, 5).map((need) => {
+                const done = satisfiedNeeds.has(need);
+                return (
+                  <span
+                    key={need}
+                    title={done ? `${need} need addressed` : undefined}
+                    className={done ? 'line-through opacity-50' : ''}
+                  >
+                    <PositionBadge position={need} muted={done} />
+                  </span>
+                );
+              })}
             </div>
           )}
         </div>
@@ -3042,12 +3064,19 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                   {Array.isArray(currentSlot?.team_needs) && currentSlot.team_needs.length > 0 && (
                     <div className="px-3 pb-2 flex items-center gap-1.5 flex-wrap">
                       <span className="font-display text-[9px] uppercase tracking-[0.14em] text-text-muted mr-1">Needs:</span>
-                      {currentSlot.team_needs.slice(0, 6).map((n) => (
-                        <span key={n} className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase font-mono"
-                          style={{ background: `${posHex(n)}22`, color: posHex(n), boxShadow: `inset 0 0 0 1px ${posHex(n)}55` }}>
-                          {n}
-                        </span>
-                      ))}
+                      {currentSlot.team_needs.slice(0, 6).map((n) => {
+                        const done = satisfiedNeeds.has(n);
+                        return (
+                          <span
+                            key={n}
+                            title={done ? `${n} need addressed` : undefined}
+                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase font-mono transition-opacity ${done ? 'line-through opacity-50' : ''}`}
+                            style={{ background: `${posHex(n)}22`, color: posHex(n), boxShadow: `inset 0 0 0 1px ${posHex(n)}55` }}
+                          >
+                            {n}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                   {/* Action row */}
@@ -3267,12 +3296,15 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none border-b border-border-subtle shrink-0">
                 {FILTERS.map((f) => {
                   const isActive = posFilter === f;
-                  const isNeed = phase === PHASE_ON_CLOCK && !isActive && f !== 'All' && Array.isArray(currentSlot?.team_needs) && currentSlot.team_needs.includes(f);
+                  const isOnClockNeed = phase === PHASE_ON_CLOCK && f !== 'All' && Array.isArray(currentSlot?.team_needs) && currentSlot.team_needs.includes(f);
+                  const isSatisfied = isOnClockNeed && satisfiedNeeds.has(f);
+                  const isNeed = isOnClockNeed && !isActive && !isSatisfied;
                   return (
                     <button key={f} onClick={() => setPosFilter(f)}
+                      title={isSatisfied ? `${f} need addressed` : undefined}
                       className={`shrink-0 px-2 py-0.5 rounded-md font-display text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
                         isActive ? 'bg-accent text-bg-deep' : isNeed ? 'border border-yellow-400/40' : 'text-text-muted hover:text-text-primary'
-                      }`}
+                      } ${isSatisfied && !isActive ? 'line-through opacity-60' : ''}`}
                       style={isNeed ? { background: 'rgba(251,191,36,0.15)', color: 'var(--gold)' } : undefined}>
                       {f}
                     </button>
