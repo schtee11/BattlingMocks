@@ -2987,6 +2987,27 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
                   className="flex-1 h-1 accent-accent cursor-pointer" />
                 <span className="font-mono text-[10px] text-text-muted w-14 text-right shrink-0">{Math.round(randomness * 100)}%</span>
               </div>
+              {/* Trade feature toggles — mobile pre-draft. Parallels the
+                  desktop controls column so users can silence offers or
+                  bot-vs-bot trades before starting. */}
+              <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                <span>Trade Offers</span>
+                <input
+                  type="checkbox"
+                  checked={offersEnabled}
+                  onChange={(e) => setOffersEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-accent cursor-pointer"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-2 text-[10px] font-display uppercase tracking-wider text-text-muted cursor-pointer select-none">
+                <span>Bot-vs-Bot Trades</span>
+                <input
+                  type="checkbox"
+                  checked={botBotEnabled}
+                  onChange={(e) => setBotBotEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-accent cursor-pointer"
+                />
+              </label>
               {/* Full-width start button */}
               <button
                 onClick={start}
