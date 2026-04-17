@@ -155,7 +155,10 @@ router.get('/future', async (req, res) => {
     }
   }
 
-  res.set('Cache-Control', 'public, max-age=3600');
+  // No cache: the endpoint already collapses cheaply and the 1-hour TTL
+  // previously used here caused stale "missing 2027 picks" responses to stick
+  // after deploys that fixed the underlying data.
+  res.set('Cache-Control', 'no-store');
   res.json(out);
 });
 
