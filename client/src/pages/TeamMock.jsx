@@ -2918,17 +2918,25 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
             </label>
           </div>
           <div className="flex gap-1 px-4 py-2 overflow-x-auto scrollbar-none border-b border-border-subtle">
-            {FILTERS.map((f) => (
-              <button
-                key={f}
-                onClick={() => setPosFilter(f)}
-                className={`shrink-0 px-2 py-0.5 rounded-md font-display text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
-                  posFilter === f ? 'bg-accent text-bg-deep' : 'text-text-muted hover:text-text-primary'
-                }`}
-              >
-                {f}
-              </button>
-            ))}
+            {FILTERS.map((f) => {
+              const isActive = posFilter === f;
+              const isOnClockNeed = phase === PHASE_ON_CLOCK && f !== 'ALL' && Array.isArray(currentSlot?.team_needs) && currentSlot.team_needs.includes(f);
+              const isSatisfied = isOnClockNeed && satisfiedNeeds.has(f);
+              const isNeed = isOnClockNeed && !isActive && !isSatisfied;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setPosFilter(f)}
+                  title={isSatisfied ? `${f} need addressed` : undefined}
+                  className={`shrink-0 px-2 py-0.5 rounded-md font-display text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
+                    isActive ? 'bg-accent text-bg-deep' : isNeed ? 'border border-yellow-400/40' : 'text-text-muted hover:text-text-primary'
+                  } ${isSatisfied && !isActive ? 'line-through opacity-60' : ''}`}
+                  style={isNeed ? { background: 'rgba(251,191,36,0.15)', color: 'var(--gold)' } : undefined}
+                >
+                  {f}
+                </button>
+              );
+            })}
           </div>
           <ul className="flex-1 overflow-y-auto p-3 space-y-1">
             {filteredProspects.map(renderProspect)}
@@ -3296,7 +3304,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
               <div className="flex gap-1 px-3 py-1.5 overflow-x-auto scrollbar-none border-b border-border-subtle shrink-0">
                 {FILTERS.map((f) => {
                   const isActive = posFilter === f;
-                  const isOnClockNeed = phase === PHASE_ON_CLOCK && f !== 'All' && Array.isArray(currentSlot?.team_needs) && currentSlot.team_needs.includes(f);
+                  const isOnClockNeed = phase === PHASE_ON_CLOCK && f !== 'ALL' && Array.isArray(currentSlot?.team_needs) && currentSlot.team_needs.includes(f);
                   const isSatisfied = isOnClockNeed && satisfiedNeeds.has(f);
                   const isNeed = isOnClockNeed && !isActive && !isSatisfied;
                   return (
