@@ -82,16 +82,6 @@ function loadFutureValues() {
   return raw;
 }
 
-let nflTeamsCache = null;
-function loadNflTeams() {
-  if (nflTeamsCache) return nflTeamsCache;
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const path = join(__dirname, '..', 'data', 'nfl-teams.json');
-  const raw = JSON.parse(readFileSync(path, 'utf8'));
-  nflTeamsCache = raw;
-  return raw;
-}
-
 router.get('/future', async (req, res) => {
   const year = parseInt(req.query.year || '2027', 10);
   if (!Number.isFinite(year) || year < 2026 || year > 2030) {
@@ -124,15 +114,15 @@ router.get('/future', async (req, res) => {
     [year]
   );
 
-  // Canonical 32-team list comes from the static nfl-teams.json roster rather
-  // than the draft_order table. Any DB-derived list is fragile: teams that
-  // traded their R1 away (e.g. GB in 2026) don't appear at all on dev DBs
-  // where R2-R7 hasn't been synced, which silently hides their seven 2027
-  // picks from the trade UI.
-  const teams = loadNflTeams().map((t) => ({
-    team: t.id,
-    team_name: `${t.city} ${t.name}`,
-  }));
+  // Pull the canonical team list from ANY round of the current draft. Filtering
+  // to round = 1 drops teams that traded their R1 away (e.g. GB in 2026), which
+  // then hides all seven of their 2027 picks from the trade UI.
+  const { rows: teams } = await pool.query(
+    `SELECT DISTINCT ON (team) team, team_name
+       FROM draft_order
+      WHERE draft_year = 2026
+      ORDER BY team, pick_number`
+  );
 
   // Index real rows by "TEAM-R#" so the fill-in loop is O(1) per slot.
   const realByKey = new Map();
