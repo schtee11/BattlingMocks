@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { api } from '../../../lib/api.js';
+import { api, invalidateCache } from '../../../lib/api.js';
+import { ALGO_DEFAULTS } from '../../../lib/algoConfig.js';
 import { Card } from '../../../components/ui/Card.jsx';
 import { Button } from '../../../components/ui/Button.jsx';
 import { TeamLogo } from '../../../components/ui/TeamLogo.jsx';
@@ -75,13 +76,22 @@ export default function RosterScoresTab({ adminKey }) {
   const [scores, setScores] = useState({});
   // originals captured on load so we can diff for save (only send changed cells).
   const [original, setOriginal] = useState({});
+  // Weights + max boost live in algo_config so they're tuned alongside the
+  // rest of the draft engine. We edit them on this page since they're
+  // conceptually paired with the 1–10 scores (weight × deficit = boost).
+  const [weights, setWeights] = useState(() => ({ ...ALGO_DEFAULTS.rosterScoreWeights }));
+  const [maxBoost, setMaxBoost] = useState(ALGO_DEFAULTS.rosterScoreMaxBoost);
+  const [algoOrig, setAlgoOrig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const rows = await api.adminGetPositionScores(adminKey);
+      const [rows, storedAlgo] = await Promise.all([
+        api.adminGetPositionScores(adminKey),
+        api.adminGetAlgoConfig(adminKey),
+      ]);
       const next = {};
       for (const [, , teamId] of TEAMS) next[teamId] = {};
       for (const r of rows) {
@@ -90,6 +100,17 @@ export default function RosterScoresTab({ adminKey }) {
       }
       setScores(next);
       setOriginal(JSON.parse(JSON.stringify(next)));
+
+      const merged = { ...ALGO_DEFAULTS, ...storedAlgo };
+      const mergedWeights = {
+        ...ALGO_DEFAULTS.rosterScoreWeights,
+        ...(storedAlgo?.rosterScoreWeights || {}),
+      };
+      setWeights(mergedWeights);
+      setMaxBoost(merged.rosterScoreMaxBoost);
+      // Snapshot the full stored config so we can diff and preserve unrelated
+      // fields (decayRate, needsBoost*, etc.) when we PUT back.
+      setAlgoOrig(storedAlgo || {});
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -141,14 +162,44 @@ export default function RosterScoresTab({ adminKey }) {
 
   const dirtyCount = Object.keys(dirty).length;
 
+  // Weights/max-boost diff — avoid PUTting the algo_config unless something
+  // in this page's slice actually changed.
+  const algoDirty = useMemo(() => {
+    if (!algoOrig) return false;
+    const origWeights = {
+      ...ALGO_DEFAULTS.rosterScoreWeights,
+      ...(algoOrig.rosterScoreWeights || {}),
+    };
+    const origMax = algoOrig.rosterScoreMaxBoost ?? ALGO_DEFAULTS.rosterScoreMaxBoost;
+    for (const code of Object.keys({ ...origWeights, ...weights })) {
+      if (Number(origWeights[code] ?? 0).toFixed(4) !== Number(weights[code] ?? 0).toFixed(4)) return true;
+    }
+    if (Number(origMax).toFixed(4) !== Number(maxBoost).toFixed(4)) return true;
+    return false;
+  }, [weights, maxBoost, algoOrig]);
+
   async function save() {
-    if (dirtyCount === 0) return;
+    if (dirtyCount === 0 && !algoDirty) return;
     setSaving(true);
-    const id = toast.loading(`Saving scores for ${dirtyCount} team(s)…`);
+    const id = toast.loading('Saving roster scoring…');
     try {
-      const r = await api.adminSavePositionScores(adminKey, dirty);
-      toast.dismiss(id);
-      toast.success(`Saved: ${r.upserts} updated, ${r.deletes} cleared`);
+      if (dirtyCount > 0) {
+        const r = await api.adminSavePositionScores(adminKey, dirty);
+        toast.dismiss(id);
+        toast.success(`Scores: ${r.upserts} updated, ${r.deletes} cleared`);
+      }
+      if (algoDirty) {
+        // Preserve the rest of algo_config — merge our edits into the stored
+        // blob so decayRate, needsBoost*, trade values, etc. are untouched.
+        const nextConfig = {
+          ...(algoOrig || {}),
+          rosterScoreWeights: { ...weights },
+          rosterScoreMaxBoost: Number(maxBoost),
+        };
+        await api.adminSaveAlgoConfig(adminKey, nextConfig);
+        invalidateCache('algo-config');
+        toast.success('Weights saved — takes effect on next draft start');
+      }
       await load();
     } catch (e) {
       toast.dismiss(id);
@@ -156,6 +207,18 @@ export default function RosterScoresTab({ adminKey }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  function setWeight(code, raw) {
+    const v = parseFloat(raw);
+    if (!Number.isFinite(v)) return;
+    const clamped = Math.max(0, Math.min(2, v));
+    setWeights((w) => ({ ...w, [code]: clamped }));
+  }
+
+  function resetWeights() {
+    setWeights({ ...ALGO_DEFAULTS.rosterScoreWeights });
+    setMaxBoost(ALGO_DEFAULTS.rosterScoreMaxBoost);
   }
 
   // Per-team offense/defense/overall to mirror the right-side summary in the sheet.
@@ -182,18 +245,26 @@ export default function RosterScoresTab({ adminKey }) {
           <div>
             <h3 className="font-semibold text-text-primary">Roster Scores</h3>
             <p className="text-text-muted text-xs mt-0.5 max-w-2xl leading-relaxed">
-              Score each team 1–10 at every position. The bot uses these to
-              boost picks where a team is deficient (low score → more boost).
-              Weights per position are set in Algo Tuning (QB 1.00, CB 0.90,
-              Nickel/S 0.60, etc.). Leave blank for "unknown".
+              Score each team 1–10 at every position. The bot boosts picks at
+              positions where a team is deficient (low score → more boost).
+              Per-position weights below control how much each position
+              influences the bot. Leave a cell blank for "unknown".
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="secondary" onClick={load} disabled={loading || saving}>
               Reload
             </Button>
-            <Button size="sm" onClick={save} disabled={dirtyCount === 0 || saving}>
-              {saving ? 'Saving…' : dirtyCount === 0 ? 'No changes' : `Save ${dirtyCount} team${dirtyCount === 1 ? '' : 's'}`}
+            <Button
+              size="sm"
+              onClick={save}
+              disabled={(dirtyCount === 0 && !algoDirty) || saving}
+            >
+              {saving
+                ? 'Saving…'
+                : dirtyCount === 0 && !algoDirty
+                ? 'No changes'
+                : `Save${dirtyCount ? ` ${dirtyCount} team${dirtyCount === 1 ? '' : 's'}` : ''}${algoDirty ? ' + weights' : ''}`}
             </Button>
           </div>
         </div>
@@ -205,6 +276,52 @@ export default function RosterScoresTab({ adminKey }) {
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-yellow-500/20" /> 5–6 Average</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-orange-500/30" /> 3–4 Replacement</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-red-500/40" /> 1–2 Fringe</span>
+        </div>
+      </Card>
+
+      {/* Position weights + max boost — tunes the bot's reaction to the scores below */}
+      <Card className="p-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+          <div>
+            <div className="font-display text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted">Position weights</div>
+            <p className="text-text-muted text-[11px] mt-1 max-w-2xl leading-relaxed">
+              0.0–2.0 per position. A deficient position (score 1) at weight 1.0
+              applies the full max boost; lower weight = that position matters
+              less to draft priority.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-[11px] text-text-secondary">
+            <span>Max boost ×</span>
+            <input
+              type="number"
+              step={0.01}
+              min={1}
+              max={3}
+              value={maxBoost}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) setMaxBoost(Math.max(1, Math.min(3, v)));
+              }}
+              className="w-20 bg-bg-deep border border-border-focus rounded px-2 py-1 text-text-primary text-xs font-mono text-right"
+            />
+            <Button size="xs" variant="ghost" onClick={resetWeights}>Reset</Button>
+          </label>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+          {POSITIONS.map(([code, label, full]) => (
+            <label key={code} className="flex items-center justify-between gap-2 bg-bg-deep/60 rounded px-2 py-1.5" title={full}>
+              <span className="text-[11px] text-text-secondary font-mono">{label}</span>
+              <input
+                type="number"
+                step={0.05}
+                min={0}
+                max={2}
+                value={weights[code] ?? 0}
+                onChange={(e) => setWeight(code, e.target.value)}
+                className="w-14 bg-bg-deep border border-border-focus rounded px-1.5 py-0.5 text-text-primary text-[11px] font-mono text-right"
+              />
+            </label>
+          ))}
         </div>
       </Card>
 
