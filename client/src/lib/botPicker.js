@@ -168,8 +168,10 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
     // at this position, interpolate a boost: score=10 → ×1.0 (no help needed),
     // score=1 & weight=1.0 → ×rosterScoreMaxBoost. If no score is set we use
     // rosterScoreDefault (5.5 mid) so unseeded positions stay roughly neutral.
+    // Gated by rosterScoreEnabled so admins can keep it off until the grid
+    // is fully filled in (mixed-fill = biased picks toward seeded teams).
     let rosterScoreMult = 1;
-    if (pos && draftContext?.teamRosterScores) {
+    if (cfg.rosterScoreEnabled && pos && draftContext?.teamRosterScores) {
       const raw = draftContext.teamRosterScores[pos];
       const score = Number.isFinite(raw) ? raw : cfg.rosterScoreDefault;
       const weight = cfg.rosterScoreWeights?.[pos];

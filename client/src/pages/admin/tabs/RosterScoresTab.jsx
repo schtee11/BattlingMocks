@@ -81,6 +81,7 @@ export default function RosterScoresTab({ adminKey }) {
   // conceptually paired with the 1–10 scores (weight × deficit = boost).
   const [weights, setWeights] = useState(() => ({ ...ALGO_DEFAULTS.rosterScoreWeights }));
   const [maxBoost, setMaxBoost] = useState(ALGO_DEFAULTS.rosterScoreMaxBoost);
+  const [enabled, setEnabled] = useState(ALGO_DEFAULTS.rosterScoreEnabled);
   const [algoOrig, setAlgoOrig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -108,6 +109,7 @@ export default function RosterScoresTab({ adminKey }) {
       };
       setWeights(mergedWeights);
       setMaxBoost(merged.rosterScoreMaxBoost);
+      setEnabled(!!merged.rosterScoreEnabled);
       // Snapshot the full stored config so we can diff and preserve unrelated
       // fields (decayRate, needsBoost*, etc.) when we PUT back.
       setAlgoOrig(storedAlgo || {});
@@ -171,12 +173,14 @@ export default function RosterScoresTab({ adminKey }) {
       ...(algoOrig.rosterScoreWeights || {}),
     };
     const origMax = algoOrig.rosterScoreMaxBoost ?? ALGO_DEFAULTS.rosterScoreMaxBoost;
+    const origEnabled = algoOrig.rosterScoreEnabled ?? ALGO_DEFAULTS.rosterScoreEnabled;
     for (const code of Object.keys({ ...origWeights, ...weights })) {
       if (Number(origWeights[code] ?? 0).toFixed(4) !== Number(weights[code] ?? 0).toFixed(4)) return true;
     }
     if (Number(origMax).toFixed(4) !== Number(maxBoost).toFixed(4)) return true;
+    if (!!origEnabled !== !!enabled) return true;
     return false;
-  }, [weights, maxBoost, algoOrig]);
+  }, [weights, maxBoost, enabled, algoOrig]);
 
   async function save() {
     if (dirtyCount === 0 && !algoDirty) return;
@@ -195,6 +199,7 @@ export default function RosterScoresTab({ adminKey }) {
           ...(algoOrig || {}),
           rosterScoreWeights: { ...weights },
           rosterScoreMaxBoost: Number(maxBoost),
+          rosterScoreEnabled: !!enabled,
         };
         await api.adminSaveAlgoConfig(adminKey, nextConfig);
         invalidateCache('algo-config');
@@ -221,21 +226,55 @@ export default function RosterScoresTab({ adminKey }) {
     setMaxBoost(ALGO_DEFAULTS.rosterScoreMaxBoost);
   }
 
-  // Per-team offense/defense/overall to mirror the right-side summary in the sheet.
+  // Count cells filled across all 32 teams so the admin can gauge how close
+  // the grid is to complete before flipping the influence switch on.
+  const { filled, total } = useMemo(() => {
+    let f = 0;
+    const t = TEAMS.length * POSITIONS.length;
+    for (const [, , teamId] of TEAMS) {
+      const row = scores[teamId] || {};
+      for (const [code] of POSITIONS) {
+        const v = row[code];
+        if (v !== '' && v != null && Number.isFinite(Number(v))) f++;
+      }
+    }
+    return { filled: f, total: t };
+  }, [scores]);
+
+  // Per-team offense/defense/overall matching the sheet formula:
+  //   =IF(COUNT=0, "", SUMPRODUCT(scores, weights) / SUM(weights))
+  // Blank cells are treated as 0 in the numerator (so a sparsely-filled team
+  // has a low overall); the denominator is the constant SUM of the group's
+  // weights. Return null when the entire group is blank so we render a dash
+  // instead of a misleading 0.00.
   function summariseTeam(teamId) {
     const row = scores[teamId] || {};
     const OFF = ['QB', 'RB', 'WR', 'TE', 'OT', 'IOL'];
     const DEF = ['EDGE', 'DT', 'LB', 'NCB', 'CB', 'S'];
-    const mean = (keys) => {
-      const vals = keys.map((k) => Number(row[k])).filter((v) => Number.isFinite(v));
-      if (vals.length === 0) return null;
-      return vals.reduce((s, v) => s + v, 0) / vals.length;
+    const ALL = [...OFF, ...DEF];
+    const weightedMean = (keys) => {
+      let filled = 0;
+      let num = 0;
+      let den = 0;
+      for (const k of keys) {
+        const w = Number(weights[k] ?? 0);
+        if (!Number.isFinite(w) || w <= 0) continue;
+        den += w;
+        const raw = row[k];
+        const v = Number(raw);
+        if (Number.isFinite(v)) {
+          num += v * w;
+          filled++;
+        }
+      }
+      if (filled === 0 || den <= 0) return null;
+      return num / den;
     };
-    const off = mean(OFF);
-    const def = mean(DEF);
-    const both = [off, def].filter((v) => v != null);
-    const overall = both.length ? both.reduce((s, v) => s + v, 0) / both.length : null;
-    return { off, def, overall };
+    return {
+      off: weightedMean(OFF),
+      def: weightedMean(DEF),
+      overall: weightedMean(ALL),
+    };
   }
 
   return (
@@ -266,6 +305,31 @@ export default function RosterScoresTab({ adminKey }) {
                 ? 'No changes'
                 : `Save${dirtyCount ? ` ${dirtyCount} team${dirtyCount === 1 ? '' : 's'}` : ''}${algoDirty ? ' + weights' : ''}`}
             </Button>
+          </div>
+        </div>
+
+        {/* Influence toggle — keep off until the grid is filled in, otherwise
+            partial teams get under-boosted vs fully-scored teams. */}
+        <div className="mt-3 flex items-center justify-between gap-3 flex-wrap bg-bg-deep/60 rounded px-3 py-2">
+          <div className="flex items-center gap-3">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+                className="h-4 w-4 accent-accent"
+              />
+              <span className="text-[12px] text-text-primary font-semibold">
+                Influence bot picks
+              </span>
+            </label>
+            <span className={`text-[10px] font-display uppercase tracking-[0.14em] ${enabled ? 'text-emerald-300' : 'text-text-muted'}`}>
+              {enabled ? 'On' : 'Off'}
+            </span>
+          </div>
+          <div className="text-[11px] font-mono text-text-muted">
+            {filled}/{total} cells filled
+            {filled < total ? ' — finish the grid before enabling' : ' — all clear ✓'}
           </div>
         </div>
 

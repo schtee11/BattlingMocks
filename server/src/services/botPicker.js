@@ -27,6 +27,7 @@ const ALGO_DEFAULTS = {
     CB:   1.08,
     TE:   1.04,
   },
+  rosterScoreEnabled: false,
   rosterScoreWeights: {
     QB: 1.00, RB: 0.75, WR: 0.90, TE: 0.80,
     OT: 0.85, IOL: 0.65, EDGE: 0.95, DT: 0.80,
@@ -170,8 +171,10 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
     // Roster-score multiplier. Score=10 → no boost. Score=1 with weight=1.0 →
     // rosterScoreMaxBoost (e.g. 1.30). Uses rosterScoreDefault when no score
     // entered for that team/position so unseeded rows stay roughly neutral.
+    // Gated by rosterScoreEnabled — off by default until the admin grid is
+    // fully filled in, otherwise mixed-fill biases picks toward seeded teams.
     let rosterScoreMult = 1;
-    if (pos && draftContext?.teamRosterScores) {
+    if (cfg.rosterScoreEnabled && pos && draftContext?.teamRosterScores) {
       const raw = draftContext.teamRosterScores[pos];
       const score = Number.isFinite(raw) ? raw : cfg.rosterScoreDefault;
       const weight = cfg.rosterScoreWeights?.[pos];

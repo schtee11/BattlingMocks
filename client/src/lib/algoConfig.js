@@ -74,6 +74,13 @@ export const ALGO_DEFAULTS = {
     // Tier 3 implicit 1.00: RB, IOL (G/C), DT (IDL), S, LB
   },
 
+  // Master on/off switch for the roster-heatmap influence on picks. Defaults
+  // off until an admin has filled in scores for every team — otherwise teams
+  // with missing cells are treated as "average" (rosterScoreDefault) and
+  // under-boost relative to fully-scored teams. Flip on in the Roster Scores
+  // tab when the grid is complete.
+  rosterScoreEnabled: false,
+
   // Per-position roster-score weights. Drive the "roster heatmap" multiplier
   // in the bot picker: a low score at a position (= roster deficiency) boosts
   // candidates at that position, scaled by the position's weight here. QB
