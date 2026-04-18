@@ -7,30 +7,27 @@ import { useAuth } from '../hooks/useAuth.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 
-import VolumeStatsTab from './admin/tabs/VolumeStatsTab.jsx';
-import EnterResultsTab from './admin/tabs/EnterResultsTab.jsx';
+import AnalyticsTab from './admin/tabs/AnalyticsTab.jsx';
+import LiveDraftTab from './admin/tabs/LiveDraftTab.jsx';
 import DraftOrderTab from './admin/tabs/DraftOrderTab.jsx';
-import ProspectsTab from './admin/tabs/ProspectsTab.jsx';
-import PlayerRanksTab from './admin/tabs/PlayerRanksTab.jsx';
-import UsersTab from './admin/tabs/UsersTab.jsx';
-import ScoringTab from './admin/tabs/ScoringTab.jsx';
-import AlgoTuningTab from './admin/tabs/AlgoTuningTab.jsx';
+import PlayersTab from './admin/tabs/PlayersTab.jsx';
 import RosterScoresTab from './admin/tabs/RosterScoresTab.jsx';
-import ConsensusTab from './admin/tabs/ConsensusTab.jsx';
-import BoardsTab from './admin/tabs/BoardsTab.jsx';
+import AlgoTuningTab from './admin/tabs/AlgoTuningTab.jsx';
+import UsersTab from './admin/tabs/UsersTab.jsx';
 
+// Admin tabs — Analytics lives first (highest-frequency read), then the
+// draft-night ops (Live Draft / Draft Order), then data surfaces (Players /
+// Roster Scores / Algo) and finally Users. The previous 11-tab list has
+// been consolidated into 7 by grouping related sub-surfaces behind the
+// wrapper tab components above (AnalyticsTab, LiveDraftTab, PlayersTab).
 const TABS = [
-  ['volume', 'Volume Stats'],
-  ['results', 'Enter Results'],
-  ['order', 'Draft Order'],
-  ['players', 'Prospects'],
-  ['ranks', 'Player Ranks'],
-  ['users', 'Users'],
-  ['scoring', 'Scoring & Lock'],
-  ['algo', 'Algo Tuning'],
+  ['analytics',     'Analytics'],
+  ['live',          'Live Draft'],
+  ['order',         'Draft Order'],
+  ['players',       'Players'],
   ['roster-scores', 'Roster Scores'],
-  ['consensus', 'Consensus'],
-  ['boards', 'Boards'],
+  ['algo',          'Algo Tuning'],
+  ['users',         'Users'],
 ];
 
 export default function Admin() {
@@ -39,7 +36,7 @@ export default function Admin() {
   const [key, setKey] = useState(localStorage.getItem('mds_admin') || '');
   const [unlocked, setUnlocked] = useState(false);
   const [unlockBusy, setUnlockBusy] = useState(false);
-  const [tab, setTab] = useState('volume');
+  const [tab, setTab] = useState('analytics');
 
   // Shared state loaded from the backend once on unlock + on explicit refresh.
   const [players, setPlayers] = useState([]);
@@ -160,12 +157,12 @@ export default function Admin() {
         ))}
       </div>
 
-      {tab === 'volume' && (
-        <VolumeStatsTab adminKey={key} syncYear={syncYear} />
+      {tab === 'analytics' && (
+        <AnalyticsTab adminKey={key} syncYear={syncYear} order={order} />
       )}
 
-      {tab === 'results' && (
-        <EnterResultsTab
+      {tab === 'live' && (
+        <LiveDraftTab
           adminKey={key}
           syncYear={syncYear}
           setSyncYear={setSyncYear}
@@ -173,6 +170,8 @@ export default function Admin() {
           actuals={actuals}
           order={order}
           refresh={loadAll}
+          settings={settings}
+          setSettings={setSettings}
         />
       )}
 
@@ -186,7 +185,7 @@ export default function Admin() {
       )}
 
       {tab === 'players' && (
-        <ProspectsTab
+        <PlayersTab
           adminKey={key}
           syncYear={syncYear}
           players={players}
@@ -194,37 +193,16 @@ export default function Admin() {
         />
       )}
 
-      {tab === 'ranks' && (
-        <PlayerRanksTab adminKey={key} refresh={loadAll} />
-      )}
-
-      {tab === 'users' && (
-        <UsersTab adminKey={key} />
-      )}
-
-      {tab === 'scoring' && (
-        <ScoringTab
-          adminKey={key}
-          settings={settings}
-          setSettings={setSettings}
-          refresh={loadAll}
-        />
+      {tab === 'roster-scores' && (
+        <RosterScoresTab adminKey={key} />
       )}
 
       {tab === 'algo' && (
         <AlgoTuningTab adminKey={key} />
       )}
 
-      {tab === 'roster-scores' && (
-        <RosterScoresTab adminKey={key} />
-      )}
-
-      {tab === 'consensus' && (
-        <ConsensusTab order={order} />
-      )}
-
-      {tab === 'boards' && (
-        <BoardsTab adminKey={key} />
+      {tab === 'users' && (
+        <UsersTab adminKey={key} />
       )}
     </div>
   );
