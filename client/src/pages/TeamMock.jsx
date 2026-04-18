@@ -3530,9 +3530,10 @@ function SavedMocksList({ mocks, onOpen, onDelete, onNew }) {
 // ─── Page Shell ───────────────────────────────────────────────────────────────
 export default function TeamMock() {
   usePageMeta({
-    title: 'Team Mock Draft',
+    title: '7-Round NFL Mock Draft Simulator with Trades — Team Mock',
     description:
-      "GM your favorite NFL team through all 7 rounds of the 2026 Draft. Trade up, trade down, and get a full draft grade on pick value, roster build, and league ranking.",
+      "Free 7-round NFL mock draft simulator. GM any NFL team through all 7 rounds of the 2026 Draft, trade up or down with a fairness meter, and earn a full post-draft grade on value, need fit, and league ranking.",
+    path: '/team-mock',
   });
   const { user } = useAuth();
   const nav = useNavigate();

@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth.js';
 import { prettyName } from '../lib/displayName.js';
 import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
+import { usePageMeta } from '../hooks/usePageMeta.js';
 
 function DiscordIcon(props) {
   return (
@@ -41,6 +42,13 @@ function GoogleIcon(props) {
 export default function Join() {
   const { user } = useAuth();
   const nav = useNavigate();
+
+  usePageMeta({
+    title: 'Sign In — Join the 2026 NFL Mock Draft Simulator',
+    description:
+      'Create a free account to compete in the 2026 NFL Mock Draft Simulator. Sign in with Discord or Google to submit your picks and climb the live leaderboard.',
+    path: '/join',
+  });
 
   useEffect(() => {
     if (user) nav('/draft');

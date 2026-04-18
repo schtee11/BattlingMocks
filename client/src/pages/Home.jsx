@@ -28,10 +28,11 @@ function Stat({ label, value, loading }) {
 
 export default function Home() {
   usePageMeta({
-    title: 'MockDraft Showdown · 2026 NFL Draft',
+    title: 'NFL Mock Draft Simulator 2026 · MockDraft Showdown',
     description:
-      "Predict the 2026 NFL Draft and prove you're right. Live draft-night scoring, full 7-round team mocks, and a public leaderboard. 100% free.",
+      "Free NFL Mock Draft Simulator for the 2026 NFL Draft. Build a 32-pick predictive mock, run a full 7-round team mock with trades, and score live on draft night against the real picks.",
     suffix: false,
+    path: '/',
   });
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -251,9 +252,9 @@ export default function Home() {
               MockDraft Showdown
             </div>
             <p className="text-text-secondary mt-2 text-[12.5px] leading-relaxed">
-              The only mock draft platform built around a predictive contest. 100% free, no
-              paywall. Live draft-night scoring and an unlimited team mock sandbox — all in
-              one place.
+              The free NFL mock draft simulator built around a predictive contest. Live
+              draft-night scoring, a full 7-round team mock draft sandbox with trades, and
+              a personal big board — all in one place, no paywall.
             </p>
           </div>
           <div>

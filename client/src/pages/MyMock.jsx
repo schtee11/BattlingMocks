@@ -57,9 +57,10 @@ function ClipboardIcon(props) {
 
 export default function MyMock() {
   usePageMeta({
-    title: 'My Mock',
+    title: 'My 2026 NFL Mock Draft — Pick-by-Pick Scoring',
     description:
-      'Your 2026 NFL Draft predictive mock — pick-by-pick scoring, total points, and live refresh during draft night.',
+      'Your submitted 2026 NFL mock draft with pick-by-pick scoring, total points, and live refresh during draft night. Share your card and track your rank.',
+    path: '/my-mock',
   });
   const { user } = useAuth();
   const [mock, setMock] = useState(null);

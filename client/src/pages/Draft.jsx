@@ -39,9 +39,10 @@ const FILTERS = ['ALL', ...POSITIONS];
 
 export default function Draft() {
   usePageMeta({
-    title: 'Predictive Draft',
+    title: '2026 NFL Mock Draft Simulator — Predictive Round 1',
     description:
-      'Build a 32-pick predictive mock of the 2026 NFL Draft and score live against the real picks. Mark confidence picks for a 1.5× multiplier.',
+      'Free 2026 NFL mock draft simulator. Build a 32-pick predictive Round 1 mock, mark confidence picks for a 1.5× multiplier, and score live against the real picks on draft night.',
+    path: '/draft',
   });
   const { user } = useAuth();
   const nav = useNavigate();

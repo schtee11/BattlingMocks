@@ -1,7 +1,29 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/Button.jsx';
+import { usePageMeta } from '../hooks/usePageMeta.js';
 
 export default function NotFound() {
+  usePageMeta({
+    title: 'Page Not Found',
+    description: 'That page got cut before Round 1. Head back to the lobby or jump into a mock.',
+  });
+
+  useEffect(() => {
+    let el = document.head.querySelector('meta[name="robots"]');
+    const prev = el ? el.getAttribute('content') : null;
+    if (!el) {
+      el = document.createElement('meta');
+      el.setAttribute('name', 'robots');
+      document.head.appendChild(el);
+    }
+    el.setAttribute('content', 'noindex,follow');
+    return () => {
+      if (prev !== null) el.setAttribute('content', prev);
+      else el.setAttribute('content', 'index,follow,max-image-preview:large,max-snippet:-1');
+    };
+  }, []);
+
   return (
     <div className="max-w-md mx-auto px-4 py-24 md:py-32 text-center route-fade">
       <div className="caption text-accent">Cut in Round 1</div>

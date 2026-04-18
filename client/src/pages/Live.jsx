@@ -36,9 +36,10 @@ function computeMatchState(actualPick, yourPicks) {
 
 export default function Live() {
   usePageMeta({
-    title: 'Live Draft Night',
+    title: '2026 NFL Draft Live Tracker — Real-Time Pick Scoring',
     description:
-      'Watch the 2026 NFL Draft unfold live with your predictions lighting up in real time. Your picks score as each team goes on the clock.',
+      'Watch the 2026 NFL Draft live with your mock draft predictions scoring in real time. Side-by-side actual picks vs. your picks, updating the moment each team is on the clock.',
+    path: '/live',
   });
   const { user } = useAuth();
   const [data, setData] = useState(null);
