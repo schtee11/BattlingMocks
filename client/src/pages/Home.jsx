@@ -288,11 +288,24 @@ export default function Home() {
             </ul>
           </div>
           <div>
-            <div className="caption mb-3">About</div>
-            <ul className="space-y-1.5 text-text-secondary">
-              <li>2026 NFL Draft coverage</li>
-              <li>Free forever · No paywall</li>
-              <li>Built for draft obsessives</li>
+            <div className="caption mb-3">Learn</div>
+            <ul className="space-y-1.5">
+              <li>
+                <Link className="text-text-secondary hover:text-accent transition" to="/guide">
+                  Mock Draft Guide
+                </Link>
+              </li>
+              <li>
+                <Link className="text-text-secondary hover:text-accent transition" to="/about">
+                  About MockDraft Showdown
+                </Link>
+              </li>
+              <li>
+                <Link className="text-text-secondary hover:text-accent transition" to="/my-board">
+                  Build a Big Board
+                </Link>
+              </li>
+              <li className="text-text-secondary">2026 NFL Draft · Free · No paywall</li>
             </ul>
           </div>
         </div>

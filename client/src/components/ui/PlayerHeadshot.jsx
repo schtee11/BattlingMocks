@@ -41,7 +41,7 @@ export function PlayerHeadshot({ url, name, position, size = 'sm', className = '
       // returns placeholders / nothing for most prospects, so the whole
       // app looked photo-less on iPhones. Non-ESPN URLs pass through.
       src={playerImageUrl(url)}
-      alt=""
+      alt={name ? `${name} NFL draft headshot` : ''}
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
