@@ -100,6 +100,83 @@ router.post('/team-needs', async (req, res) => {
   }
 });
 
+// ---------- Position scores (roster heatmap) ----------
+// The admin UI renders a team × position grid of 1–10 scores that represent
+// how stocked each team is at every position. The bot reads these scores and
+// boosts picks for positions where the team is deficient. Kept separate from
+// team_needs because needs is a ranked top-3 list while scores are a dense
+// numeric grid.
+router.get('/position-scores', async (req, res) => {
+  try {
+    const year = parseInt(req.query.year, 10) || 2026;
+    const { rows } = await pool.query(
+      `SELECT team_id, team_name, position, score
+         FROM position_scores
+        WHERE draft_year = $1
+        ORDER BY team_id, position`,
+      [year]
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error('[admin position-scores GET]', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+router.post('/position-scores', async (req, res) => {
+  const { scores, year } = req.body || {};
+  const draftYear = parseInt(year, 10) || 2026;
+  if (!scores || typeof scores !== 'object' || Array.isArray(scores)) {
+    return res.status(400).json({ error: 'scores object required' });
+  }
+
+  const client = await pool.connect();
+  let upserts = 0;
+  let deletes = 0;
+  try {
+    await client.query('BEGIN');
+    for (const [teamId, entry] of Object.entries(scores)) {
+      if (!teamId || !entry || typeof entry !== 'object') continue;
+      const teamName = String(entry.teamName || teamId).slice(0, 80);
+      const byPosition = entry.scores || {};
+      for (const [position, raw] of Object.entries(byPosition)) {
+        const pos = String(position).toUpperCase().trim();
+        if (!pos) continue;
+        // `null` / empty → clear the row so admins can blank a cell.
+        if (raw === null || raw === '' || raw === undefined) {
+          const { rowCount } = await client.query(
+            `DELETE FROM position_scores
+              WHERE team_id = $1 AND position = $2 AND draft_year = $3`,
+            [teamId, pos, draftYear]
+          );
+          deletes += rowCount;
+          continue;
+        }
+        const score = Number(raw);
+        if (!Number.isInteger(score) || score < 1 || score > 10) continue;
+        await client.query(
+          `INSERT INTO position_scores (team_id, team_name, position, score, draft_year)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (team_id, position, draft_year)
+           DO UPDATE SET score = EXCLUDED.score,
+                         team_name = EXCLUDED.team_name,
+                         updated_at = NOW()`,
+          [teamId, teamName, pos, score, draftYear]
+        );
+        upserts++;
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, upserts, deletes });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('[admin position-scores POST]', e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ---------- Actual picks ----------
 router.get('/actual-picks', async (_req, res) => {
   const { rows } = await pool.query(

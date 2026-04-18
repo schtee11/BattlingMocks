@@ -7,6 +7,7 @@ import { api, proxyImageUrl, fetchImageAsDataUrl } from '../lib/api.js';
 import { useAuth } from '../hooks/useAuth.js';
 import { pickForTeam, normalizePos } from '../lib/botPicker.js';
 import { loadAlgoConfig, getAlgoConfig } from '../lib/algoConfig.js';
+import { loadTeamRosterScores, getTeamRosterScores } from '../lib/teamRosterScores.js';
 import { computeTeamMockGrade, letterFromScore, gradeColor } from '../lib/draftGrader.js';
 import { POSITIONS, posHex } from '../lib/positions.js';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
@@ -1878,6 +1879,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           recentPicks: picks
             .slice(-(algoCfg.runWindowSize || 8))
             .map((pk) => ({ position: normalizePos(byId.get(pk.player_id)?.position || '') })),
+          teamRosterScores: getTeamRosterScores(currentSlot.team),
         },
       });
       if (!picked) { setPhase(PHASE_DONE); return; }
@@ -3550,7 +3552,12 @@ export default function TeamMock() {
   function loadData() {
     setPlayers(null);
     setDraftOrder(null);
-    Promise.all([api.getPlayers(), api.getDraftOrderAll({ fresh: true }), loadAlgoConfig()])
+    Promise.all([
+      api.getPlayers(),
+      api.getDraftOrderAll({ fresh: true }),
+      loadAlgoConfig(),
+      loadTeamRosterScores(),
+    ])
       .then(([pl, order]) => {
         setPlayers(pl);
         setDraftOrder(order);

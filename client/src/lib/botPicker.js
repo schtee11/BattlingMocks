@@ -5,7 +5,7 @@ import { getAlgoConfig } from './algoConfig.js';
 //
 // Client-side bot picker.
 //
-// Scoring: score = baseScore * needsMultiplier * tierMult * scarcityMult * runMult * jitter
+// Scoring: score = baseScore * needsMultiplier * tierMult * rosterScoreMult * scarcityMult * runMult * jitter
 // Then post-scoring: score *= fallBoost
 //
 //   baseScore        exponential decay off rank (e^-0.04 per rank step).
@@ -13,6 +13,10 @@ import { getAlgoConfig } from './algoConfig.js';
 //                    Decays when the team has already drafted that position
 //                    (draftedNeedDecay). Supports OL → OT+IOL expansion.
 //   tierMult         ×1.30 QB, ×1.12 OT/EDGE/WR, ×1.08 CB, ×1.04 TE, ×1.00 rest.
+//   rosterScoreMult  Heatmap-driven: admin scores each team 1–10 at every
+//                    position. Low score (deficient roster) → higher boost,
+//                    scaled by per-position weight. Feeds a dense 12-position
+//                    view into the picker beyond the top-5 needs list.
 //   scarcityMult     Boosts positions as they deplete off the board (threshold-based).
 //   runMult          Panic boost when 3+ of same position go in last 8 picks.
 //   jitter           multiplicative 1 ± randomness/2.
@@ -160,6 +164,23 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
 
     const tierMult = positionTierMultiplier(pos, cfg);
 
+    // Roster-score multiplier. When the team has a 1–10 admin-entered score
+    // at this position, interpolate a boost: score=10 → ×1.0 (no help needed),
+    // score=1 & weight=1.0 → ×rosterScoreMaxBoost. If no score is set we use
+    // rosterScoreDefault (5.5 mid) so unseeded positions stay roughly neutral.
+    let rosterScoreMult = 1;
+    if (pos && draftContext?.teamRosterScores) {
+      const raw = draftContext.teamRosterScores[pos];
+      const score = Number.isFinite(raw) ? raw : cfg.rosterScoreDefault;
+      const weight = cfg.rosterScoreWeights?.[pos];
+      if (Number.isFinite(weight) && weight > 0 && Number.isFinite(score)) {
+        const clamped = Math.min(10, Math.max(1, score));
+        const deficit = (10 - clamped) / 9;
+        const maxBoost = (cfg.rosterScoreMaxBoost ?? 1) - 1;
+        rosterScoreMult = 1 + maxBoost * weight * deficit;
+      }
+    }
+
     // Feature 1: Scarcity multiplier.
     let scarcityMult = 1;
     if (scarcityMap && pos) {
@@ -185,7 +206,7 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
 
     const jitter = 1 + (Math.random() - 0.5) * randomness;
 
-    let score = baseScore * needsMultiplier * tierMult * scarcityMult * runMult * jitter;
+    let score = baseScore * needsMultiplier * tierMult * rosterScoreMult * scarcityMult * runMult * jitter;
     scored.push({ player: p, rank, score });
   }
 

@@ -357,6 +357,14 @@ export const api = {
     request('/api/admin/draft-order', { method: 'POST', body: { order }, adminKey: key }),
   adminSetTeamNeeds: (key, needs) =>
     request('/api/admin/team-needs', { method: 'POST', body: { needs }, adminKey: key }),
+  adminGetPositionScores: (key, { year = 2026 } = {}) =>
+    request(`/api/admin/position-scores?year=${year}`, { adminKey: key }),
+  adminSavePositionScores: (key, scores, { year = 2026 } = {}) =>
+    request('/api/admin/position-scores', {
+      method: 'POST',
+      body: { scores, year },
+      adminKey: key,
+    }),
   adminGetActualPicks: (key) => request('/api/admin/actual-picks', { adminKey: key }),
   setActualPick: (key, body) =>
     request('/api/admin/actual-picks', { method: 'POST', body, adminKey: key }),

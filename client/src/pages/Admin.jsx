@@ -15,6 +15,7 @@ import PlayerRanksTab from './admin/tabs/PlayerRanksTab.jsx';
 import UsersTab from './admin/tabs/UsersTab.jsx';
 import ScoringTab from './admin/tabs/ScoringTab.jsx';
 import AlgoTuningTab from './admin/tabs/AlgoTuningTab.jsx';
+import RosterScoresTab from './admin/tabs/RosterScoresTab.jsx';
 import ConsensusTab from './admin/tabs/ConsensusTab.jsx';
 import BoardsTab from './admin/tabs/BoardsTab.jsx';
 
@@ -27,6 +28,7 @@ const TABS = [
   ['users', 'Users'],
   ['scoring', 'Scoring & Lock'],
   ['algo', 'Algo Tuning'],
+  ['roster-scores', 'Roster Scores'],
   ['consensus', 'Consensus'],
   ['boards', 'Boards'],
 ];
@@ -211,6 +213,10 @@ export default function Admin() {
 
       {tab === 'algo' && (
         <AlgoTuningTab adminKey={key} />
+      )}
+
+      {tab === 'roster-scores' && (
+        <RosterScoresTab adminKey={key} />
       )}
 
       {tab === 'consensus' && (

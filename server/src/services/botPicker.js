@@ -27,6 +27,13 @@ const ALGO_DEFAULTS = {
     CB:   1.08,
     TE:   1.04,
   },
+  rosterScoreWeights: {
+    QB: 1.00, RB: 0.75, WR: 0.90, TE: 0.80,
+    OT: 0.85, IOL: 0.65, EDGE: 0.95, DT: 0.80,
+    LB: 0.75, NCB: 0.60, CB: 0.90, S: 0.60,
+  },
+  rosterScoreMaxBoost: 1.30,
+  rosterScoreDefault: 5.5,
   scoreSharpness: 5,
   scarcityEnabled: true,
   scarcityThreshold: 0.5,
@@ -83,7 +90,14 @@ const NEEDS_BOOST_KEYS = ['needsBoost1', 'needsBoost2', 'needsBoost3', 'needsBoo
 export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pickNumber = 999, draftContext, config }) {
   if (!available || available.length === 0) return null;
 
-  const cfg = config ? { ...ALGO_DEFAULTS, ...config } : ALGO_DEFAULTS;
+  const cfg = config
+    ? {
+        ...ALGO_DEFAULTS,
+        ...config,
+        positionTiers: { ...ALGO_DEFAULTS.positionTiers, ...(config.positionTiers || {}) },
+        rosterScoreWeights: { ...ALGO_DEFAULTS.rosterScoreWeights, ...(config.rosterScoreWeights || {}) },
+      }
+    : ALGO_DEFAULTS;
 
   const needsPriority = new Map();
   let priorityCounter = 0;
@@ -153,6 +167,22 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
 
     const tierMult = positionTierMultiplier(pos, cfg);
 
+    // Roster-score multiplier. Score=10 → no boost. Score=1 with weight=1.0 →
+    // rosterScoreMaxBoost (e.g. 1.30). Uses rosterScoreDefault when no score
+    // entered for that team/position so unseeded rows stay roughly neutral.
+    let rosterScoreMult = 1;
+    if (pos && draftContext?.teamRosterScores) {
+      const raw = draftContext.teamRosterScores[pos];
+      const score = Number.isFinite(raw) ? raw : cfg.rosterScoreDefault;
+      const weight = cfg.rosterScoreWeights?.[pos];
+      if (Number.isFinite(weight) && weight > 0 && Number.isFinite(score)) {
+        const clamped = Math.min(10, Math.max(1, score));
+        const deficit = (10 - clamped) / 9;
+        const maxBoost = (cfg.rosterScoreMaxBoost ?? 1) - 1;
+        rosterScoreMult = 1 + maxBoost * weight * deficit;
+      }
+    }
+
     // Feature 1: Scarcity multiplier.
     let scarcityMult = 1;
     if (scarcityMap && pos) {
@@ -178,7 +208,7 @@ export function pickForTeam({ available, teamNeeds = [], randomness = 0.25, pick
 
     const jitter = 1 + (Math.random() - 0.5) * randomness;
 
-    let score = baseScore * needsMultiplier * tierMult * scarcityMult * runMult * jitter;
+    let score = baseScore * needsMultiplier * tierMult * rosterScoreMult * scarcityMult * runMult * jitter;
     scored.push({ player: p, rank, score });
   }
 

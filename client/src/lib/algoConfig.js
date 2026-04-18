@@ -74,6 +74,34 @@ export const ALGO_DEFAULTS = {
     // Tier 3 implicit 1.00: RB, IOL (G/C), DT (IDL), S, LB
   },
 
+  // Per-position roster-score weights. Drive the "roster heatmap" multiplier
+  // in the bot picker: a low score at a position (= roster deficiency) boosts
+  // candidates at that position, scaled by the position's weight here. QB
+  // deficiency moves the needle most (1.00); Nickel/S are supplemental (0.60).
+  // Weights match the legend in the admin roster-scores sheet.
+  rosterScoreWeights: {
+    QB: 1.00,
+    RB: 0.75,
+    WR: 0.90,
+    TE: 0.80,
+    OT: 0.85,
+    IOL: 0.65,
+    EDGE: 0.95,
+    DT: 0.80,
+    LB: 0.75,
+    NCB: 0.60,
+    CB: 0.90,
+    S: 0.60,
+  },
+  // Max multiplier applied to a candidate when the team scores 1/10 at that
+  // position AND the position's weight is 1.0. Score=10 → no boost (×1.0),
+  // score=1 & weight=1.0 → ×rosterScoreMaxBoost. Linear interpolation in
+  // between, so score=5 (mid) with weight 1.0 → ×(1 + (max-1)*(10-5)/9).
+  rosterScoreMaxBoost: 1.30,
+  // Neutral fallback when a team hasn't had a score entered yet — treat as
+  // "average" (5.5/10) so unseeded positions don't over-boost.
+  rosterScoreDefault: 5.5,
+
   // Selection sharpness — exponent applied to pool scores when doing the
   // weighted-random draw. Does NOT change which players make the pool,
   // only how dominant the top-scoring player's share is in the final draw.
@@ -117,6 +145,10 @@ export async function loadAlgoConfig() {
       positionTiers: {
         ...ALGO_DEFAULTS.positionTiers,
         ...(stored?.positionTiers || {}),
+      },
+      rosterScoreWeights: {
+        ...ALGO_DEFAULTS.rosterScoreWeights,
+        ...(stored?.rosterScoreWeights || {}),
       },
     };
   } catch {

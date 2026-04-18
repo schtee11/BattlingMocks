@@ -235,6 +235,24 @@ CREATE TABLE IF NOT EXISTS team_needs (
 );
 CREATE INDEX IF NOT EXISTS idx_team_needs_team_year ON team_needs(team_id, draft_year);
 
+-- Roster heatmap: per-team, per-position 1–10 score. Complements team_needs
+-- (which is a ranked top-3 list) by giving the bot a full 12-position view of
+-- how stocked each team is. 1 = non roster worthy, 10 = elite + depth. The
+-- bot reads these scores and boosts picks for positions where the team is
+-- deficient (low score). Canonical positions match normalizePos() output
+-- plus NCB (slot/nickel corner) which is tracked as its own bucket.
+CREATE TABLE IF NOT EXISTS position_scores (
+  id SERIAL PRIMARY KEY,
+  team_id VARCHAR(5) NOT NULL,
+  team_name VARCHAR(80) NOT NULL,
+  position VARCHAR(10) NOT NULL,
+  score INTEGER NOT NULL CHECK (score BETWEEN 1 AND 10),
+  draft_year INTEGER DEFAULT 2026,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (team_id, position, draft_year)
+);
+CREATE INDEX IF NOT EXISTS idx_position_scores_team_year ON position_scores(team_id, draft_year);
+
 -- Phase 7: role-based admin access. Default FALSE so existing users aren't
 -- promoted accidentally. Admins are promoted via a SQL UPDATE or the admin panel.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
@@ -429,6 +447,38 @@ export async function migrate() {
     }
   } catch (e) {
     console.warn('[migrate] team_needs seed skipped:', e.message);
+  }
+  // Seed position_scores from the static JSON once. Admin edits are preserved
+  // on every subsequent deploy because we only insert when the table is empty.
+  try {
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM position_scores');
+    if ((rows[0]?.c ?? 0) === 0) {
+      const __dirname = dirname(fileURLToPath(import.meta.url));
+      const path = join(__dirname, '..', 'data', 'position-scores-2026.json');
+      const data = JSON.parse(readFileSync(path, 'utf8'));
+      let inserted = 0;
+      for (const t of data) {
+        const teamId = t.teamId;
+        const teamName = t.teamName || teamId;
+        const scores = t.scores || {};
+        for (const [position, score] of Object.entries(scores)) {
+          const s = Number(score);
+          if (!Number.isInteger(s) || s < 1 || s > 10) continue;
+          await pool.query(
+            `INSERT INTO position_scores (team_id, team_name, position, score, draft_year)
+             VALUES ($1, $2, $3, $4, 2026)
+             ON CONFLICT (team_id, position, draft_year) DO NOTHING`,
+            [teamId, teamName, String(position).toUpperCase(), s]
+          );
+          inserted++;
+        }
+      }
+      console.log(`[migrate] position_scores seeded: ${inserted} rows`);
+    } else {
+      console.log(`[migrate] position_scores already populated (${rows[0].c} rows)`);
+    }
+  } catch (e) {
+    console.warn('[migrate] position_scores seed skipped:', e.message);
   }
   return { ok, failed };
 }
