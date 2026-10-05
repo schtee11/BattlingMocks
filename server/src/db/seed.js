@@ -65,10 +65,12 @@ export async function importProspects(prospects, draftYear = CURRENT_DRAFT_YEAR)
     );
     if (rows.length) {
       const cur = rows[0];
-      const nextHeadshot = headshot ?? cur.headshot_url; // don't clobber existing with null
+      // Missing fields from a sparse source never clobber what's already stored.
+      const nextHeadshot = headshot ?? cur.headshot_url;
+      const nextSchool = school ?? cur.school;
       const nextRank = rank ?? cur.consensus_rank;
       if (
-        cur.position === position && cur.school === school &&
+        cur.position === position && cur.school === nextSchool &&
         cur.headshot_url === nextHeadshot && cur.consensus_rank === nextRank
       ) {
         unchanged++;
@@ -76,7 +78,7 @@ export async function importProspects(prospects, draftYear = CURRENT_DRAFT_YEAR)
         await pool.query(
           `UPDATE players SET position = $1, school = $2, headshot_url = $3, consensus_rank = $4
             WHERE id = $5`,
-          [position, school, nextHeadshot, nextRank, cur.id]
+          [position, nextSchool, nextHeadshot, nextRank, cur.id]
         );
         updated++;
       }
