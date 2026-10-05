@@ -332,7 +332,7 @@ export const Round1ExportCard = forwardRef(function Round1ExportCard(
             marginBottom: 4,
           }}
         >
-          2026 NFL Draft · Round 1
+          2027 NFL Draft · Round 1
         </div>
         <div
           style={{
@@ -657,7 +657,7 @@ export function useRound1ShareExport({
         try {
           await navigator.share({
             files: [file],
-            title: '2026 Round 1 Mock Draft',
+            title: '2027 Round 1 Mock Draft',
           });
           return;
         } catch (e) {

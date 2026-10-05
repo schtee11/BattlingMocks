@@ -1,10 +1,13 @@
 // Persistence layer for prediction-mode mocks.
 // Logged-in users → server DB via /api/prediction-mocks.
-// Guests → localStorage fallback (same key as before).
+// Guests → localStorage fallback, keyed per draft year so last season's
+// saved slots (which point at last season's player ids) don't load into
+// the new board.
 
 import { api } from './api.js';
+import { CURRENT_DRAFT_YEAR } from './draftYear.js';
 
-const LS_KEY = 'mds_prediction_slots';
+const LS_KEY = `mds_prediction_slots_${CURRENT_DRAFT_YEAR}`;
 const MAX_SLOTS = 10;
 
 export { MAX_SLOTS };

@@ -1,3 +1,5 @@
+import { CURRENT_DRAFT_YEAR, NEXT_DRAFT_YEAR } from './draftYear.js';
+
 const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001';
 
 export const API_BASE = BASE;
@@ -175,9 +177,9 @@ export const api = {
       () => request(fresh ? `/api/draft-order?round=all&_=${Date.now()}` : '/api/draft-order?round=all')
     );
   },
-  // Future-year picks (e.g. 2027). Short TTL so admin sync of R2-R7 (which
+  // Future-year picks (the draft after the current one). Short TTL so admin sync of R2-R7 (which
   // determines which teams qualify for the canonical list) shows up promptly.
-  getFuturePicks: (year = 2027) =>
+  getFuturePicks: (year = NEXT_DRAFT_YEAR) =>
     cached(`future-picks-${year}`, 30_000, () => request(`/api/draft-order/future?year=${year}&_=${Date.now()}`)),
   getSettings: () => cached('settings', 30_000, () => request('/api/settings')),
   getAlgoConfig: () => cached('algo-config', 60_000, () => request('/api/algo-config')),
@@ -307,7 +309,7 @@ export const api = {
       body: { ranks, draft_year },
       adminKey: key,
     }),
-  syncProspectsFromEspn: (key, { year = 2026, limit = 400, dry = false } = {}) =>
+  syncProspectsFromEspn: (key, { year = CURRENT_DRAFT_YEAR, limit = 400, dry = false } = {}) =>
     request(
       `/api/admin/prospects/sync-from-espn?year=${year}&limit=${limit}${dry ? '&dry=1' : ''}`,
       { method: 'POST', adminKey: key }
@@ -318,27 +320,27 @@ export const api = {
       adminKey: key,
     }),
   // ESPN draft sync — all Round 1 for Phase 1
-  previewEspnDraft: (key, year = 2026) =>
+  previewEspnDraft: (key, year = CURRENT_DRAFT_YEAR) =>
     request(`/api/admin/sync/preview?year=${year}`, { adminKey: key }),
-  syncDraftOrderFromEspn: (key, { year = 2026, dry = false } = {}) =>
+  syncDraftOrderFromEspn: (key, { year = CURRENT_DRAFT_YEAR, dry = false } = {}) =>
     request(`/api/admin/sync/draft-order?year=${year}${dry ? '&dry=1' : ''}`, {
       method: 'POST',
       adminKey: key,
     }),
   // Full 7-round draft order sync from ESPN. Preserves R1 by default.
-  syncAllRoundsFromEspn: (key, { year = 2026, dry = false, includeR1 = false } = {}) =>
+  syncAllRoundsFromEspn: (key, { year = CURRENT_DRAFT_YEAR, dry = false, includeR1 = false } = {}) =>
     request(
       `/api/admin/sync/draft-order-all?year=${year}${dry ? '&dry=1' : ''}${includeR1 ? '&include_r1=1' : ''}`,
       { method: 'POST', adminKey: key }
     ),
-  syncPicksFromEspn: (key, { year = 2026, dry = false } = {}) =>
+  syncPicksFromEspn: (key, { year = CURRENT_DRAFT_YEAR, dry = false } = {}) =>
     request(`/api/admin/sync/picks?year=${year}${dry ? '&dry=1' : ''}`, {
       method: 'POST',
       adminKey: key,
     }),
   // Draft-night auto-poller
   pollStatus: (key) => request('/api/admin/sync/poll-status', { adminKey: key }),
-  pollStart: (key, { year = 2026, intervalSec = 20 } = {}) =>
+  pollStart: (key, { year = CURRENT_DRAFT_YEAR, intervalSec = 20 } = {}) =>
     request(`/api/admin/sync/poll-start?year=${year}&interval=${intervalSec}`, {
       method: 'POST',
       adminKey: key,
@@ -357,9 +359,9 @@ export const api = {
     request('/api/admin/draft-order', { method: 'POST', body: { order }, adminKey: key }),
   adminSetTeamNeeds: (key, needs) =>
     request('/api/admin/team-needs', { method: 'POST', body: { needs }, adminKey: key }),
-  adminGetPositionScores: (key, { year = 2026 } = {}) =>
+  adminGetPositionScores: (key, { year = CURRENT_DRAFT_YEAR } = {}) =>
     request(`/api/admin/position-scores?year=${year}`, { adminKey: key }),
-  adminSavePositionScores: (key, scores, { year = 2026 } = {}) =>
+  adminSavePositionScores: (key, scores, { year = CURRENT_DRAFT_YEAR } = {}) =>
     request('/api/admin/position-scores', {
       method: 'POST',
       body: { scores, year },
@@ -373,7 +375,7 @@ export const api = {
   runScore: (key) => request('/api/admin/score', { method: 'POST', adminKey: key }),
   toggleLock: (key, is_locked) =>
     request('/api/admin/lock', { method: 'POST', body: { is_locked }, adminKey: key }),
-  volumeStats: (key, year = 2026) =>
+  volumeStats: (key, year = CURRENT_DRAFT_YEAR) =>
     request(`/api/admin/volume-stats?year=${year}`, { adminKey: key }),
   adminBoardStats: (key) =>
     request('/api/admin/boards', { adminKey: key }),

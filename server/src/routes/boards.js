@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -34,7 +35,7 @@ const updateBoardSchema = validate({
 
 async function getOwnedBoard(boardId, userId) {
   const { rows } = await pool.query(
-    'SELECT id, user_id, title, created_at, updated_at FROM user_boards WHERE id = $1',
+    'SELECT id, user_id, title, draft_year, created_at, updated_at FROM user_boards WHERE id = $1',
     [boardId]
   );
   if (!rows[0]) return null;
@@ -51,10 +52,10 @@ router.get('/', async (req, res) => {
               COUNT(r.player_id)::int AS rank_count
        FROM user_boards b
        LEFT JOIN user_board_rankings r ON r.board_id = b.id
-       WHERE b.user_id = $1
+       WHERE b.user_id = $1 AND b.draft_year = $2
        GROUP BY b.id
        ORDER BY b.updated_at DESC`,
-      [req.userId]
+      [req.userId, CURRENT_DRAFT_YEAR]
     );
     res.json(rows);
   } catch (err) {
@@ -71,8 +72,8 @@ router.post('/', createBoardSchema, async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO user_boards (user_id, title) VALUES ($1, $2) RETURNING id`,
-      [req.userId, title.trim()]
+      `INSERT INTO user_boards (user_id, title, draft_year) VALUES ($1, $2, $3) RETURNING id`,
+      [req.userId, title.trim(), CURRENT_DRAFT_YEAR]
     );
     const boardId = rows[0].id;
 
@@ -80,8 +81,8 @@ router.post('/', createBoardSchema, async (req, res) => {
       // Verify all player_ids exist before inserting
       const ids = rankings.map((r) => r.player_id);
       const { rows: found } = await client.query(
-        'SELECT id FROM players WHERE id = ANY($1)',
-        [ids]
+        'SELECT id FROM players WHERE id = ANY($1) AND draft_year = $2',
+        [ids, CURRENT_DRAFT_YEAR]
       );
       const foundSet = new Set(found.map((r) => r.id));
       const missing = ids.filter((id) => !foundSet.has(id));
@@ -146,8 +147,9 @@ router.get('/:id', async (req, res) => {
               consensus_rank, projected_round, height, weight
        FROM players
        WHERE ($1::int[] IS NULL OR id != ALL($1))
+         AND draft_year = $2
        ORDER BY COALESCE(consensus_rank, 9999), id`,
-      [rankedIds.length > 0 ? rankedIds : null]
+      [rankedIds.length > 0 ? rankedIds : null, board.draft_year ?? CURRENT_DRAFT_YEAR]
     );
 
     // 3. Merge and assign sequential rank 1..N
@@ -220,8 +222,8 @@ router.put('/:id', updateBoardSchema, async (req, res) => {
       if (rankings.length > 0) {
         const ids = rankings.map((r) => r.player_id);
         const { rows: found } = await client.query(
-          'SELECT id FROM players WHERE id = ANY($1)',
-          [ids]
+          'SELECT id FROM players WHERE id = ANY($1) AND draft_year = $2',
+          [ids, board.draft_year ?? CURRENT_DRAFT_YEAR]
         );
         const foundSet = new Set(found.map((r) => r.id));
         const missing = ids.filter((id) => !foundSet.has(id));

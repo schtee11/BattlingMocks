@@ -25,11 +25,12 @@ import {
   swapFutureOwnership,
   isFuturePickId,
 } from '../lib/futurePicks.js';
-import { CountdownTimer, DRAFT_START_2026 } from '../components/ui/CountdownTimer.jsx';
+import { CountdownTimer, DRAFT_START } from '../components/ui/CountdownTimer.jsx';
 import { Round1ExportCard, useRound1ShareExport } from '../components/Round1Export.jsx';
 import { PredictionSlotsModal } from '../components/PredictionSlotsModal.jsx';
 import { prettyName } from '../lib/displayName.js';
 import { usePageMeta } from '../hooks/usePageMeta.js';
+import { CURRENT_DRAFT_YEAR, NEXT_DRAFT_YEAR } from '../lib/draftYear.js';
 
 // Max number of picks a user can flag as "confidence" picks. Each confident
 // pick that lands as an exact match gets a 1.5x scoring multiplier.
@@ -39,9 +40,9 @@ const FILTERS = ['ALL', ...POSITIONS];
 
 export default function Draft() {
   usePageMeta({
-    title: '2026 NFL Mock Draft Simulator — Predictive Round 1',
+    title: '2027 NFL Mock Draft Simulator — Predictive Round 1',
     description:
-      'Free 2026 NFL mock draft simulator. Build a 32-pick predictive Round 1 mock, mark confidence picks for a 1.5× multiplier, and score live against the real picks on draft night.',
+      'Free 2027 NFL mock draft simulator. Build a 32-pick predictive Round 1 mock, mark confidence picks for a 1.5× multiplier, and score live against the real picks on draft night.',
     path: '/draft',
   });
   const { user } = useAuth();
@@ -119,13 +120,13 @@ export default function Draft() {
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
-  // 2027 future-pick ownership. Session-only in prediction mode — predictions
+  // Next-year future-pick ownership. Session-only in prediction mode — predictions
   // model "what will round 1 look like?" so persisting future-pick swaps adds
   // no value beyond the current draft order, which is already saved.
   const [futureOwnership, setFutureOwnership] = useState(() => new Map());
   useEffect(() => {
     let cancelled = false;
-    api.getFuturePicks(2027)
+    api.getFuturePicks(NEXT_DRAFT_YEAR)
       .then((rows) => {
         if (!cancelled && Array.isArray(rows)) {
           setFutureOwnership(buildFutureOwnership(rows));
@@ -819,7 +820,7 @@ export default function Draft() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4 min-w-0">
             <div className="min-w-0">
-              <div className="caption text-accent text-[10px]">War Room · 2026</div>
+              <div className="caption text-accent text-[10px]">War Room · {CURRENT_DRAFT_YEAR}</div>
               <h1 className="font-display font-bold text-[22px] text-text-primary leading-none mt-0.5">
                 Build Your Mock
               </h1>
@@ -864,7 +865,7 @@ export default function Draft() {
               <div className="text-right">
                 <div className="caption text-[9px]">Deadline</div>
                 <div className="mt-0.5">
-                  <CountdownTimer target={DRAFT_START_2026} compact />
+                  <CountdownTimer target={DRAFT_START} compact />
                 </div>
               </div>
             )}
@@ -1162,7 +1163,7 @@ export default function Draft() {
             <Card glass className="p-3 flex flex-col overflow-hidden min-h-0">
               <div className="flex items-center justify-between mb-3 px-1 shrink-0">
                 <h2 className="font-display font-bold text-[15px] uppercase tracking-[0.18em] text-text-primary">
-                  Round 1 — 2026
+                  Round 1 — {CURRENT_DRAFT_YEAR}
                 </h2>
                 <div className="flex gap-1">
                   <Button size="xs" variant="outline" onClick={autoFill} disabled={locked || complete}>

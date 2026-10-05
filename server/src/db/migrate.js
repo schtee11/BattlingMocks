@@ -2,6 +2,8 @@ import { pathToFileURL, fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { pool } from './pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
+import { importProspects, seedDraftOrder, seedTeamNeeds } from './seed.js';
 
 const SQL = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -130,9 +132,8 @@ ALTER TABLE mocks DROP CONSTRAINT IF EXISTS mocks_user_id_key;
 -- Earlier iterations of Phase 4 added a full (user_id, mock_type) unique
 -- constraint; drop it so users can save as many team mocks as they want.
 ALTER TABLE mocks DROP CONSTRAINT IF EXISTS mocks_user_id_mock_type_key;
--- Partial unique: only the round1 showdown is capped at one per user.
-CREATE UNIQUE INDEX IF NOT EXISTS mocks_round1_user_unique
-  ON mocks(user_id) WHERE mock_type = 'round1';
+-- Partial unique: only the round1 showdown is capped at one per user (per
+-- draft year — see the Phase 10 mocks_round1_user_year_unique index below).
 CREATE INDEX IF NOT EXISTS idx_mocks_user_id_mock_type ON mocks(user_id, mock_type);
 
 -- Algo config: admin-editable JSON blob that drives the bot picker and trade
@@ -360,7 +361,60 @@ CREATE INDEX IF NOT EXISTS idx_prediction_mock_events_user
   ON prediction_mock_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_prediction_mock_events_mock
   ON prediction_mock_events(mock_id);
-`;
+
+-- Phase 10: multi-season support. Every season-scoped table carries a
+-- draft_year so a new draft (2027, 2028, …) starts with a clean slate while
+-- prior seasons' mocks, actual results and leaderboard stay queryable. The
+-- ADD COLUMN DEFAULT 2026 backfills every pre-existing row to the 2026 draft
+-- (the only season that existed before this phase); the SET DEFAULT that
+-- follows points new rows at the current season.
+ALTER TABLE mocks ADD COLUMN IF NOT EXISTS draft_year INTEGER DEFAULT 2026;
+UPDATE mocks SET draft_year = 2026 WHERE draft_year IS NULL;
+ALTER TABLE mocks ALTER COLUMN draft_year SET NOT NULL;
+ALTER TABLE mocks ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+-- One scored R1 showdown per user PER SEASON (was one per user, ever).
+DROP INDEX IF EXISTS mocks_round1_user_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS mocks_round1_user_year_unique
+  ON mocks(user_id, draft_year) WHERE mock_type = 'round1';
+CREATE INDEX IF NOT EXISTS idx_mocks_year_type ON mocks(draft_year, mock_type);
+
+ALTER TABLE actual_picks ADD COLUMN IF NOT EXISTS draft_year INTEGER DEFAULT 2026;
+UPDATE actual_picks SET draft_year = 2026 WHERE draft_year IS NULL;
+ALTER TABLE actual_picks ALTER COLUMN draft_year SET NOT NULL;
+ALTER TABLE actual_picks ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM information_schema.key_column_usage
+     WHERE constraint_name = 'actual_picks_pkey'
+       AND table_name = 'actual_picks'
+       AND column_name = 'pick_number'
+  ) AND NOT EXISTS (
+    SELECT 1
+      FROM information_schema.key_column_usage
+     WHERE constraint_name = 'actual_picks_pkey'
+       AND table_name = 'actual_picks'
+       AND column_name = 'draft_year'
+  ) THEN
+    ALTER TABLE actual_picks DROP CONSTRAINT actual_picks_pkey;
+    ALTER TABLE actual_picks ADD CONSTRAINT actual_picks_pkey PRIMARY KEY (pick_number, draft_year);
+  END IF;
+END$$;
+
+ALTER TABLE prediction_mocks ADD COLUMN IF NOT EXISTS draft_year INTEGER DEFAULT 2026;
+ALTER TABLE prediction_mocks ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+CREATE INDEX IF NOT EXISTS idx_prediction_mocks_user_year ON prediction_mocks(user_id, draft_year);
+
+ALTER TABLE user_boards ADD COLUMN IF NOT EXISTS draft_year INTEGER DEFAULT 2026;
+ALTER TABLE user_boards ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+CREATE INDEX IF NOT EXISTS idx_user_boards_user_year ON user_boards(user_id, draft_year);
+
+ALTER TABLE players ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+ALTER TABLE draft_order ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+ALTER TABLE team_needs ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+ALTER TABLE position_scores ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+`.replaceAll('__YEAR__', String(CURRENT_DRAFT_YEAR));
 
 // Split the migration SQL into individual statements and run them one at a
 // time so a single failing DDL (due to legacy constraints, weird data, etc.)
@@ -399,6 +453,131 @@ function splitStatements(sql) {
   return statements;
 }
 
+function readSeasonFile(name, year) {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const path = join(__dirname, '..', 'data', `${name}-${year}.json`);
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+async function countFor(table, year, extra = '') {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS c FROM ${table} WHERE draft_year = $1 ${extra}`,
+    [year]
+  );
+  return rows[0]?.c ?? 0;
+}
+
+// Season bootstrap. Runs on every deploy and fills in whatever the current
+// draft year is missing from the static JSON under src/data — prospects,
+// Round 1 order, team needs and roster scores — then points draft_settings
+// at the new season (unlocked, scoring cleared). Every step only writes when
+// the year has no data yet, so admin edits made through the panel are never
+// clobbered by a later deploy. Each step is isolated so one missing file
+// doesn't block the rest.
+async function seedSeason(year) {
+  const step = async (label, fn) => {
+    try {
+      const msg = await fn();
+      if (msg) console.log(`[migrate] ${year} ${label}: ${msg}`);
+    } catch (e) {
+      console.warn(`[migrate] ${year} ${label} skipped:`, e.message);
+    }
+  };
+
+  await step('prospects', async () => {
+    const have = await countFor('players', year);
+    if (have > 0) return `already populated (${have} players)`;
+    const r = await importProspects(readSeasonFile('prospects', year), year);
+    return `seeded ${r.added} added, ${r.updated} updated`;
+  });
+
+  await step('draft_order R1', async () => {
+    const have = await countFor('draft_order', year, 'AND round = 1');
+    if (have >= 32) return `already populated (${have} R1 picks)`;
+    const order = readSeasonFile('draft-order', year);
+    await seedDraftOrder(order, year);
+    return `seeded ${order.length} R1 picks`;
+  });
+
+  await step('team_needs', async () => {
+    const have = await countFor('team_needs', year);
+    if (have > 0) return `already populated (${have} rows)`;
+    const r = await seedTeamNeeds(readSeasonFile('team-needs', year), year);
+    return `seeded ${r.upserted} rows`;
+  });
+
+  // Rounds 2–7 normally come from ESPN (admin → /sync/draft-order-all), but
+  // ESPN often hasn't published them early in the season. Until it does, lay
+  // down a standard straight-rotation order — each round follows Round 1's
+  // order by ORIGINAL team, no comp picks — so the 7-round team mock works on
+  // day one. Only runs when the year has no R2+ rows at all; the ESPN sync
+  // upserts by pick number and overwrites these placeholders.
+  await step('draft_order R2-R7', async () => {
+    const have = await countFor('draft_order', year, 'AND round > 1');
+    if (have > 0) return `already populated (${have} rows)`;
+    const { rows: r1 } = await pool.query(
+      `SELECT pick_number, COALESCE(original_team_id, team) AS team
+         FROM draft_order WHERE draft_year = $1 AND round = 1
+        ORDER BY pick_number`,
+      [year]
+    );
+    if (r1.length !== 32) return `skipped (need 32 R1 picks, have ${r1.length})`;
+    const { rows: names } = await pool.query(
+      `SELECT DISTINCT ON (team_id) team_id, team_name FROM team_needs WHERE draft_year = $1`,
+      [year]
+    );
+    const nameOf = new Map(names.map((n) => [n.team_id, n.team_name]));
+    let inserted = 0;
+    for (let round = 2; round <= 7; round++) {
+      for (let i = 0; i < 32; i++) {
+        const team = r1[i].team;
+        await pool.query(
+          `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round, draft_year)
+           VALUES ($1, $2, $3, ARRAY[]::TEXT[], $4, $5)
+           ON CONFLICT (pick_number, draft_year) DO NOTHING`,
+          [(round - 1) * 32 + i + 1, team, nameOf.get(team) || team, round, year]
+        );
+        inserted++;
+      }
+    }
+    return `generated ${inserted} placeholder picks (sync from ESPN to replace)`;
+  });
+
+  // Roster heatmap: per-team, per-position 1–10 scores.
+  await step('position_scores', async () => {
+    const have = await countFor('position_scores', year);
+    if (have > 0) return `already populated (${have} rows)`;
+    let inserted = 0;
+    for (const t of readSeasonFile('position-scores', year)) {
+      const teamName = t.teamName || t.teamId;
+      for (const [position, score] of Object.entries(t.scores || {})) {
+        const v = Number(score);
+        if (!Number.isInteger(v) || v < 1 || v > 10) continue;
+        await pool.query(
+          `INSERT INTO position_scores (team_id, team_name, position, score, draft_year)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (team_id, position, draft_year) DO NOTHING`,
+          [t.teamId, teamName, String(position).toUpperCase(), v, year]
+        );
+        inserted++;
+      }
+    }
+    return `seeded ${inserted} rows`;
+  });
+
+  // New season → reopen submissions. Only fires once per rollover (when the
+  // stored year is behind), so a lock the admin sets mid-season sticks.
+  await step('draft_settings', async () => {
+    const { rowCount } = await pool.query(
+      `UPDATE draft_settings
+          SET draft_year = $1, is_locked = FALSE, scoring_run_at = NULL
+        WHERE id = 1 AND (draft_year IS NULL OR draft_year < $1)`,
+      [year]
+    );
+    return rowCount ? 'rolled over to new season (unlocked)' : null;
+  });
+}
+
 export async function migrate() {
   const statements = splitStatements(SQL);
   console.log(`[migrate] running ${statements.length} statements`);
@@ -416,70 +595,7 @@ export async function migrate() {
     }
   }
   console.log(`[migrate] schema ready (${ok} ok, ${failed} failed)`);
-  // Phase 6: auto-seed team_needs from the static JSON file if the table is
-  // empty. This runs on every deploy so the UI always has data after a fresh
-  // migrate. It's idempotent — we only insert if the table is empty, so an
-  // admin can edit needs in the panel without migrations clobbering them.
-  try {
-    const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM team_needs');
-    if ((rows[0]?.c ?? 0) === 0) {
-      const __dirname = dirname(fileURLToPath(import.meta.url));
-      const path = join(__dirname, '..', 'data', 'team-needs-2026.json');
-      const data = JSON.parse(readFileSync(path, 'utf8'));
-      let inserted = 0;
-      for (const t of data) {
-        const teamId = t.teamId;
-        const teamName = t.teamName || teamId;
-        for (const n of t.needs || []) {
-          if (!Number.isInteger(n.priority) || n.priority < 1 || n.priority > 3) continue;
-          await pool.query(
-            `INSERT INTO team_needs (team_id, team_name, position, priority, draft_year)
-             VALUES ($1, $2, $3, $4, 2026)
-             ON CONFLICT (team_id, position, draft_year) DO NOTHING`,
-            [teamId, teamName, String(n.position).toUpperCase(), n.priority]
-          );
-          inserted++;
-        }
-      }
-      console.log(`[migrate] team_needs seeded: ${inserted} rows`);
-    } else {
-      console.log(`[migrate] team_needs already populated (${rows[0].c} rows)`);
-    }
-  } catch (e) {
-    console.warn('[migrate] team_needs seed skipped:', e.message);
-  }
-  // Seed position_scores from the static JSON once. Admin edits are preserved
-  // on every subsequent deploy because we only insert when the table is empty.
-  try {
-    const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM position_scores');
-    if ((rows[0]?.c ?? 0) === 0) {
-      const __dirname = dirname(fileURLToPath(import.meta.url));
-      const path = join(__dirname, '..', 'data', 'position-scores-2026.json');
-      const data = JSON.parse(readFileSync(path, 'utf8'));
-      let inserted = 0;
-      for (const t of data) {
-        const teamId = t.teamId;
-        const teamName = t.teamName || teamId;
-        const scores = t.scores || {};
-        for (const [position, score] of Object.entries(scores)) {
-          const s = Number(score);
-          if (!Number.isInteger(s) || s < 1 || s > 10) continue;
-          await pool.query(
-            `INSERT INTO position_scores (team_id, team_name, position, score, draft_year)
-             VALUES ($1, $2, $3, $4, 2026)
-             ON CONFLICT (team_id, position, draft_year) DO NOTHING`,
-            [teamId, teamName, String(position).toUpperCase(), s]
-          );
-          inserted++;
-        }
-      }
-      console.log(`[migrate] position_scores seeded: ${inserted} rows`);
-    } else {
-      console.log(`[migrate] position_scores already populated (${rows[0].c} rows)`);
-    }
-  } catch (e) {
-    console.warn('[migrate] position_scores seed skipped:', e.message);
-  }
+  await seedSeason(CURRENT_DRAFT_YEAR);
   return { ok, failed };
 }
 

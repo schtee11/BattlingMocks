@@ -6,6 +6,7 @@ import { Button } from '../../../components/ui/Button.jsx';
 import { PositionBadge } from '../../../components/ui/Badge.jsx';
 import { TeamLogo } from '../../../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../../../components/ui/PlayerHeadshot.jsx';
+import { CURRENT_DRAFT_YEAR } from '../../../lib/draftYear.js';
 
 export default function EnterResultsTab({
   adminKey,
@@ -150,7 +151,7 @@ export default function EnterResultsTab({
             <input
               type="number"
               value={syncYear}
-              onChange={(e) => setSyncYear(parseInt(e.target.value, 10) || 2026)}
+              onChange={(e) => setSyncYear(parseInt(e.target.value, 10) || CURRENT_DRAFT_YEAR)}
               className="w-20 bg-bg-deep border border-border-focus rounded px-2 py-1.5 text-text-primary text-sm font-mono"
             />
             <Button size="sm" variant="secondary" onClick={() => syncPicksFromEspn(true)} disabled={syncing}>

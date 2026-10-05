@@ -1,14 +1,14 @@
-// Helpers for future-year draft picks (currently 2027). These picks are
+// Helpers for future-year draft picks (the draft after CURRENT_DRAFT_YEAR). These picks are
 // tradable assets in both team_mock and round1 prediction modes but live in
 // a parallel data structure from the current-year draft_order: each team
-// owns one pick per round, keyed by a stable string id (e.g. "2027-LV-R1").
+// owns one pick per round, keyed by a stable string id (e.g. "2028-LV-R1").
 //
 // Pick id format
-//   `${year}-${team}-R${round}`         e.g. "2027-NYJ-R3"
+//   `${year}-${team}-R${round}`         e.g. "2028-NYJ-R3"
 //
 // Selection-set storage
-//   2026 picks  — kept as numbers (existing behaviour, unchanged)
-//   2027 picks  — kept as strings
+//   current-year picks— kept as numbers (existing behaviour, unchanged)
+//   future-year picks — kept as strings
 //   The TradeModal's selected sets, valueMap, and trade-history JSON all
 //   accept the union type. We never coerce one to the other so saved mocks
 //   round-trip losslessly.
@@ -32,7 +32,7 @@ export function makeFuturePickId({ year, team, round }) {
 }
 
 // Display label used everywhere a pick id appears in the UI (cards, history).
-// Numbers fall back to "#25" so existing 2026 rendering is unchanged.
+// Numbers fall back to "#25" so existing current-year rendering is unchanged.
 export function formatPickLabel(id) {
   if (typeof id === 'number') return `#${id}`;
   const parsed = parseFuturePickId(id);
@@ -67,7 +67,7 @@ export function swapFutureOwnership(prevMap, ids, newTeam) {
   return next;
 }
 
-// Used by the trade UI to show "Team X's 2027 picks" — sorted R1 → R7.
+// Used by the trade UI to show "Team X's next-year picks" — sorted R1 → R7.
 export function futurePicksForTeam(ownershipMap, team) {
   const out = [];
   for (const p of ownershipMap.values()) if (p.team === team) out.push(p);

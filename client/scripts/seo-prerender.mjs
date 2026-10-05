@@ -37,22 +37,22 @@ const ORIGIN = 'https://mockdraftshowdown.com';
 const ROUTES = [
   {
     path: '/',
-    title: 'NFL Mock Draft Simulator 2026 · MockDraft Showdown',
+    title: 'NFL Mock Draft Simulator 2027 · MockDraft Showdown',
     description:
-      'Free NFL Mock Draft Simulator for the 2026 NFL Draft. Build a predictive Round 1 mock, run a full 7-round team mock draft with trades, and score live on draft night against the real picks.',
-    h1: 'Free NFL Mock Draft Simulator — 2026 NFL Draft',
+      'Free NFL Mock Draft Simulator for the 2027 NFL Draft. Build a predictive Round 1 mock, run a full 7-round team mock draft with trades, and score live on draft night against the real picks.',
+    h1: 'Free NFL Mock Draft Simulator — 2027 NFL Draft',
     body:
-      "MockDraft Showdown is a free NFL Mock Draft Simulator for the 2026 NFL Draft. Build a 32-pick predictive Round 1 mock and score live against the real picks on draft night, or GM any NFL team through a full 7-round mock draft with trades, a fairness meter, and a post-draft grade. No paywall, unlimited mocks.",
+      "MockDraft Showdown is a free NFL Mock Draft Simulator for the 2027 NFL Draft. Build a 32-pick predictive Round 1 mock and score live against the real picks on draft night, or GM any NFL team through a full 7-round mock draft with trades, a fairness meter, and a post-draft grade. No paywall, unlimited mocks.",
     breadcrumbs: null,
   },
   {
     path: '/draft',
-    title: '2026 NFL Mock Draft Simulator — Predictive Round 1 · MockDraft Showdown',
+    title: '2027 NFL Mock Draft Simulator — Predictive Round 1 · MockDraft Showdown',
     description:
-      'Free 2026 NFL mock draft simulator. Build a 32-pick predictive Round 1 mock, mark confidence picks for a 1.5× multiplier, and score live against the real picks on draft night.',
-    h1: '2026 NFL Mock Draft — Predictive Round 1',
+      'Free 2027 NFL mock draft simulator. Build a 32-pick predictive Round 1 mock, mark confidence picks for a 1.5× multiplier, and score live against the real picks on draft night.',
+    h1: '2027 NFL Mock Draft — Predictive Round 1',
     body:
-      'Build your 2026 NFL mock draft in the predictive Round 1 simulator. Drag prospects into all 32 first-round slots, mark up to three confidence picks for a 1.5× scoring multiplier, and lock your picks before the real NFL Draft starts. On draft night every pick is graded in real time and your total climbs the public leaderboard.',
+      'Build your 2027 NFL mock draft in the predictive Round 1 simulator. Drag prospects into all 32 first-round slots, mark up to three confidence picks for a 1.5× scoring multiplier, and lock your picks before the real NFL Draft starts. On draft night every pick is graded in real time and your total climbs the public leaderboard.',
     breadcrumbs: [
       { name: 'Home', path: '/' },
       { name: 'Predictive Mock Draft', path: '/draft' },
@@ -62,7 +62,7 @@ const ROUTES = [
     path: '/team-mock',
     title: '7-Round NFL Mock Draft Simulator with Trades — Team Mock · MockDraft Showdown',
     description:
-      'Free 7-round NFL mock draft simulator. GM any NFL team through all 7 rounds of the 2026 Draft, trade up or down with a fairness meter, and earn a post-draft grade on value, need fit, and league ranking.',
+      'Free 7-round NFL mock draft simulator. GM any NFL team through all 7 rounds of the 2027 Draft, trade up or down with a fairness meter, and earn a post-draft grade on value, need fit, and league ranking.',
     h1: '7-Round NFL Mock Draft Simulator with Trades',
     body:
       'Run a full 7-round NFL mock draft as any team. The CPU drafts on a best-player-available plus team-needs engine, you can propose trades up or down at any pick, and a Rich Hill trade value chart plus fairness meter score every offer. When the draft ends you get a full grade on pick value, positional fit, and league-wide ranking. Unlimited saves, no paywall.',
@@ -73,12 +73,12 @@ const ROUTES = [
   },
   {
     path: '/leaderboard',
-    title: '2026 NFL Mock Draft Leaderboard — Live Rankings · MockDraft Showdown',
+    title: '2027 NFL Mock Draft Leaderboard — Live Rankings · MockDraft Showdown',
     description:
-      'Live leaderboard for every 2026 NFL Mock Draft Simulator entry. See top scouts, exact-match rates, and percentile rank updating in real time on draft night.',
-    h1: '2026 NFL Mock Draft Leaderboard',
+      'Live leaderboard for every 2027 NFL Mock Draft Simulator entry. See top scouts, exact-match rates, and percentile rank updating in real time on draft night.',
+    h1: '2027 NFL Mock Draft Leaderboard',
     body:
-      'The public leaderboard for the 2026 NFL Mock Draft Simulator. Rankings update live as each actual pick is announced on draft night. See top scouts by total score, exact-match rate, and percentile rank among all submitted mocks.',
+      'The public leaderboard for the 2027 NFL Mock Draft Simulator. Rankings update live as each actual pick is announced on draft night. See top scouts by total score, exact-match rate, and percentile rank among all submitted mocks.',
     breadcrumbs: [
       { name: 'Home', path: '/' },
       { name: 'Leaderboard', path: '/leaderboard' },
@@ -86,12 +86,12 @@ const ROUTES = [
   },
   {
     path: '/live',
-    title: '2026 NFL Draft Live Tracker — Real-Time Pick Scoring · MockDraft Showdown',
+    title: '2027 NFL Draft Live Tracker — Real-Time Pick Scoring · MockDraft Showdown',
     description:
-      'Watch the 2026 NFL Draft live with your mock draft predictions scoring in real time. Side-by-side actual picks vs. your picks, updating the moment each team is on the clock.',
-    h1: '2026 NFL Draft — Live Pick Tracker',
+      'Watch the 2027 NFL Draft live with your mock draft predictions scoring in real time. Side-by-side actual picks vs. your picks, updating the moment each team is on the clock.',
+    h1: '2027 NFL Draft — Live Pick Tracker',
     body:
-      'Follow the 2026 NFL Draft live. As each team goes on the clock, the actual pick is announced and your mock draft is scored instantly. Side-by-side panels show the real Round 1 board next to your predictions, color-coded by match state.',
+      'Follow the 2027 NFL Draft live. As each team goes on the clock, the actual pick is announced and your mock draft is scored instantly. Side-by-side panels show the real Round 1 board next to your predictions, color-coded by match state.',
     breadcrumbs: [
       { name: 'Home', path: '/' },
       { name: 'Live Draft', path: '/live' },
@@ -99,12 +99,12 @@ const ROUTES = [
   },
   {
     path: '/my-board',
-    title: 'My NFL Draft Big Board — 2026 Prospect Rankings · MockDraft Showdown',
+    title: 'My NFL Draft Big Board — 2027 Prospect Rankings · MockDraft Showdown',
     description:
-      'Build your personal 2026 NFL Draft big board. Rank prospects, save your rankings, and use them in the mock draft simulator and team mock modes.',
-    h1: 'Build Your 2026 NFL Draft Big Board',
+      'Build your personal 2027 NFL Draft big board. Rank prospects, save your rankings, and use them in the mock draft simulator and team mock modes.',
+    h1: 'Build Your 2027 NFL Draft Big Board',
     body:
-      'Rank every 2026 NFL Draft prospect on your personal big board. Drag players into your preferred order, save your rankings to your account, and apply them inside the mock draft simulator so CPU teams respect your board.',
+      'Rank every 2027 NFL Draft prospect on your personal big board. Drag players into your preferred order, save your rankings to your account, and apply them inside the mock draft simulator so CPU teams respect your board.',
     breadcrumbs: [
       { name: 'Home', path: '/' },
       { name: 'My Big Board', path: '/my-board' },
@@ -112,12 +112,12 @@ const ROUTES = [
   },
   {
     path: '/my-mock',
-    title: 'My 2026 NFL Mock Draft — Pick-by-Pick Scoring · MockDraft Showdown',
+    title: 'My 2027 NFL Mock Draft — Pick-by-Pick Scoring · MockDraft Showdown',
     description:
-      'Your submitted 2026 NFL mock draft with pick-by-pick scoring, total points, and live refresh during draft night. Share your card and track your rank.',
-    h1: 'My 2026 NFL Mock Draft',
+      'Your submitted 2027 NFL mock draft with pick-by-pick scoring, total points, and live refresh during draft night. Share your card and track your rank.',
+    h1: 'My 2027 NFL Mock Draft',
     body:
-      'View your submitted 2026 NFL mock draft. Every pick is scored against the real draft results with a live color-coded breakdown: exact match, right player wrong team, or in-Round-1 credit. Share your printable card and watch your rank climb the leaderboard.',
+      'View your submitted 2027 NFL mock draft. Every pick is scored against the real draft results with a live color-coded breakdown: exact match, right player wrong team, or in-Round-1 credit. Share your printable card and watch your rank climb the leaderboard.',
     breadcrumbs: [
       { name: 'Home', path: '/' },
       { name: 'My Mock', path: '/my-mock' },
@@ -125,12 +125,12 @@ const ROUTES = [
   },
   {
     path: '/guide',
-    title: 'How to Do a 2026 NFL Mock Draft — Complete Guide · MockDraft Showdown',
+    title: 'How to Do a 2027 NFL Mock Draft — Complete Guide · MockDraft Showdown',
     description:
-      "A complete guide to the 2026 NFL Mock Draft: what a mock draft is, how predictive and team mock modes differ, scoring rules, trade strategy, and tips to build a smarter NFL mock draft.",
-    h1: 'How to Do a 2026 NFL Mock Draft',
+      "A complete guide to the 2027 NFL Mock Draft: what a mock draft is, how predictive and team mock modes differ, scoring rules, trade strategy, and tips to build a smarter NFL mock draft.",
+    h1: 'How to Do a 2027 NFL Mock Draft',
     body:
-      "A complete guide to doing a 2026 NFL Mock Draft. Learn the difference between predictive mock drafts (predict what each team actually does) and team mock drafts (GM a team through all 7 rounds), how live draft-night scoring works, how to use confidence picks for a 1.5× multiplier, and trade strategy with the Rich Hill value chart.",
+      "A complete guide to doing a 2027 NFL Mock Draft. Learn the difference between predictive mock drafts (predict what each team actually does) and team mock drafts (GM a team through all 7 rounds), how live draft-night scoring works, how to use confidence picks for a 1.5× multiplier, and trade strategy with the Rich Hill value chart.",
     breadcrumbs: [
       { name: 'Home', path: '/' },
       { name: 'Mock Draft Guide', path: '/guide' },
@@ -140,7 +140,7 @@ const ROUTES = [
     path: '/about',
     title: 'About MockDraft Showdown — Free NFL Mock Draft Simulator',
     description:
-      'About MockDraft Showdown: a free NFL mock draft simulator for the 2026 NFL Draft. Our scoring methodology, trade logic, and why the platform will always be free.',
+      'About MockDraft Showdown: a free NFL mock draft simulator for the 2027 NFL Draft. Our scoring methodology, trade logic, and why the platform will always be free.',
     h1: 'About MockDraft Showdown',
     body:
       "MockDraft Showdown is a free NFL Mock Draft Simulator built around a live predictive contest. No paywall, no accounts required to play, no data sold. Our scoring tiers (Exact, Team, In-Round-1) reward accuracy at every level, and our CPU teams use a best-player-available plus team-needs engine with a Rich Hill trade value chart for realistic drafts.",
@@ -151,12 +151,12 @@ const ROUTES = [
   },
   {
     path: '/join',
-    title: 'Sign In — Join the 2026 NFL Mock Draft Simulator · MockDraft Showdown',
+    title: 'Sign In — Join the 2027 NFL Mock Draft Simulator · MockDraft Showdown',
     description:
-      'Create a free account to compete in the 2026 NFL Mock Draft Simulator. Sign in with Discord or Google to submit your picks and climb the live leaderboard.',
-    h1: 'Join the 2026 NFL Mock Draft',
+      'Create a free account to compete in the 2027 NFL Mock Draft Simulator. Sign in with Discord or Google to submit your picks and climb the live leaderboard.',
+    h1: 'Join the 2027 NFL Mock Draft',
     body:
-      'Sign in with Discord or Google to submit your 2026 NFL mock draft and compete on the public leaderboard. Accounts are free and you can delete yours anytime from settings.',
+      'Sign in with Discord or Google to submit your 2027 NFL mock draft and compete on the public leaderboard. Accounts are free and you can delete yours anytime from settings.',
     breadcrumbs: [
       { name: 'Home', path: '/' },
       { name: 'Sign In', path: '/join' },

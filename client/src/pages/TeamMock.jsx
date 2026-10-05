@@ -30,6 +30,7 @@ import {
   assessSellerReluctance,
 } from '../lib/botTradeProposer.js';
 import { acceptanceProbability, tradeHash } from '../lib/tradeAcceptance.js';
+import { CURRENT_DRAFT_YEAR, NEXT_DRAFT_YEAR } from '../lib/draftYear.js';
 
 // ─── NFL Teams ────────────────────────────────────────────────────────────────
 const NFL_TEAMS = [
@@ -1564,16 +1565,16 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
     setLiveOrder([...draftOrder].sort((a, b) => a.pick_number - b.pick_number));
   }, [draftOrder]);
 
-  // ── 2027 future-pick ownership ──────────────────────────────────────────
+  // ── Next-year future-pick ownership ──────────────────────────────────────────
   // Each team starts owning its own 7 future picks (R1–R7). Ownership lives
-  // in a Map<id, pickRow> keyed by the synthetic pick id (e.g. "2027-LV-R1")
+  // in a Map<id, pickRow> keyed by the synthetic pick id (e.g. "2028-LV-R1")
   // so trade swaps are O(1). Fetched lazily on mount; an empty Map until the
   // request resolves means future-pick UI is simply absent — never breaks
   // the trade flow.
   const [futureOwnership, setFutureOwnership] = useState(() => new Map());
   useEffect(() => {
     let cancelled = false;
-    api.getFuturePicks(2027)
+    api.getFuturePicks(NEXT_DRAFT_YEAR)
       .then((rows) => {
         if (!cancelled && Array.isArray(rows)) {
           setFutureOwnership(buildFutureOwnership(rows));
@@ -2098,7 +2099,7 @@ function DraftSimulator({ team, players, draftOrder, onSaved, onChangeTeam }) {
           user_team: team,
           randomness,
           algo_config_snapshot: getAlgoConfig(),
-          draft_year: 2026,
+          draft_year: CURRENT_DRAFT_YEAR,
         })
         .then((r) => {
           t.sessionId = r?.session_id ?? null;
@@ -3534,7 +3535,7 @@ export default function TeamMock() {
   usePageMeta({
     title: '7-Round NFL Mock Draft Simulator with Trades — Team Mock',
     description:
-      "Free 7-round NFL mock draft simulator. GM any NFL team through all 7 rounds of the 2026 Draft, trade up or down with a fairness meter, and earn a full post-draft grade on value, need fit, and league ranking.",
+      "Free 7-round NFL mock draft simulator. GM any NFL team through all 7 rounds of the 2027 Draft, trade up or down with a fairness meter, and earn a full post-draft grade on value, need fit, and league ranking.",
     path: '/team-mock',
   });
   const { user } = useAuth();

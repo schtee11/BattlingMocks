@@ -832,9 +832,9 @@ function BoardListView({ boards, loading, user, onNew, onOpen, onDelete }) {
 // ─── Page Shell ───────────────────────────────────────────────────────────────
 export default function BigBoard() {
   usePageMeta({
-    title: 'My NFL Draft Big Board — 2026 Prospect Rankings',
+    title: 'My NFL Draft Big Board — 2027 Prospect Rankings',
     description:
-      'Build your personal 2026 NFL Draft big board. Rank prospects, save your rankings, and use them in the mock draft simulator and team mock modes.',
+      'Build your personal 2027 NFL Draft big board. Rank prospects, save your rankings, and use them in the mock draft simulator and team mock modes.',
     path: '/my-board',
   });
 

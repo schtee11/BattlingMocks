@@ -2,6 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 import { validate } from '../middleware/validate.js';
 
 const router = Router();
@@ -89,10 +90,10 @@ router.get('/:id/profile', async (req, res) => {
               COUNT(mp.*) FILTER (WHERE ap.player_id IS NOT NULL) AS correct_picks
        FROM mocks m
        LEFT JOIN mock_picks mp ON mp.mock_id = m.id
-       LEFT JOIN actual_picks ap ON ap.player_id = mp.player_id
-       WHERE m.user_id = $1 AND m.mock_type = 'round1'
+       LEFT JOIN actual_picks ap ON ap.player_id = mp.player_id AND ap.draft_year = m.draft_year
+       WHERE m.user_id = $1 AND m.mock_type = 'round1' AND m.draft_year = $2
        GROUP BY m.id`,
-      [userId]
+      [userId, CURRENT_DRAFT_YEAR]
     );
     const r1Mock = r1Rows[0] || null;
 
@@ -113,10 +114,10 @@ router.get('/:id/profile', async (req, res) => {
                   RANK() OVER (ORDER BY total_score DESC, submitted_at ASC) AS rank,
                   PERCENT_RANK() OVER (ORDER BY total_score ASC) AS pct,
                   COUNT(*) OVER () AS total
-           FROM mocks WHERE mock_type = 'round1'
+           FROM mocks WHERE mock_type = 'round1' AND draft_year = $2
          )
          SELECT rank::int, pct, total::int FROM ranked WHERE id = $1`,
-        [r1Mock.id]
+        [r1Mock.id, CURRENT_DRAFT_YEAR]
       );
       if (rankRows.length) {
         rank = rankRows[0].rank;

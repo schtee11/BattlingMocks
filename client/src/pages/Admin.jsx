@@ -14,6 +14,7 @@ import PlayersTab from './admin/tabs/PlayersTab.jsx';
 import RosterScoresTab from './admin/tabs/RosterScoresTab.jsx';
 import AlgoTuningTab from './admin/tabs/AlgoTuningTab.jsx';
 import UsersTab from './admin/tabs/UsersTab.jsx';
+import { CURRENT_DRAFT_YEAR } from '../lib/draftYear.js';
 
 // Admin tabs — Analytics lives first (highest-frequency read), then the
 // draft-night ops (Live Draft / Draft Order), then data surfaces (Players /
@@ -43,7 +44,7 @@ export default function Admin() {
   const [actuals, setActuals] = useState([]);
   const [order, setOrder] = useState([]);
   const [settings, setSettings] = useState(null);
-  const [syncYear, setSyncYear] = useState(2026);
+  const [syncYear, setSyncYear] = useState(CURRENT_DRAFT_YEAR);
 
   const userIsAdmin = isAdmin(user);
 

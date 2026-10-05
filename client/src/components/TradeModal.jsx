@@ -34,7 +34,7 @@ import {
 //                        (R1 Draft mode where picks aren't sequential)
 //   onClockTeam        - team currently on the clock (pre-selects as partner)
 //   futureOwnership    - Map<id, {id,year,round,team,value}> of future-year
-//                        picks. When provided, each side renders its 2027
+//                        picks. When provided, each side renders its next-year
 //                        picks below the current-year picks and they become
 //                        tradable assets like any other.
 //   onClose            - called to dismiss the modal
@@ -158,7 +158,7 @@ export function TradeModal({
     [futurePicks, partnerTeam]
   );
 
-  // Future-year picks (e.g. 2027). Each team owns one per round; ownership
+  // Future-year picks (e.g. next year). Each team owns one per round; ownership
   // can change mid-session via prior trades, which is why we read from the
   // futureOwnership Map on every render rather than caching by team.
   const myFutureYearPicks = useMemo(
@@ -431,7 +431,7 @@ export function TradeModal({
   }
 
   // Future-pick chip — visually distinct from current-year pick chips so the
-  // user can see at a glance which assets in the deal are 2027 capital. We
+  // user can see at a glance which assets in the deal are next-year capital. We
   // use the gold accent (matches "Force Trade") to signal "different asset
   // class" without inventing a brand-new color.
   function futurePickButton(fp, selected, onClick) {
@@ -632,7 +632,7 @@ export function TradeModal({
                 className="overflow-y-auto pr-1"
                 // Scale with the viewport so short-screen laptops (13" MBP
                 // with browser chrome) still see the verdict + footer without
-                // having to scroll the modal body. 2027 future picks share
+                // having to scroll the modal body. Next-year future picks share
                 // the same scroll container so a 7-row future stack can't
                 // push the modal off-screen.
                 style={{ maxHeight: 'min(14rem, 28dvh)' }}
@@ -756,7 +756,7 @@ export function TradeModal({
 }
 
 // Standalone row of future-year pick chips. Rendered below each side's
-// current-year grid so the user sees clearly that 2027 capital is a separate
+// current-year grid so the user sees clearly that next-year capital is a separate
 // pool from this year's picks. Empty rounds aren't possible (every team
 // always owns 7 future picks pre-trade), but post-trade a side may end up
 // with zero — in that case the parent omits this row entirely.

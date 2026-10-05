@@ -5,21 +5,21 @@ import { usePageMeta } from '../hooks/usePageMeta.js';
 
 export default function Guide() {
   usePageMeta({
-    title: 'How to Do a 2026 NFL Mock Draft — Complete Guide',
+    title: 'How to Do a 2027 NFL Mock Draft — Complete Guide',
     description:
-      'A complete guide to the 2026 NFL Mock Draft: predictive vs. team mock modes, scoring rules, trade strategy, and tips to build a smarter NFL mock draft simulator run.',
+      'A complete guide to the 2027 NFL Mock Draft: predictive vs. team mock modes, scoring rules, trade strategy, and tips to build a smarter NFL mock draft simulator run.',
     path: '/guide',
   });
 
   return (
     <article className="max-w-3xl mx-auto px-4 py-10 md:py-16 route-fade">
       <header className="text-center mb-10">
-        <div className="caption text-accent mb-3">2026 NFL Draft · Complete Guide</div>
+        <div className="caption text-accent mb-3">2027 NFL Draft · Complete Guide</div>
         <h1 className="font-display display-xl text-display text-text-primary">
-          How to Do a 2026 NFL Mock Draft
+          How to Do a 2027 NFL Mock Draft
         </h1>
         <p className="text-text-secondary mt-4 text-[14px] md:text-[15px] leading-relaxed max-w-2xl mx-auto">
-          Everything you need to build a smarter 2026 NFL mock draft — from picking
+          Everything you need to build a smarter 2027 NFL mock draft — from picking
           between predictive and team mock modes to confidence picks, trade value, and
           live draft-night scoring.
         </p>
@@ -137,7 +137,7 @@ export default function Guide() {
             board won&apos;t make it to.
           </li>
           <li>
-            Future picks depreciate by roughly a round, so a 2027 Round 1 is close to
+            Future picks depreciate by roughly a round, so a next-year Round 1 is close to
             a current Round 2 in value.
           </li>
           <li>
@@ -195,7 +195,7 @@ export default function Guide() {
               Does the simulator cover all 7 rounds?
             </div>
             <p className="text-text-secondary leading-relaxed mt-1">
-              Yes. Team mock mode covers all 7 rounds of the 2026 NFL Draft with CPU
+              Yes. Team mock mode covers all 7 rounds of the 2027 NFL Draft with CPU
               teams drafting for every slot you don&apos;t own.
             </p>
           </div>
@@ -211,12 +211,12 @@ export default function Guide() {
           </div>
           <div>
             <div className="font-display uppercase tracking-wide text-text-primary text-[14px]">
-              When is the 2026 NFL Draft?
+              When is the 2027 NFL Draft?
             </div>
             <p className="text-text-secondary leading-relaxed mt-1">
-              The 2026 NFL Draft runs April 23–25, 2026 in Pittsburgh, PA. Round 1
-              kicks off Thursday, April 23. Our live leaderboard and scoring engine
-              go live with the first pick.
+              The 2027 NFL Draft runs April 29 – May 1, 2027 on the National Mall in
+              Washington, D.C. Round 1 kicks off Thursday, April 29. Our live
+              leaderboard and scoring engine go live with the first pick.
             </p>
           </div>
         </div>
@@ -225,7 +225,7 @@ export default function Guide() {
       <div className="text-center mt-10">
         <Link to="/draft">
           <Button size="xl" className="animate-pulse-glow">
-            Start Your 2026 Mock Draft →
+            Start Your 2027 Mock Draft →
           </Button>
         </Link>
         <div className="mt-4 text-[12.5px] text-text-muted">

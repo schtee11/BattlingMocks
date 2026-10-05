@@ -2,6 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 import { requireAuth, optionalAuth } from '../middleware/requireAuth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -75,9 +76,9 @@ router.get('/', requireAuth, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT id, name, picks, draft_order, created_at, updated_at
        FROM prediction_mocks
-       WHERE user_id = $1
+       WHERE user_id = $1 AND draft_year = $2
        ORDER BY updated_at DESC`,
-      [req.userId]
+      [req.userId, CURRENT_DRAFT_YEAR]
     );
     res.json(rows.map((r) => ({
       id: r.id,
@@ -98,17 +99,17 @@ router.post('/', saveLimit, requireAuth, saveSchema, async (req, res) => {
   try {
     // Enforce max slots
     const { rows: countRows } = await pool.query(
-      'SELECT COUNT(*)::int AS c FROM prediction_mocks WHERE user_id = $1',
-      [req.userId]
+      'SELECT COUNT(*)::int AS c FROM prediction_mocks WHERE user_id = $1 AND draft_year = $2',
+      [req.userId, CURRENT_DRAFT_YEAR]
     );
     if (countRows[0].c >= MAX_SLOTS) {
       return res.status(400).json({ error: `max ${MAX_SLOTS} prediction mocks allowed` });
     }
     const { rows } = await pool.query(
-      `INSERT INTO prediction_mocks (user_id, name, picks, draft_order)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO prediction_mocks (user_id, name, picks, draft_order, draft_year)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id, name, picks, draft_order, updated_at`,
-      [req.userId, name, JSON.stringify(picks), JSON.stringify(draftOrder)]
+      [req.userId, name, JSON.stringify(picks), JSON.stringify(draftOrder), CURRENT_DRAFT_YEAR]
     );
     const r = rows[0];
     // Fire-and-forget usage log (see logMockEvent — errors are swallowed).

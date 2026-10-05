@@ -3,11 +3,12 @@ import toast from 'react-hot-toast';
 import { api, invalidateCache } from '../../../lib/api.js';
 import { Card } from '../../../components/ui/Card.jsx';
 import { Button } from '../../../components/ui/Button.jsx';
+import { CURRENT_DRAFT_YEAR } from '../../../lib/draftYear.js';
 
 export default function PlayerRanksTab({ adminKey, refresh }) {
   const [rankCsvText, setRankCsvText] = useState('');
   const [rankCsvFileName, setRankCsvFileName] = useState('');
-  const [rankDraftYear, setRankDraftYear] = useState(2026);
+  const [rankDraftYear, setRankDraftYear] = useState(CURRENT_DRAFT_YEAR);
   const [rankPreview, setRankPreview] = useState(null); // { rows, errors }
   const [rankBusy, setRankBusy] = useState(false);
   const [rankResult, setRankResult] = useState(null);

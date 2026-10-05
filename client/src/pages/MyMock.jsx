@@ -57,9 +57,9 @@ function ClipboardIcon(props) {
 
 export default function MyMock() {
   usePageMeta({
-    title: 'My 2026 NFL Mock Draft — Pick-by-Pick Scoring',
+    title: 'My 2027 NFL Mock Draft — Pick-by-Pick Scoring',
     description:
-      'Your submitted 2026 NFL mock draft with pick-by-pick scoring, total points, and live refresh during draft night. Share your card and track your rank.',
+      'Your submitted 2027 NFL mock draft with pick-by-pick scoring, total points, and live refresh during draft night. Share your card and track your rank.',
     path: '/my-mock',
   });
   const { user } = useAuth();
@@ -207,7 +207,7 @@ export default function MyMock() {
   }
 
   function share() {
-    const lines = [`My 2026 Mock Draft — Score: ${mock.total_score}`];
+    const lines = [`My 2027 Mock Draft — Score: ${mock.total_score}`];
     if (summary) {
       lines.push(
         `Exact: ${summary.exact} · Team: ${summary.team} · In R1: ${summary.correct} · Miss: ${summary.miss}`

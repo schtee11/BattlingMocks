@@ -10,6 +10,7 @@
 //     failed fetch doesn't kill the poller
 
 import { syncPicksOnce } from './draftSync.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 
 const MIN_INTERVAL_SEC = 10;
 const MAX_INTERVAL_SEC = 300;
@@ -45,7 +46,7 @@ async function tick() {
 }
 
 export function startPoller({ year, intervalSec }) {
-  const yr = parseInt(year, 10) || 2026;
+  const yr = parseInt(year, 10) || CURRENT_DRAFT_YEAR;
   let interval = parseInt(intervalSec, 10) || 20;
   if (interval < MIN_INTERVAL_SEC) interval = MIN_INTERVAL_SEC;
   if (interval > MAX_INTERVAL_SEC) interval = MAX_INTERVAL_SEC;

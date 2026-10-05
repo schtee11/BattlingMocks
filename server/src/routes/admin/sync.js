@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { adminAuth } from '../../middleware/adminAuth.js';
+import { CURRENT_DRAFT_YEAR } from '../../config.js';
 import { fetchRoundOne, fetchAllRounds, resetLogFlag } from '../../services/espnDraft.js';
 import { syncPicksOnce } from '../../services/draftSync.js';
 import { startPoller, stopPoller, getStatus as getPollerStatus } from '../../services/draftPoller.js';
@@ -12,10 +13,10 @@ router.use(adminAuth);
 // Both endpoints support ?dry=1 which returns what WOULD be written without
 // touching the DB. Use the dry run first to verify the data looks sane.
 
-// GET /api/admin/sync/preview?year=2026 — returns the raw parsed ESPN round-1
+// GET /api/admin/sync/preview?year=<year> — returns the raw parsed ESPN round-1
 // data without writing anything. Useful for verifying the parser.
 router.get('/sync/preview', async (req, res) => {
-  const year = parseInt(req.query.year, 10) || 2026;
+  const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
   resetLogFlag();
   try {
     const picks = await fetchRoundOne(year);
@@ -26,11 +27,11 @@ router.get('/sync/preview', async (req, res) => {
   }
 });
 
-// POST /api/admin/sync/draft-order?year=2026[&dry=1]
+// POST /api/admin/sync/draft-order?year=<year>[&dry=1]
 // Pulls the Round 1 team-per-pick order from ESPN and upserts draft_order.
 // Only overwrites team + team_name. team_needs stays untouched.
 router.post('/sync/draft-order', async (req, res) => {
-  const year = parseInt(req.query.year, 10) || 2026;
+  const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
   const dry = req.query.dry === '1';
   resetLogFlag();
 
@@ -60,7 +61,7 @@ router.post('/sync/draft-order', async (req, res) => {
     let updated = 0;
     for (const p of r1) {
       try {
-        // Upsert so new-year syncs (e.g. 2027) insert rows rather than no-op.
+        // Upsert so new-year syncs (e.g. next year's picks) insert rows rather than no-op.
         // Existing-year rows update team/team_name only and keep team_needs.
         await pool.query(
           `INSERT INTO draft_order (pick_number, team, team_name, team_needs, round, draft_year)
@@ -84,12 +85,12 @@ router.post('/sync/draft-order', async (req, res) => {
   }
 });
 
-// POST /api/admin/sync/draft-order-all?year=2026[&dry=1][&include_r1=1]
+// POST /api/admin/sync/draft-order-all?year=<year>[&dry=1][&include_r1=1]
 // Pulls ALL rounds from ESPN and upserts them into draft_order. By default
 // leaves R1 alone (so hand-curated team names + annotations stay). Pass
 // include_r1=1 to overwrite round 1 too.
 router.post('/sync/draft-order-all', async (req, res) => {
-  const year = parseInt(req.query.year, 10) || 2026;
+  const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
   const dry = req.query.dry === '1';
   const includeR1 = req.query.include_r1 === '1';
   resetLogFlag();
@@ -160,12 +161,12 @@ router.post('/sync/draft-order-all', async (req, res) => {
   }
 });
 
-// POST /api/admin/sync/picks?year=2026[&dry=1]
+// POST /api/admin/sync/picks?year=<year>[&dry=1]
 // Thin wrapper around the shared syncPicksOnce service (also used by the
 // auto-poller). Matches by player name, upserts actual_picks, re-scores all
 // mocks inside one transaction.
 router.post('/sync/picks', async (req, res) => {
-  const year = parseInt(req.query.year, 10) || 2026;
+  const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
   const dry = req.query.dry === '1';
   try {
     const summary = await syncPicksOnce({ year, dry });
@@ -182,7 +183,7 @@ router.get('/sync/poll-status', (_req, res) => {
 });
 
 router.post('/sync/poll-start', (req, res) => {
-  const year = parseInt(req.query.year, 10) || 2026;
+  const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
   const intervalSec = parseInt(req.query.interval, 10) || 20;
   try {
     const status = startPoller({ year, intervalSec });

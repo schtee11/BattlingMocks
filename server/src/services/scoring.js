@@ -1,3 +1,5 @@
+import { CURRENT_DRAFT_YEAR } from '../config.js';
+
 // Idempotent scoring — recalculates total_score for every round1 mock in a
 // single query instead of N+1. Designed to run inside an open pg client so
 // callers can wrap it in their own transaction.
@@ -23,7 +25,9 @@
 //  - ROUND() keeps the stored total_score an INTEGER (1.5x of 10 = 15, which
 //    is still an integer; fractional scores would happen only if we ever
 //    multiplied the +1 bonus, which we don't).
-export async function runScoringOnClient(client) {
+//  - Scoped to one draft year (default: the current one) so re-scoring the
+//    new season never touches last season's final standings.
+export async function runScoringOnClient(client, year = CURRENT_DRAFT_YEAR) {
   const { rowCount } = await client.query(`
     WITH pick_scores AS (
       SELECT
@@ -34,9 +38,9 @@ export async function runScoringOnClient(client) {
         ap_player.pick_number AS actual_slot_for_player,
         ap_player.team        AS actual_team_for_player
       FROM mock_picks mp
-      JOIN mocks m ON m.id = mp.mock_id AND m.mock_type = 'round1'
-      LEFT JOIN draft_order do_pred ON do_pred.pick_number = mp.pick_number AND do_pred.draft_year = 2026
-      LEFT JOIN actual_picks ap_player ON ap_player.player_id = mp.player_id
+      JOIN mocks m ON m.id = mp.mock_id AND m.mock_type = 'round1' AND m.draft_year = $1
+      LEFT JOIN draft_order do_pred ON do_pred.pick_number = mp.pick_number AND do_pred.draft_year = $1
+      LEFT JOIN actual_picks ap_player ON ap_player.player_id = mp.player_id AND ap_player.draft_year = $1
     ),
     scored AS (
       SELECT
@@ -74,7 +78,7 @@ export async function runScoringOnClient(client) {
     SET total_score = totals.total
     FROM totals
     WHERE mocks.id = totals.mock_id
-  `);
+  `, [year]);
   await client.query('UPDATE draft_settings SET scoring_run_at = NOW() WHERE id = 1');
   return rowCount;
 }

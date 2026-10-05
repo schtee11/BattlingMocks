@@ -1,7 +1,7 @@
 {
   "name": "MockDraft Showdown — NFL Mock Draft Simulator",
   "short_name": "MockDraft Showdown",
-  "description": "Free NFL Mock Draft Simulator for the 2026 NFL Draft. Predictive mocks, 7-round team mocks with trades, and live draft-night scoring.",
+  "description": "Free NFL Mock Draft Simulator for the 2027 NFL Draft. Predictive mocks, 7-round team mocks with trades, and live draft-night scoring.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

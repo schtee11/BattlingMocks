@@ -121,7 +121,7 @@ function sumValue(ids, chartGet, futureOwnership) {
 
 // Build the "best package" the bot can offer to reach a target value, using
 // its own remaining current-year picks (other than the one it's trading up
-// FROM) plus its 2027 capital.
+// FROM) plus its next-year capital.
 //
 // Shape preference is ROUND-AWARE — the 2023-2025 dataset (see
 // scratch/analyze-trades.mjs) shows the canonical trade-up shape varies

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { readFileSync } from 'fs';
 import { pool } from '../../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../../config.js';
 import { adminAuth } from '../../middleware/adminAuth.js';
 import { importProspects, normalizePosition, PROSPECTS_PATH } from '../../db/seed.js';
 import { fetchProspects, resetLogFlag } from '../../services/espnDraft.js';
@@ -13,8 +14,9 @@ router.post('/players', async (req, res) => {
   const { name, position, school, headshot_url } = req.body || {};
   if (!name || !position) return res.status(400).json({ error: 'name and position required' });
   const { rows } = await pool.query(
-    'INSERT INTO players (name, position, school, headshot_url) VALUES ($1, $2, $3, $4) RETURNING *',
-    [name, position, school || null, headshot_url || null]
+    `INSERT INTO players (name, position, school, headshot_url, draft_year)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [name, position, school || null, headshot_url || null, CURRENT_DRAFT_YEAR]
   );
   res.status(201).json(rows[0]);
 });
@@ -62,7 +64,7 @@ router.post('/import-prospects', async (_req, res) => {
 // Tries several ESPN prospects endpoints, normalizes, upserts. Dry-run
 // mode returns the first few parsed prospects without writing.
 router.post('/prospects/sync-from-espn', async (req, res) => {
-  const year = parseInt(req.query.year, 10) || 2026;
+  const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
   const limit = Math.min(parseInt(req.query.limit, 10) || 400, 1000);
   const dry = req.query.dry === '1';
   resetLogFlag();
@@ -85,7 +87,7 @@ router.post('/prospects/sync-from-espn', async (req, res) => {
 
     if (dry) return res.json(summary);
 
-    const result = await importProspects(prospects);
+    const result = await importProspects(prospects, year);
     res.json({ ...summary, ...result });
   } catch (e) {
     console.error('[prospects sync-from-espn]', e);
@@ -118,6 +120,7 @@ router.post('/prospects/bulk-import', async (req, res) => {
       position: String(p.position).trim(),
       school: p.school ? String(p.school).trim() : null,
       headshot_url: p.headshot_url ? String(p.headshot_url).trim() : null,
+      rank: p.rank ?? null,
     });
   }
 
@@ -148,7 +151,7 @@ router.post('/player-ranks/bulk-import', async (req, res) => {
     return res.status(400).json({ error: 'expected array or { ranks: [...] }' });
   }
 
-  const defaultYear = parseInt(body.draft_year, 10) || null;
+  const defaultYear = parseInt(body.draft_year, 10) || CURRENT_DRAFT_YEAR;
   const invalid = [];
   const clean = [];
   for (let i = 0; i < list.length; i++) {
@@ -180,7 +183,7 @@ router.post('/player-ranks/bulk-import', async (req, res) => {
       rank,
       position: r.position ? String(r.position).trim() : null,
       school: r.school ? String(r.school).trim() : null,
-      draft_year: Number.isFinite(draftYear) ? draftYear : null,
+      draft_year: Number.isFinite(draftYear) ? draftYear : CURRENT_DRAFT_YEAR,
       projected_round: Number.isFinite(projectedRound) ? projectedRound : null,
     });
   }
@@ -196,9 +199,12 @@ router.post('/player-ranks/bulk-import', async (req, res) => {
 
   try {
     for (const row of clean) {
+      // Match within the row's draft class so re-ranking 2027 never
+      // reaches back and rewrites a same-named 2026 player.
       const { rows } = await pool.query(
-        'SELECT id, consensus_rank, draft_year, projected_round FROM players WHERE LOWER(name) = LOWER($1) LIMIT 1',
-        [row.name]
+        `SELECT id, consensus_rank, draft_year, projected_round FROM players
+          WHERE LOWER(name) = LOWER($1) AND draft_year = $2 LIMIT 1`,
+        [row.name, row.draft_year]
       );
       if (rows.length) {
         const cur = rows[0];
@@ -227,7 +233,7 @@ router.post('/player-ranks/bulk-import', async (req, res) => {
         const pos = normalizePosition(row.position);
         await pool.query(
           `INSERT INTO players (name, position, school, consensus_rank, draft_year, projected_round)
-           VALUES ($1, $2, $3, $4, COALESCE($5, 2026), $6)`,
+           VALUES ($1, $2, $3, $4, $5, $6)`,
           [row.name, pos, row.school, row.rank, row.draft_year, row.projected_round]
         );
         inserted++;
