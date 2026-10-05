@@ -70,10 +70,23 @@ router.post('/prospects/sync-from-espn', async (req, res) => {
   resetLogFlag();
 
   try {
-    const prospects = await fetchProspects(year, limit);
+    const fetched = await fetchProspects(year, limit);
+    // ESPN's endpoints often hand back half-resolved athlete stubs (position
+    // and school still $ref pointers, names like "- 33"). Keep only rows with
+    // a real name, a recognised position and a school. Drop ESPN's ranks —
+    // they're list positions, not a draft board — so syncing never reshuffles
+    // the curated board; new names land at the bottom for the admin to rank.
+    const VALID_POS = new Set(['QB', 'RB', 'WR', 'TE', 'OT', 'IOL', 'EDGE', 'DT', 'LB', 'CB', 'S']);
+    const str = (v) => (typeof v === 'string' ? v.trim() : '');
+    const prospects = fetched
+      .filter((p) => /[A-Za-z]{2}/.test(str(p.name)) && str(p.school))
+      .filter((p) => VALID_POS.has(normalizePosition(str(p.position))))
+      .map(({ rank: _rank, ...p }) => p);
     if (prospects.length === 0) {
       return res.status(502).json({
-        error: 'ESPN returned no prospects from any endpoint; check logs',
+        error: fetched.length
+          ? `ESPN returned ${fetched.length} rows but none had a usable name, position and school`
+          : 'ESPN returned no prospects from any endpoint; check logs',
         hint: 'Use the bulk-import JSON paste instead',
       });
     }
@@ -81,7 +94,9 @@ router.post('/prospects/sync-from-espn', async (req, res) => {
     const summary = {
       year,
       dry,
-      fetched: prospects.length,
+      fetched: fetched.length,
+      usable: prospects.length,
+      skipped: fetched.length - prospects.length,
       samples: prospects.slice(0, 10),
     };
 

@@ -411,6 +411,12 @@ ALTER TABLE user_boards ALTER COLUMN draft_year SET DEFAULT __YEAR__;
 CREATE INDEX IF NOT EXISTS idx_user_boards_user_year ON user_boards(user_id, draft_year);
 
 ALTER TABLE players ALTER COLUMN draft_year SET DEFAULT __YEAR__;
+
+-- One-shot data fixes run from migrate() — each key runs at most once.
+CREATE TABLE IF NOT EXISTS schema_tasks (
+  key VARCHAR(100) PRIMARY KEY,
+  ran_at TIMESTAMPTZ DEFAULT NOW()
+);
 ALTER TABLE draft_order ALTER COLUMN draft_year SET DEFAULT __YEAR__;
 ALTER TABLE team_needs ALTER COLUMN draft_year SET DEFAULT __YEAR__;
 ALTER TABLE position_scores ALTER COLUMN draft_year SET DEFAULT __YEAR__;
@@ -563,6 +569,38 @@ async function seedSeason(year) {
       }
     }
     return `seeded ${inserted} rows`;
+  });
+
+  // One-shot repair for the first 2027 ESPN prospect sync, which imported
+  // ~400 unresolved ESPN athlete stubs (no school, position fell back to
+  // ATH, names like "- 33") and gave them ranks that collided with the real
+  // board. Archive the stubs (draft_year → NULL, so they drop off every
+  // year-filtered query while mocks / bot telemetry that already reference
+  // them keep a valid row), then restore consensus ranks from the file.
+  await step('cleanup espn stubs', async () => {
+    const key = `cleanup-espn-stubs-${year}`;
+    const { rows: done } = await pool.query('SELECT 1 FROM schema_tasks WHERE key = $1', [key]);
+    if (done.length) return null;
+    const file = readSeasonFile('prospects', year);
+    const names = file.map((p) => String(p.name).toLowerCase());
+    const { rowCount: archived } = await pool.query(
+      `UPDATE players SET draft_year = NULL
+        WHERE draft_year = $1
+          AND LOWER(name) <> ALL($2::text[])
+          AND (position = 'ATH' OR school IS NULL OR name !~ '[A-Za-z]{2}')`,
+      [year, names]
+    );
+    let reranked = 0;
+    for (const p of file) {
+      const { rowCount } = await pool.query(
+        `UPDATE players SET consensus_rank = $1
+          WHERE draft_year = $2 AND LOWER(name) = LOWER($3) AND consensus_rank IS DISTINCT FROM $1`,
+        [p.rank, year, p.name]
+      );
+      reranked += rowCount;
+    }
+    await pool.query('INSERT INTO schema_tasks (key) VALUES ($1) ON CONFLICT DO NOTHING', [key]);
+    return `archived ${archived} stub players, restored ${reranked} ranks`;
   });
 
   // New season → reopen submissions. Only fires once per rollover (when the
