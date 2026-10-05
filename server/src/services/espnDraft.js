@@ -205,12 +205,15 @@ function normalizeProspect(raw, fallbackRank) {
   if (!position && raw.pos) position = raw.pos;
   if (!position) return null;
 
-  // School — ESPN calls it college/school/team in different places
-  let school = null;
-  if (typeof raw.college === 'string') school = raw.college;
-  else if (raw.college && typeof raw.college === 'object')
-    school = raw.college.name || raw.college.displayName || null;
-  if (!school) school = raw.school || raw.team || null;
+  // School — ESPN calls it college/school/team in different places, and any
+  // of them can be a plain string or an object ({ name, displayName, … }).
+  const schoolText = (v) =>
+    typeof v === 'string'
+      ? v
+      : v && typeof v === 'object'
+        ? v.displayName || v.name || v.shortDisplayName || v.location || null
+        : null;
+  const school = schoolText(raw.college) || schoolText(raw.school) || schoolText(raw.team) || null;
 
   // Headshot
   let headshot_url = null;

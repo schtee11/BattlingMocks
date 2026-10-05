@@ -30,6 +30,17 @@ export function normalizePosition(p) {
   return POS_MAP[key] || key;
 }
 
+// Import sources (ESPN in particular) sometimes hand back objects or numbers
+// where we expect strings — e.g. school as { id, displayName }. Coerce to a
+// trimmed string, or null, instead of calling .trim() on whatever arrived.
+function text(v) {
+  if (v == null) return null;
+  if (typeof v === 'object') v = v.displayName || v.name || v.abbreviation || null;
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s || null;
+}
+
 // Players are scoped by draft_year: a name only matches an existing row in
 // the same draft class, so a prospect who returned to school (or shares a
 // name with a past prospect) gets a fresh row for the new year instead of
@@ -39,11 +50,11 @@ export function normalizePosition(p) {
 export async function importProspects(prospects, draftYear = CURRENT_DRAFT_YEAR) {
   let added = 0, updated = 0, unchanged = 0;
   for (const p of prospects) {
-    const name = p.name?.trim();
+    const name = text(p.name);
     if (!name) continue;
-    const position = normalizePosition(p.position);
-    const school = p.school?.trim() || null;
-    const headshot = p.headshot_url?.trim() || null;
+    const position = normalizePosition(text(p.position));
+    const school = text(p.school);
+    const headshot = text(p.headshot_url);
     const rankNum = Number.parseInt(p.rank, 10);
     const rank = Number.isFinite(rankNum) && rankNum > 0 ? rankNum : null;
 
