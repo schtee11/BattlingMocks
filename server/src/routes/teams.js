@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 
 const router = Router();
 
@@ -33,13 +34,15 @@ router.get('/', async (_req, res) => {
       pool.query(
         `SELECT team_id, position, priority
          FROM team_needs
-         WHERE draft_year = 2026
-         ORDER BY team_id, priority ASC`
+         WHERE draft_year = $1
+         ORDER BY team_id, priority ASC`,
+        [CURRENT_DRAFT_YEAR]
       ),
       pool.query(
         `SELECT team_id, position, score
          FROM position_scores
-         WHERE draft_year = 2026`
+         WHERE draft_year = $1`,
+        [CURRENT_DRAFT_YEAR]
       ),
     ]);
     const needsByTeam = new Map();

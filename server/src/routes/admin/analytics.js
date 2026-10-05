@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../../config.js';
 import { adminAuth } from '../../middleware/adminAuth.js';
 
 const router = Router();
@@ -13,7 +14,7 @@ router.use(adminAuth);
 const VOLUME_STATS_EXCLUDED_HANDLES = ['schtee-8923'];
 
 router.get('/volume-stats', async (req, res) => {
-  const year = parseInt(req.query.year, 10) || 2026;
+  const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
   try {
     // Resolve the handles to user_ids once. Missing handles just yield an
     // empty list — the rest of the queries degrade to their unfiltered form.

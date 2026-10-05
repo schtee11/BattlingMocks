@@ -43,8 +43,11 @@ export async function syncPicksOnce({ year, dry = false }) {
     };
   }
 
+  // Only match against this draft class — a 2027 pick must never resolve to
+  // a same-named 2026 prospect.
   const { rows: localPlayers } = await pool.query(
-    'SELECT id, name, school FROM players'
+    'SELECT id, name, school FROM players WHERE draft_year = $1',
+    [year]
   );
   const byName = new Map();
   for (const lp of localPlayers) byName.set(normalizeName(lp.name), lp);
@@ -89,7 +92,8 @@ export async function syncPicksOnce({ year, dry = false }) {
   // whose player_id is different from what's already stored. This keeps
   // repeated poller runs from inflating the "saved" count.
   const { rows: existing } = await pool.query(
-    'SELECT pick_number, player_id FROM actual_picks'
+    'SELECT pick_number, player_id FROM actual_picks WHERE draft_year = $1',
+    [year]
   );
   const existingByPick = new Map(existing.map((e) => [e.pick_number, e.player_id]));
 
@@ -101,16 +105,16 @@ export async function syncPicksOnce({ year, dry = false }) {
       const prior = existingByPick.get(m.pick);
       if (prior !== m.player_id) newlySaved++;
       await client.query(
-        `INSERT INTO actual_picks (pick_number, player_id, team)
-           VALUES ($1, $2, $3)
-         ON CONFLICT (pick_number) DO UPDATE
+        `INSERT INTO actual_picks (pick_number, player_id, team, draft_year)
+           VALUES ($1, $2, $3, $4)
+         ON CONFLICT (pick_number, draft_year) DO UPDATE
            SET player_id = EXCLUDED.player_id,
                team = EXCLUDED.team,
                entered_at = NOW()`,
-        [m.pick, m.player_id, m.team_abbr || null]
+        [m.pick, m.player_id, m.team_abbr || null, year]
       );
     }
-    const scoredMocks = await runScoringOnClient(client);
+    const scoredMocks = await runScoringOnClient(client, year);
     await client.query('COMMIT');
     summary.saved = newlySaved;
     summary.total_matched_upserted = matched.length;

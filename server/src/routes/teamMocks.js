@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -65,20 +66,20 @@ router.post('/', requireAuth, submitTeamMockSchema, async (req, res) => {
 
     const playerIds = picks.map((p) => p.player_id);
     const playerCheck = await client.query(
-      'SELECT id FROM players WHERE id = ANY($1::int[])',
-      [playerIds]
+      'SELECT id FROM players WHERE id = ANY($1::int[]) AND draft_year = $2',
+      [playerIds, CURRENT_DRAFT_YEAR]
     );
     if (playerCheck.rows.length !== playerIds.length) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'one or more player_ids do not exist' });
+      return res.status(400).json({ error: 'one or more player_ids are not in this draft class' });
     }
 
     // Always INSERT — never UPDATE — so users can save unlimited team mocks
     const ins = await client.query(
-      `INSERT INTO mocks (user_id, mock_type, team_abbr, title, trades)
-       VALUES ($1, 'team', $2, $3, $4::jsonb)
+      `INSERT INTO mocks (user_id, mock_type, team_abbr, title, trades, draft_year)
+       VALUES ($1, 'team', $2, $3, $4::jsonb, $5)
        RETURNING id`,
-      [user_id, team_abbr, trimmedTitle, tradesJson]
+      [user_id, team_abbr, trimmedTitle, tradesJson, CURRENT_DRAFT_YEAR]
     );
     const mockId = ins.rows[0].id;
 
@@ -116,7 +117,7 @@ router.get('/user/:userId', async (req, res) => {
   // trades live in m.trades too (for board indicators + replay state)
   // but shouldn't inflate the headline count; filter them out here.
   const { rows } = await pool.query(
-    `SELECT m.id, m.user_id, m.submitted_at, m.team_abbr, m.title,
+    `SELECT m.id, m.user_id, m.submitted_at, m.team_abbr, m.title, m.draft_year,
             COUNT(mp.*) FILTER (WHERE mp.team = m.team_abbr)::int AS pick_count,
             COALESCE((
               SELECT COUNT(*)::int
@@ -139,7 +140,7 @@ router.get('/:id', async (req, res) => {
   if (!Number.isFinite(mockId)) return res.status(400).json({ error: 'invalid id' });
 
   const { rows: mocks } = await pool.query(
-    `SELECT id, user_id, submitted_at, team_abbr, title, mock_type,
+    `SELECT id, user_id, submitted_at, team_abbr, title, mock_type, draft_year,
             COALESCE(trades, '[]'::jsonb) AS trades
      FROM mocks
      WHERE id = $1 AND mock_type = 'team'`,
@@ -156,10 +157,10 @@ router.get('/:id', async (req, res) => {
             p.name, p.position, p.school, p.headshot_url
      FROM mock_picks mp
      JOIN players p ON p.id = mp.player_id
-     LEFT JOIN draft_order do2 ON do2.pick_number = mp.pick_number AND do2.draft_year = 2026
+     LEFT JOIN draft_order do2 ON do2.pick_number = mp.pick_number AND do2.draft_year = $2
      WHERE mp.mock_id = $1
      ORDER BY mp.pick_number`,
-    [mock.id]
+    [mock.id, mock.draft_year]
   );
   res.json({ ...mock, picks });
 });

@@ -6,6 +6,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CHART_PATH = join(__dirname, '..', 'data', 'trade-values-2026.json');
@@ -88,12 +89,12 @@ export async function applyTrade({ side_a_team, side_a_picks, side_b_team, side_
   try {
     await client.query('BEGIN');
     for (const entry of all) {
-      // Admin trade tool operates on the current draft only (2026). Future
-      // picks for 2027+ aren't tradable through this path — they flow
-      // through the team-mock UI and don't touch draft_order.
+      // Admin trade tool operates on the current draft only. Future-year
+      // picks aren't tradable through this path — they flow through the
+      // team-mock UI and don't touch draft_order.
       const { rows } = await client.query(
-        'SELECT pick_number, team, team_name FROM draft_order WHERE pick_number = $1 AND draft_year = 2026',
-        [entry.pick]
+        'SELECT pick_number, team, team_name FROM draft_order WHERE pick_number = $1 AND draft_year = $2',
+        [entry.pick, CURRENT_DRAFT_YEAR]
       );
       if (!rows.length) {
         skipped.push({ pick: entry.pick, reason: 'not in draft_order (outside R1)' });
@@ -106,8 +107,8 @@ export async function applyTrade({ side_a_team, side_a_picks, side_b_team, side_
       await client.query(
         `UPDATE draft_order
            SET team = $1, team_name = $2, updated_at = NOW()
-         WHERE pick_number = $3 AND draft_year = 2026`,
-        [entry.newTeam, newTeamName, entry.pick]
+         WHERE pick_number = $3 AND draft_year = $4`,
+        [entry.newTeam, newTeamName, entry.pick, CURRENT_DRAFT_YEAR]
       );
       applied.push({ pick: entry.pick, from: rows[0].team, to: entry.newTeam });
     }

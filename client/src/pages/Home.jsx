@@ -5,8 +5,9 @@ import { Card } from '../components/ui/Card.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { useCountUp } from '../hooks/useCountUp.js';
-import { CountdownTimer, DRAFT_START_2026 } from '../components/ui/CountdownTimer.jsx';
+import { CountdownTimer, DRAFT_START } from '../components/ui/CountdownTimer.jsx';
 import { usePageMeta } from '../hooks/usePageMeta.js';
+import { CURRENT_DRAFT_YEAR, DRAFT_KICKOFF_LABEL, DRAFT_LOCATION } from '../lib/draftYear.js';
 
 // Animated number block — defers rendering the count-up until the value
 // lands from the API, so the skeleton → number swap is always honest.
@@ -28,9 +29,9 @@ function Stat({ label, value, loading }) {
 
 export default function Home() {
   usePageMeta({
-    title: 'NFL Mock Draft Simulator 2026 · MockDraft Showdown',
+    title: 'NFL Mock Draft Simulator 2027 · MockDraft Showdown',
     description:
-      "Free NFL Mock Draft Simulator for the 2026 NFL Draft. Build a 32-pick predictive mock, run a full 7-round team mock with trades, and score live on draft night against the real picks.",
+      "Free NFL Mock Draft Simulator for the 2027 NFL Draft. Build a 32-pick predictive mock, run a full 7-round team mock with trades, and score live on draft night against the real picks.",
     suffix: false,
     path: '/',
   });
@@ -63,7 +64,7 @@ export default function Home() {
       <div className="relative">
         <div className="max-w-5xl mx-auto px-4 pt-14 md:pt-24 pb-10 text-center">
           <div className="caption text-accent mb-4">
-            Thursday, April 23, 2026 · Pittsburgh, PA
+            {DRAFT_KICKOFF_LABEL} · {DRAFT_LOCATION}
           </div>
           <h1 className="font-display display-xl text-hero text-text-primary">
             Predict The Draft.<br />
@@ -120,7 +121,7 @@ export default function Home() {
       {/* Countdown */}
       <div className="max-w-4xl mx-auto px-4 mb-14">
         <Card glass className="px-6 py-8">
-          <CountdownTimer target={DRAFT_START_2026} label="Round 1 Kickoff" />
+          <CountdownTimer target={DRAFT_START} label="Round 1 Kickoff" />
           {isLive && (
             <div className="mt-4 text-center caption" style={{ color: 'var(--warn-text)' }}>
               Submissions locked · Draft in progress
@@ -305,13 +306,13 @@ export default function Home() {
                   Build a Big Board
                 </Link>
               </li>
-              <li className="text-text-secondary">2026 NFL Draft · Free · No paywall</li>
+              <li className="text-text-secondary">{CURRENT_DRAFT_YEAR} NFL Draft · Free · No paywall</li>
             </ul>
           </div>
         </div>
         <div className="border-t border-border-subtle">
           <div className="max-w-5xl mx-auto px-4 py-4 text-center caption">
-            MockDraft Showdown · {stats?.draft_year ?? 2026} NFL Draft
+            MockDraft Showdown · {stats?.draft_year ?? CURRENT_DRAFT_YEAR} NFL Draft
           </div>
         </div>
       </footer>

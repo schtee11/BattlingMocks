@@ -6,7 +6,7 @@
 //   <PageHeader
 //     eyebrow="Standings"
 //     title="Leaderboard"
-//     description="Live rankings during the 2026 draft."
+//     description="Live rankings during the 2027 draft."
 //     actions={<Button>Find Me</Button>}
 //   />
 export function PageHeader({

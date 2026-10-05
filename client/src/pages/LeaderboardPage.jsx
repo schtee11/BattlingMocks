@@ -38,9 +38,9 @@ function TrophyIcon(props) {
 
 export default function LeaderboardPage() {
   usePageMeta({
-    title: '2026 NFL Mock Draft Leaderboard — Live Rankings',
+    title: '2027 NFL Mock Draft Leaderboard — Live Rankings',
     description:
-      'Live leaderboard for every 2026 NFL Mock Draft Simulator entry. See top scouts, exact-match rates, and percentile rank updating in real time on draft night.',
+      'Live leaderboard for every 2027 NFL Mock Draft Simulator entry. See top scouts, exact-match rates, and percentile rank updating in real time on draft night.',
     path: '/leaderboard',
   });
   const { user } = useAuth();

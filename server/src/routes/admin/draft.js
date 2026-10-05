@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../../config.js';
 import { adminAuth } from '../../middleware/adminAuth.js';
 import { seedDraftOrder } from '../../db/seed.js';
 import { runScoringOnClient } from '../../services/scoring.js';
@@ -11,11 +12,10 @@ router.use(adminAuth);
 router.get('/draft-order', async (req, res) => {
   try {
     // Same round filter as the public endpoint — admin UI stays R1 unless
-    // explicitly asking for more via ?round=all. Year defaults to 2026 so
-    // the current-draft admin panel keeps working unchanged; pass ?year=2027
-    // to view future-year rows after a sync.
+    // explicitly asking for more via ?round=all. Year defaults to the current
+    // draft; pass ?year=<next year> to view future-year rows after a sync.
     const roundParam = (req.query.round || '1').toString().toLowerCase();
-    const year = parseInt(req.query.year, 10) || 2026;
+    const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
     let rows;
     if (roundParam === 'all') {
       ({ rows } = await pool.query(
@@ -80,12 +80,12 @@ router.post('/team-needs', async (req, res) => {
       if (!team || !Array.isArray(arr)) continue;
       // Normalize: uppercase, trim, dedupe, filter blanks, clamp to 10 entries.
       const cleaned = [...new Set(arr.map((s) => String(s).trim().toUpperCase()).filter(Boolean))].slice(0, 10);
-      // Needs only live on current-year (2026) rows. 2027 rows — pulled from
+      // Needs only live on current-year rows. Future-year rows — pulled from
       // ESPN — reuse the same team's needs implicitly at read time, so we
       // don't duplicate-write them.
       const { rowCount } = await client.query(
-        'UPDATE draft_order SET team_needs = $1, updated_at = NOW() WHERE team = $2 AND draft_year = 2026',
-        [cleaned, team]
+        'UPDATE draft_order SET team_needs = $1, updated_at = NOW() WHERE team = $2 AND draft_year = $3',
+        [cleaned, team, CURRENT_DRAFT_YEAR]
       );
       updated += rowCount;
     }
@@ -108,7 +108,7 @@ router.post('/team-needs', async (req, res) => {
 // numeric grid.
 router.get('/position-scores', async (req, res) => {
   try {
-    const year = parseInt(req.query.year, 10) || 2026;
+    const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
     const { rows } = await pool.query(
       `SELECT team_id, team_name, position, score
          FROM position_scores
@@ -125,7 +125,7 @@ router.get('/position-scores', async (req, res) => {
 
 router.post('/position-scores', async (req, res) => {
   const { scores, year } = req.body || {};
-  const draftYear = parseInt(year, 10) || 2026;
+  const draftYear = parseInt(year, 10) || CURRENT_DRAFT_YEAR;
   if (!scores || typeof scores !== 'object' || Array.isArray(scores)) {
     return res.status(400).json({ error: 'scores object required' });
   }
@@ -183,7 +183,9 @@ router.get('/actual-picks', async (_req, res) => {
     `SELECT ap.pick_number, ap.player_id, ap.team, ap.entered_at,
             p.name, p.position, p.school, p.headshot_url
      FROM actual_picks ap JOIN players p ON p.id = ap.player_id
-     ORDER BY ap.pick_number`
+     WHERE ap.draft_year = $1
+     ORDER BY ap.pick_number`,
+    [CURRENT_DRAFT_YEAR]
   );
   res.json(rows);
 });
@@ -205,12 +207,12 @@ router.post('/actual-picks', async (req, res) => {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `INSERT INTO actual_picks (pick_number, player_id, team)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (pick_number) DO UPDATE
+      `INSERT INTO actual_picks (pick_number, player_id, team, draft_year)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (pick_number, draft_year) DO UPDATE
          SET player_id = EXCLUDED.player_id, team = EXCLUDED.team, entered_at = NOW()
        RETURNING *`,
-      [pick_number, player_id, team || null]
+      [pick_number, player_id, team || null, CURRENT_DRAFT_YEAR]
     );
     const scoredMocks = await runScoringOnClient(client);
     await client.query('COMMIT');
@@ -225,7 +227,10 @@ router.post('/actual-picks', async (req, res) => {
 });
 
 router.delete('/actual-picks/:pick', async (req, res) => {
-  await pool.query('DELETE FROM actual_picks WHERE pick_number = $1', [req.params.pick]);
+  await pool.query('DELETE FROM actual_picks WHERE pick_number = $1 AND draft_year = $2', [
+    req.params.pick,
+    CURRENT_DRAFT_YEAR,
+  ]);
   res.status(204).end();
 });
 
@@ -237,7 +242,7 @@ router.post('/lock', async (req, res) => {
     [typeof is_locked === 'boolean' ? is_locked : null]
   );
   if (rows[0].is_locked) {
-    await pool.query('UPDATE mocks SET is_locked = TRUE');
+    await pool.query('UPDATE mocks SET is_locked = TRUE WHERE draft_year = $1', [CURRENT_DRAFT_YEAR]);
   }
   res.json(rows[0]);
 });
@@ -254,8 +259,8 @@ router.post('/score', async (_req, res) => {
       SELECT COUNT(*)::int AS scored,
              COALESCE(ROUND(AVG(total_score))::int, 0) AS avg_score,
              COALESCE(MAX(total_score), 0) AS max_score
-      FROM mocks WHERE mock_type = 'round1' AND total_score > 0
-    `);
+      FROM mocks WHERE mock_type = 'round1' AND draft_year = $1 AND total_score > 0
+    `, [CURRENT_DRAFT_YEAR]);
     res.json({ ok: true, ...summary[0], total_mocks: totalMocks });
   } catch (e) {
     await client.query('ROLLBACK');

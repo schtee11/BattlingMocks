@@ -10,7 +10,7 @@ import { EmptyState } from '../components/ui/EmptyState.jsx';
 import { TeamLogo } from '../components/ui/TeamLogo.jsx';
 import { PlayerHeadshot } from '../components/ui/PlayerHeadshot.jsx';
 import { PositionBadge } from '../components/ui/Badge.jsx';
-import { CountdownTimer, DRAFT_START_2026 } from '../components/ui/CountdownTimer.jsx';
+import { CountdownTimer, DRAFT_START } from '../components/ui/CountdownTimer.jsx';
 import { usePageMeta } from '../hooks/usePageMeta.js';
 
 // Live draft night page. Polls the /api/predictive/live bundle every ~12s
@@ -36,9 +36,9 @@ function computeMatchState(actualPick, yourPicks) {
 
 export default function Live() {
   usePageMeta({
-    title: '2026 NFL Draft Live Tracker — Real-Time Pick Scoring',
+    title: '2027 NFL Draft Live Tracker — Real-Time Pick Scoring',
     description:
-      'Watch the 2026 NFL Draft live with your mock draft predictions scoring in real time. Side-by-side actual picks vs. your picks, updating the moment each team is on the clock.',
+      'Watch the 2027 NFL Draft live with your mock draft predictions scoring in real time. Side-by-side actual picks vs. your picks, updating the moment each team is on the clock.',
     path: '/live',
   });
   const { user } = useAuth();
@@ -136,7 +136,7 @@ export default function Live() {
             <div className="text-right">
               <div className="caption text-[10px]">Kickoff in</div>
               <div className="mt-1">
-                <CountdownTimer target={DRAFT_START_2026} compact />
+                <CountdownTimer target={DRAFT_START} compact />
               </div>
             </div>
           )}

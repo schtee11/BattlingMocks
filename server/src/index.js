@@ -22,6 +22,7 @@ import analytics from './routes/analytics.js';
 import boards from './routes/boards.js';
 import predictionMocks from './routes/predictionMocks.js';
 import { pool } from './db/pool.js';
+import { CURRENT_DRAFT_YEAR } from './config.js';
 
 dotenv.config();
 
@@ -125,9 +126,12 @@ app.get('/api/settings', async (_req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM draft_settings WHERE id = 1');
     const { rows: countRows } = await pool.query(
-      "SELECT COUNT(*)::int AS c FROM mocks WHERE mock_type = 'round1'"
+      "SELECT COUNT(*)::int AS c FROM mocks WHERE mock_type = 'round1' AND draft_year = $1",
+      [CURRENT_DRAFT_YEAR]
     );
-    res.json({ ...rows[0], mock_count: countRows[0].c });
+    // draft_year comes from config (the deploy's source of truth) rather than
+    // the settings row, so the client never shows a stale season mid-deploy.
+    res.json({ ...rows[0], draft_year: CURRENT_DRAFT_YEAR, mock_count: countRows[0].c });
   } catch (e) {
     console.error('[settings]', e);
     res.status(500).json({ error: 'server error' });

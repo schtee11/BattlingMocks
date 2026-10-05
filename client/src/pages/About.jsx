@@ -7,7 +7,7 @@ export default function About() {
   usePageMeta({
     title: 'About MockDraft Showdown — Free NFL Mock Draft Simulator',
     description:
-      'About MockDraft Showdown: a free NFL mock draft simulator for the 2026 NFL Draft. Our scoring methodology, trade logic, and why the platform will always be free.',
+      'About MockDraft Showdown: a free NFL mock draft simulator for the 2027 NFL Draft. Our scoring methodology, trade logic, and why the platform will always be free.',
     path: '/about',
   });
 
@@ -32,7 +32,7 @@ export default function About() {
         <ul className="text-[13.5px] text-text-secondary space-y-3 pl-4">
           <li>
             <strong className="text-text-primary">Predictive Round 1 mock</strong> —
-            build a 32-pick mock of the 2026 NFL Draft and score live against the
+            build a 32-pick mock of the 2027 NFL Draft and score live against the
             real picks on draft night.
           </li>
           <li>
@@ -142,7 +142,7 @@ export default function About() {
       <div className="text-center mt-10">
         <Link to="/draft">
           <Button size="xl" className="animate-pulse-glow">
-            Build Your 2026 Mock Draft →
+            Build Your 2027 Mock Draft →
           </Button>
         </Link>
         <div className="mt-4 text-[12.5px] text-text-muted">

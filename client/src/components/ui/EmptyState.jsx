@@ -6,7 +6,7 @@
 //   <EmptyState
 //     icon={<SomeSvg />}      // optional — falls back to a neutral circle
 //     title="No mocks yet"
-//     description="Be the first to submit a mock for the 2026 draft."
+//     description="Be the first to submit a mock for the 2027 draft."
 //     action={<Link to="/draft"><Button>Start a Mock</Button></Link>}
 //   />
 export function EmptyState({

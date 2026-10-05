@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../../config.js';
 import { adminAuth } from '../../middleware/adminAuth.js';
 
 const router = Router();
@@ -19,9 +20,9 @@ router.get('/users', async (_req, res) => {
         COALESCE(m.total_score, 0) AS total_score,
         m.submitted_at
       FROM users u
-      LEFT JOIN mocks m ON m.user_id = u.id AND m.mock_type = 'round1'
+      LEFT JOIN mocks m ON m.user_id = u.id AND m.mock_type = 'round1' AND m.draft_year = $1
       ORDER BY u.created_at DESC
-    `);
+    `, [CURRENT_DRAFT_YEAR]);
     res.json(rows);
   } catch (e) {
     console.error('[admin users]', e);

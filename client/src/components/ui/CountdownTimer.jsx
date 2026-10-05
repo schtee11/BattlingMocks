@@ -80,8 +80,6 @@ export function CountdownTimer({ target, label, onExpire, compact = false }) {
   );
 }
 
-// The single source of truth for the 2026 NFL Draft kickoff time.
-// Round 1 begins at 8:00 PM ET on Thursday, April 23, 2026.
-// ET = UTC-4 during April (EDT). Exported so other components can import
-// the same timestamp without re-computing.
-export const DRAFT_START_2026 = new Date('2026-04-23T20:00:00-04:00');
+// Draft kickoff time lives in lib/draftYear.js alongside the season year;
+// re-exported here so existing imports keep working.
+export { DRAFT_START } from '../../lib/draftYear.js';

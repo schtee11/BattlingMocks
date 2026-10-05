@@ -2,6 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { validate } from '../middleware/validate.js';
 
@@ -70,17 +71,19 @@ router.post('/', submitLimit, requireAuth, submitMockSchema, async (req, res) =>
       return res.status(404).json({ error: 'user not found' });
     }
     const playerIds = picks.map((p) => p.player_id);
+    // Every pick must come from the current draft class — a stale client
+    // still holding last season's board can't sneak old players in.
     const playerCheck = await client.query(
-      'SELECT id FROM players WHERE id = ANY($1::int[])',
-      [playerIds]
+      'SELECT id FROM players WHERE id = ANY($1::int[]) AND draft_year = $2',
+      [playerIds, CURRENT_DRAFT_YEAR]
     );
     if (playerCheck.rows.length !== playerIds.length) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'one or more player_ids do not exist' });
+      return res.status(400).json({ error: 'one or more player_ids are not in this draft class' });
     }
     const existing = await client.query(
-      "SELECT id FROM mocks WHERE user_id = $1 AND mock_type = 'round1'",
-      [user_id]
+      "SELECT id FROM mocks WHERE user_id = $1 AND mock_type = 'round1' AND draft_year = $2",
+      [user_id, CURRENT_DRAFT_YEAR]
     );
     let mockId;
     if (existing.rows.length) {
@@ -89,8 +92,8 @@ router.post('/', submitLimit, requireAuth, submitMockSchema, async (req, res) =>
       await client.query('UPDATE mocks SET submitted_at = NOW(), total_score = 0 WHERE id = $1', [mockId]);
     } else {
       const ins = await client.query(
-        "INSERT INTO mocks (user_id, mock_type) VALUES ($1, 'round1') RETURNING id",
-        [user_id]
+        "INSERT INTO mocks (user_id, mock_type, draft_year) VALUES ($1, 'round1', $2) RETURNING id",
+        [user_id, CURRENT_DRAFT_YEAR]
       );
       mockId = ins.rows[0].id;
     }
@@ -118,9 +121,12 @@ router.post('/', submitLimit, requireAuth, submitMockSchema, async (req, res) =>
 });
 
 router.get('/:userId', async (req, res) => {
+  // Current season by default; ?year= reads a past season's showdown entry.
+  const year = parseInt(req.query.year, 10) || CURRENT_DRAFT_YEAR;
   const { rows: mocks } = await pool.query(
-    "SELECT id, user_id, submitted_at, is_locked, total_score FROM mocks WHERE user_id = $1 AND mock_type = 'round1'",
-    [req.params.userId]
+    `SELECT id, user_id, submitted_at, is_locked, total_score, draft_year
+       FROM mocks WHERE user_id = $1 AND mock_type = 'round1' AND draft_year = $2`,
+    [req.params.userId, year]
   );
   if (!mocks.length) return res.status(404).json({ error: 'no mock' });
   const mock = mocks[0];

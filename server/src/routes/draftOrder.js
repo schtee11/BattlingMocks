@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR, NEXT_DRAFT_YEAR } from '../config.js';
 
 const router = Router();
 
@@ -14,7 +15,7 @@ router.get('/', async (req, res) => {
   //   1. Prefer the draft_order.team_needs JSONB column when populated —
   //      that's where the admin UI writes user-customised needs.
   //   2. Fall back to the live team_needs table (populated on first migrate
-  //      from server/src/data/team-needs-2026.json).
+  //      from server/src/data/team-needs-<year>.json).
   // Both paths keep the bot picker + trade proposer needs-aware. The fall-
   // back matters on dev DBs where the admin UI was never opened — without
   // it, the JSONB column is empty and every bot runs pure BPA.
@@ -24,11 +25,11 @@ router.get('/', async (req, res) => {
   // so the fallback kicks in. Both sides must be TEXT[] — draft_order
   // stores needs as a text array, and array_agg() returns TEXT[] too.
   const roundParam = (req.query.round || '1').toString().toLowerCase();
-  // This endpoint always serves the CURRENT draft (2026). Future-year picks
-  // live in the same table now (post-Phase-8 composite PK) and are served
-  // separately via /api/draft-order/future.
-  const whereClauses = ['d.draft_year = 2026'];
-  const params = [];
+  // This endpoint always serves the CURRENT draft (see config.js). Future-year
+  // picks live in the same table now (post-Phase-8 composite PK) and are
+  // served separately via /api/draft-order/future.
+  const params = [CURRENT_DRAFT_YEAR];
+  const whereClauses = ['d.draft_year = $1'];
   if (roundParam !== 'all') {
     params.push(parseInt(roundParam, 10) || 1);
     whereClauses.push(`d.round = $${params.length}`);
@@ -43,7 +44,7 @@ router.get('/', async (req, res) => {
         NULLIF(d.team_needs, ARRAY[]::TEXT[]),
         (SELECT array_agg(tn.position ORDER BY tn.priority ASC)
            FROM team_needs tn
-          WHERE tn.team_id = d.team AND tn.draft_year = 2026)
+          WHERE tn.team_id = d.team AND tn.draft_year = $1)
       ) AS team_needs
     FROM draft_order d
     WHERE ${whereClauses.join(' AND ')}
@@ -61,7 +62,7 @@ router.get('/', async (req, res) => {
   res.json(rows);
 });
 
-// Future-year picks (e.g. 2027). Real-world order is unknown, so each team
+// Future-year picks (the draft after the current one). Real-world order is unknown, so each team
 // gets a single synthetic pick per round labelled by year+round+team rather
 // than by a pick_number. Values are derived from the standard "one round of
 // discount" convention (see server/src/data/future-pick-values.json).
@@ -83,8 +84,8 @@ function loadFutureValues() {
 }
 
 router.get('/future', async (req, res) => {
-  const year = parseInt(req.query.year || '2027', 10);
-  if (!Number.isFinite(year) || year < 2026 || year > 2030) {
+  const year = parseInt(req.query.year, 10) || NEXT_DRAFT_YEAR;
+  if (!Number.isFinite(year) || year <= CURRENT_DRAFT_YEAR || year > CURRENT_DRAFT_YEAR + 3) {
     return res.status(400).json({ error: 'invalid year' });
   }
 
@@ -94,12 +95,12 @@ router.get('/future', async (req, res) => {
   //      — real data from the ESPN sync. Collapses comp picks via DISTINCT ON
   //      so each (team, round) yields exactly one pick.
   //
-  //   2. Pull the canonical 32-team list from the current draft (2026).
+  //   2. Pull the canonical 32-team list from the current draft.
   //
   //   3. For every (team, round) in the canonical grid that doesn't have a
   //      real row, generate a synthetic stand-in. This way partial sync state
   //      (e.g. only R1 synced so far, or only a handful of teams) never hides
-  //      the other 31 teams' 2027 picks from the trade UI.
+  //      the other 31 teams' future picks from the trade UI.
   //
   // Values come from future-pick-values.json — real GMs discount future picks
   // by one round regardless of known slot.
@@ -116,12 +117,13 @@ router.get('/future', async (req, res) => {
 
   // Pull the canonical team list from ANY round of the current draft. Filtering
   // to round = 1 drops teams that traded their R1 away (e.g. GB in 2026), which
-  // then hides all seven of their 2027 picks from the trade UI.
+  // then hides all seven of their future picks from the trade UI.
   const { rows: teams } = await pool.query(
     `SELECT DISTINCT ON (team) team, team_name
        FROM draft_order
-      WHERE draft_year = 2026
-      ORDER BY team, pick_number`
+      WHERE draft_year = $1
+      ORDER BY team, pick_number`,
+    [CURRENT_DRAFT_YEAR]
   );
 
   // Index real rows by "TEAM-R#" so the fill-in loop is O(1) per slot.
@@ -156,7 +158,7 @@ router.get('/future', async (req, res) => {
   }
 
   // No cache: the endpoint already collapses cheaply and the 1-hour TTL
-  // previously used here caused stale "missing 2027 picks" responses to stick
+  // previously used here caused stale "missing future picks" responses to stick
   // after deploys that fixed the underlying data.
   res.set('Cache-Control', 'no-store');
   res.json(out);

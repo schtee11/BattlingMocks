@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
+import { CURRENT_DRAFT_YEAR } from '../config.js';
 
 const router = Router();
 
@@ -18,8 +19,9 @@ router.get('/live', async (_req, res) => {
         `SELECT ap.pick_number, ap.player_id, ap.team, ap.entered_at,
                 p.name, p.position, p.school, p.headshot_url
          FROM actual_picks ap JOIN players p ON p.id = ap.player_id
-         WHERE ap.round = 1
-         ORDER BY ap.pick_number`
+         WHERE ap.round = 1 AND ap.draft_year = $1
+         ORDER BY ap.pick_number`,
+        [CURRENT_DRAFT_YEAR]
       ),
       pool.query(
         `SELECT m.id AS mock_id, m.user_id, u.display_name, u.avatar_url,
@@ -27,21 +29,23 @@ router.get('/live', async (_req, res) => {
          FROM mocks m
          JOIN users u ON u.id = m.user_id
          JOIN mock_picks mp ON mp.mock_id = m.id
-         WHERE m.mock_type = 'round1'
-         ORDER BY m.id, mp.pick_number`
+         WHERE m.mock_type = 'round1' AND m.draft_year = $1
+         ORDER BY m.id, mp.pick_number`,
+        [CURRENT_DRAFT_YEAR]
       ),
       pool.query(
         `WITH stats AS (
            SELECT m.id, m.user_id, m.total_score, m.submitted_at,
                   u.display_name, u.avatar_url
            FROM mocks m JOIN users u ON u.id = m.user_id
-           WHERE m.mock_type = 'round1'
+           WHERE m.mock_type = 'round1' AND m.draft_year = $1
          )
          SELECT id, user_id, display_name, avatar_url, total_score, submitted_at,
                 RANK() OVER (ORDER BY total_score DESC, submitted_at ASC)::int AS rank
          FROM stats
          ORDER BY total_score DESC, submitted_at ASC
-         LIMIT 50`
+         LIMIT 50`,
+        [CURRENT_DRAFT_YEAR]
       ),
       pool.query('SELECT draft_year, is_locked, scoring_run_at FROM draft_settings WHERE id = 1'),
     ]);

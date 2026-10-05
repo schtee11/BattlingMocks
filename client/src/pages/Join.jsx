@@ -44,9 +44,9 @@ export default function Join() {
   const nav = useNavigate();
 
   usePageMeta({
-    title: 'Sign In — Join the 2026 NFL Mock Draft Simulator',
+    title: 'Sign In — Join the 2027 NFL Mock Draft Simulator',
     description:
-      'Create a free account to compete in the 2026 NFL Mock Draft Simulator. Sign in with Discord or Google to submit your picks and climb the live leaderboard.',
+      'Create a free account to compete in the 2027 NFL Mock Draft Simulator. Sign in with Discord or Google to submit your picks and climb the live leaderboard.',
     path: '/join',
   });
 
@@ -73,7 +73,7 @@ export default function Join() {
   return (
     <div className="max-w-md mx-auto px-4 py-16 md:py-20 route-fade">
       <Card glass className="p-7 md:p-8">
-        <div className="caption text-accent">2026 NFL Draft</div>
+        <div className="caption text-accent">2027 NFL Draft</div>
         <h1 className="font-display display-xl text-[32px] text-text-primary mt-1">
           Claim Your Spot
         </h1>
